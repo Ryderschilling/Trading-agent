@@ -28,6 +28,12 @@ const KEY = process.env.APCA_API_KEY_ID || "";
 const SECRET = process.env.APCA_API_SECRET_KEY || "";
 const HAS_KEYS = Boolean(KEY && SECRET);
 
+console.log("[ENV CHECK]", {
+    key: process.env.APCA_API_KEY_ID ? "loaded" : "missing",
+    secretLen: (process.env.APCA_API_SECRET_KEY || "").length,
+    feed: process.env.ALPACA_FEED
+  });
+
 const dataDir = path.resolve(process.cwd(), "data");
 const publicDir = path.resolve(process.cwd(), "public");
 const alertsPath = path.join(dataDir, "alerts.json");
@@ -373,24 +379,17 @@ if (HAS_KEYS) {
       onBar: onAlpacaBar,
       onStatus: (s) => {
         console.log(`[alpaca] ${s}`);
-      
         const msg = String(s).toLowerCase();
       
-        // If the websocket reconnects, Alpaca forgets subscriptions.
-        // Reset our local subscription state so we re-subscribe.
-        if (msg.includes("disconnected")) {
+        // On reconnect, Alpaca forgets subscriptions.
+        // Force a clean re-subscribe.
+        if (msg.includes("connected")) {
           currentSubs = [];
         }
       
-        // Subscribe ONLY after auth is confirmed.
+        // Subscribe only after auth is confirmed.
         if (msg.includes("authenticated")) {
-          currentSubs = [];      // force resubscribe even if we thought we were subscribed
-          refreshSubscriptions();
-        }
-      ;
-      
-        // Subscriptions MUST happen after auth or you can end up with no bars.
-        if (String(s).toLowerCase().includes("authenticated")) {
+          currentSubs = [];
           refreshSubscriptions();
         }
       }
@@ -404,7 +403,7 @@ let currentSubs: string[] = [];
 function refreshSubscriptions() {
   if (!stream) return;
 
-  const next = Array.from(new Set([...normalizedWatchlist(), "SPY", "QQQ"]));
+  const next = streamSymbols();
   const toUnsub = currentSubs.filter((s) => !next.includes(s));
   const toSub = next.filter((s) => !currentSubs.includes(s));
 
@@ -502,9 +501,18 @@ function recomputeSignalsAndBroadcast() {
 // Bar handler
 // -----------------------------
 function onAlpacaBar(b: AlpacaBarMsg) {
+    const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
+    const ts = isoToMs(b.t);
+  
+    // Debug (temporary)
     if (symbol === "SPY" || symbol === "QQQ") {
-        console.log(`[bar] ${symbol} t=${b.t} c=${b.c} v=${b.v}`);
-      }
+      console.log(`[bar] ${symbol} t=${b.t} c=${b.c} v=${b.v}`);
+    }
+  
+    updateVwap(symbol, ts, b.h, b.l, b.c, b.v);
+    onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
+  
+    // ... keep the rest of your function unchanged below this point
     const symbol = b.S.toUpperCase();
   const ts = isoToMs(b.t);
 
@@ -631,8 +639,3 @@ const alert = engine.evaluateSymbol({
   }
 }
 
-console.log("[ENV CHECK]", {
-    key: process.env.APCA_API_KEY_ID ? "loaded" : "missing",
-    secretLen: (process.env.APCA_API_SECRET_KEY || "").length,
-    feed: process.env.ALPACA_FEED
-  });
