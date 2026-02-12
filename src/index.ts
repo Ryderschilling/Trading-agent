@@ -512,97 +512,91 @@ function onAlpacaBar(b: AlpacaBarMsg) {
     updateVwap(symbol, ts, b.h, b.l, b.c, b.v);
     onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
   
-    // ... keep the rest of your function unchanged below this point
-    const symbol = b.S.toUpperCase();
-  const ts = isoToMs(b.t);
-
-  updateVwap(symbol, ts, b.h, b.l, b.c, b.v);
-  onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
-
-  // Update outcome sessions from minute bar
-  const doneFromMinute = outcomeTracker.onMinuteBar({
-    symbol,
-    ts,
-    high: b.h,
-    low: b.l,
-    close: b.c
-  });
-
-  for (const id of doneFromMinute) {
-    const out = outcomeTracker.finalize(id);
-    if (out) {
-      outcomes.push(out);
-      persistOutcomes();
+    // Update outcome sessions from minute bar
+    const doneFromMinute = outcomeTracker.onMinuteBar({
+      symbol,
+      ts,
+      high: b.h,
+      low: b.l,
+      close: b.c
+    });
+  
+    for (const id of doneFromMinute) {
+      const out = outcomeTracker.finalize(id);
+      if (out) {
+        outcomes.push(out);
+        persistOutcomes();
+      }
     }
-  }
-
-  // 1m tap entries
-  const entry = engine.onMinuteBar({
-    symbol,
-    ts,
-    high: b.h,
-    low: b.l,
-    close: b.c,
-    marketDir: getEffectiveMarketDir()
-  });
-
-  if (entry) {
-    const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
-    if (structureLevel != null && Number.isFinite(structureLevel)) {
-      const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-
-      outcomeTracker.startSession({
-        alertId: entry.id,
-        symbol: entry.symbol,
-        dir: tradeDir,
-        structureLevel,
-        entryTs: entry.ts,
-        entryRefPrice: entry.close
-      });
+  
+    // 1m tap entries
+    const entry = engine.onMinuteBar({
+      symbol,
+      ts,
+      high: b.h,
+      low: b.l,
+      close: b.c,
+      marketDir: getEffectiveMarketDir()
+    });
+  
+    if (entry) {
+      const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
+      if (structureLevel != null && Number.isFinite(structureLevel)) {
+        const tradeDir: TradeDirection =
+          entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
+  
+        outcomeTracker.startSession({
+          alertId: entry.id,
+          symbol: entry.symbol,
+          dir: tradeDir,
+          structureLevel,
+          entryTs: entry.ts,
+          entryRefPrice: entry.close
+        });
+      }
+  
+      alerts.push(entry);
+      persistAlerts();
+      realtime.broadcastAlert(entry);
     }
-
-    alerts.push(entry);
-    persistAlerts();
-    realtime.broadcastAlert(entry);
-  }
-
-  // 5m aggregation
-  const bucket = floorBucket(ts, TIMEFRAME_MIN);
-  const cur = aggMap.get(symbol);
-
-  if (!cur || cur.bucketStart !== bucket) {
-    if (cur) {
-      pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
-
-      // stop-loss evaluation on completed 5m close
-      const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
-      const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
-      for (const id of doneFromBar5) {
-        const out = outcomeTracker.finalize(id);
-        if (out) {
-          outcomes.push(out);
-          persistOutcomes();
+  
+    // 5m aggregation
+    const bucket = floorBucket(ts, TIMEFRAME_MIN);
+    const cur = aggMap.get(symbol);
+  
+    if (!cur || cur.bucketStart !== bucket) {
+      if (cur) {
+        pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
+  
+        // stop-loss evaluation on completed 5m close
+        const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
+        const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
+        for (const id of doneFromBar5) {
+          const out = outcomeTracker.finalize(id);
+          if (out) {
+            outcomes.push(out);
+            persistOutcomes();
+          }
+        }
+  
+        if (symbol === "SPY" || symbol === "QQQ") {
+          recomputeMarketDir();
+          evaluateIfNeeded(symbol);
+        } else {
+          evaluateIfNeeded(symbol);
         }
       }
-
-      if (symbol === "SPY" || symbol === "QQQ") {
-        recomputeMarketDir();
-        evaluateIfNeeded(symbol); // allow SPY/QQQ to generate A+ alerts too
-      } else {
-        evaluateIfNeeded(symbol);
-      }
+  
+      aggMap.set(symbol, { bucketStart: bucket, o: b.o, h: b.h, l: b.l, c: b.c, lastMinTs: ts });
+    } else {
+      cur.h = Math.max(cur.h, b.h);
+      cur.l = Math.min(cur.l, b.l);
+      cur.c = b.c;
+      cur.lastMinTs = ts;
     }
-
-    aggMap.set(symbol, { bucketStart: bucket, o: b.o, h: b.h, l: b.l, c: b.c, lastMinTs: ts });
-  } else {
-    cur.h = Math.max(cur.h, b.h);
-    cur.l = Math.min(cur.l, b.l);
-    cur.c = b.c;
-    cur.lastMinTs = ts;
+  
+    recomputeSignalsAndBroadcast();
   }
-
-  recomputeSignalsAndBroadcast();
-}
 
 function evaluateIfNeeded(symbol: string) {
   const spyBars5 = getBars5("SPY");
