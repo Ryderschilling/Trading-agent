@@ -1,6 +1,5 @@
 {
   "symbols": [
-    "AAPL",
     "MSFT",
     "NVDA",
     "TSLA",
@@ -10,6 +9,9 @@
     "HOOD",
     "META",
     "GOOGL",
-    "IWM"
+    "IWM",
+    "SPY",
+    "QQQ",
+    "AAPL"
   ]
 }

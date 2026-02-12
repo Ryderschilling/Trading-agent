@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Trading Agent</title>
 
-    <!-- Modern font -->
-
-
     <link rel="stylesheet" href="/styles-v4.css" />
   </head>
 
@@ -22,9 +19,8 @@
         </div>
 
         <nav class="tabs">
-          <button class="tab active">Workspace</button>
-          <button class="tab">Manage</button>
-          <button class="tab">Marketplace</button>
+          <a class="tab active" href="/">Workspace</a>
+          <a class="tab" href="/outcomes.html">Outcomes</a>
         </nav>
       </div>
 
@@ -44,8 +40,13 @@
           <div class="hero-head">
             <div>
               <div class="hero-title">Trading Agent Active</div>
-              <div class="hero-sub">Live A+ signals based on your break + retest system.</div>
+              <div class="hero-sub">Signals scanner + A+ entry feed (break + retest).</div>
             </div>
+
+            <!-- Overall watchlist market bias (majority vs VWAP) -->
+            <div id="overallBiasPill" class="bias-pill neutral">NEUTRAL</div>   
+
+
             <div class="hero-chip">
               <span class="chip-dot"></span>
               Scanning Watchlist
@@ -53,25 +54,59 @@
           </div>
 
           <div class="hero-grid">
-            <!-- IMPORTANT ACTIONS -->
-            <div class="card card-inner">
+            <!-- SIGNALS SCANNER -->
+            <div class="card card-inner" id="signalsCard">
               <div class="card-head">
                 <div>
                   <div class="card-title">Signals</div>
-                  <div class="card-hint">Newest “FORMING” and “ENTRY” alerts</div>
+                  <div class="card-hint">Strong/weak vs VWAP + SPY/QQQ alignment + market bias</div>
                 </div>
-                <a class="card-link" href="#feed">See history</a>
+                <a class="card-link" href="#feed">A+ entries</a>
               </div>
 
-              <div id="importantList" class="list"></div>
+              <!-- A+ PINGS (quick glance) -->
+              <div class="aplus-wrap" id="aplus">
+                <div class="card aplus-card">
+                  <div class="card-head">
+                    <div>
+                      <div class="card-title">A+ Pings</div>
+                      <div class="card-hint">Newest A+ events (forming/entry/invalidation)</div>
+                    </div>
+                    <a class="card-link" href="#feed">Full feed</a>
+                  </div>
+
+                  <div id="aPlusList" class="list"></div>
+                  <div id="aPlusEmpty" class="small" style="padding: 0 16px 16px 16px;">
+                    No pings yet.
+                  </div>
+                </div>
+              </div>
+
+              <div class="small" id="marketBias"></div>
+              <div class="small" id="indexStatus" style="margin-top:6px;"></div>
+
+              <div style="margin-top:12px;">
+                <div class="small" style="margin-bottom:6px;">Strong (above VWAP + aligned)</div>
+                <div id="strongList" class="list"></div>
+              </div>
+
+              <div style="margin-top:12px;">
+                <div class="small" style="margin-bottom:6px;">Weak (below VWAP + aligned)</div>
+                <div id="weakList" class="list"></div>
+              </div>
+
+              <div style="margin-top:12px;">
+                <div class="small" style="margin-bottom:6px;">Forming A+ Setups (armed — waiting for retest)</div>
+                <div id="formingList" class="list"></div>
+              </div>
             </div>
 
             <!-- WATCHLIST -->
-            <div class="card card-inner">
+            <div class="card card-inner" id="watchlistCard">
               <div class="card-head">
                 <div>
                   <div class="card-title">Watchlist</div>
-                  <div class="card-hint">SPY/QQQ locked. Add/remove symbols below.</div>
+                  <div class="card-hint">Add/remove symbols below.</div>
                 </div>
               </div>
 
@@ -92,7 +127,7 @@
           <div class="card-head">
             <div>
               <div class="card-title">Activity Feed</div>
-              <div class="card-hint">All alerts recorded (auto-updates)</div>
+              <div class="card-hint">A+ ENTRY only (execution feed)</div>
             </div>
           </div>
 
@@ -116,10 +151,25 @@
           </div>
         </div>
       </section>
+
+      <!-- Modal: Outcome details (click an activity row) -->
+      <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999;">
+        <div style="max-width:760px; margin:6vh auto; background:#0b1020; border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08);">
+            <div>
+              <div style="font-weight:700;">Signal Details</div>
+              <div class="small" id="modalSub">—</div>
+            </div>
+            <button id="modalClose" class="btn btn-ghost">Close</button>
+          </div>
+          <div style="padding:16px;">
+            <div id="modalBody" class="small">Loading…</div>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/app.js?v=3"></script>
+    <script src="/app.js?v=6"></script>
   </body>
 </html>
-

@@ -4,6 +4,7 @@ import { MarketDirection } from "../market/marketDirection";
 export type OutputMessage =
   | "A+ SETUP FORMING — WAIT FOR RETEST"
   | "A+ ENTRY — BUY ON THIS 5-MIN CLOSE"
+  | "A+ ENTRY (1m TAP)"
   | "NO TRADE — DOES NOT MEET RULES"
   | "SETUP INVALID — STAND DOWN";
 
@@ -32,4 +33,40 @@ export type Alert = {
   levelPrice: number | null;
   close: number;
   message: OutputMessage;
+
+  // Frozen structure used for 5m close stop-loss + outcome tracking
+  structureLevel?: number | null;
+  breakBarTime?: number | null;
+};
+
+export type TradeDirection = "LONG" | "SHORT";
+export type TradeSessionStatus = "LIVE" | "STOPPED" | "COMPLETED";
+
+export type TradeOutcome = {
+  alertId: string;
+  symbol: string;
+  dir: TradeDirection;
+  structureLevel: number;
+  entryTs: number;
+  entryRefPrice: number;
+
+  status: TradeSessionStatus;
+  endTs: number;
+
+  // excursions
+  mfeAbs: number;
+  maeAbs: number;
+  mfePct: number;
+  maePct: number;
+  timeToMfeSec: number | null;
+
+  // stop rule: first 5m close breaches structure
+  stoppedOut: boolean;
+  stopTs: number | null;
+  stopClose: number | null;
+  stopReturnPct: number | null;
+  barsToStop: number | null;
+
+  // checkpoint returns (% from entry ref)
+  returnsPct: Record<string, number>;
 };

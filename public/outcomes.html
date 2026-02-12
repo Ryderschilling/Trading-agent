@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Trading Agent • Outcomes</title>
+
+    <link rel="stylesheet" href="/styles-v4.css" />
+  </head>
+
+  <body>
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="brand-dot"></div>
+            <div class="brand-text">Trading Agent</div>
+          </div>
+      
+          <nav class="tabs">
+            <a class="tab" href="/">Workspace</a>
+            <a class="tab active" href="/outcomes.html">Outcomes</a>
+          </nav>
+        </div>
+      
+        <div class="topbar-right">
+          <div class="status">
+            <div class="status-dot" id="socketDot"></div>
+            <div class="status-text">Realtime</div>
+          </div>
+        </div>
+      </header>
+
+    <main class="shell">
+      <section class="stack" id="database">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Outcomes Database</div>
+              <div class="card-hint">One row per A+ ENTRY. Joined alerts + tracked outcomes. Click a row for details.</div>
+            </div>
+
+            <div style="display:flex; gap:10px; align-items:center;">
+              <a class="card-link" href="/api/db.csv">Download CSV</a>
+              <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; padding:0 16px 12px 16px; flex-wrap:wrap;">
+            <input id="dbSym" class="input" placeholder="Filter symbol (e.g. PLTR)" style="max-width:220px;" />
+            <select id="dbStatus" class="input" style="max-width:220px;">
+              <option value="">All statuses</option>
+              <option value="LIVE">LIVE</option>
+              <option value="STOPPED">STOPPED</option>
+              <option value="COMPLETED">COMPLETED</option>
+            </select>
+            <label class="small" style="display:flex; gap:8px; align-items:center;">
+              <input id="dbStoppedOnly" type="checkbox" />
+              stopped-out only
+            </label>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Symbol</th>
+                  <th>Dir</th>
+                  <th>Structure</th>
+                  <th>Entry</th>
+                  <th>Status</th>
+                  <th>Stop %</th>
+                  <th>MFE %</th>
+                  <th>MAE %</th>
+                  <th>5m %</th>
+                  <th>15m %</th>
+                  <th>30m %</th>
+                  <th>60m %</th>
+                </tr>
+              </thead>
+              <tbody id="dbBody"></tbody>
+            </table>
+          </div>
+
+          <div id="dbEmpty" class="small" style="padding: 0 16px 16px 16px; display:none;">
+            No database rows yet (need A+ ENTRY alerts).
+          </div>
+        </div>
+      </section>
+
+      <!-- Modal: details -->
+      <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999;">
+        <div style="max-width:760px; margin:6vh auto; background:#0b1020; border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08);">
+            <div>
+              <div style="font-weight:700;">Signal Details</div>
+              <div class="small" id="modalSub">—</div>
+            </div>
+            <button id="modalClose" class="btn btn-ghost">Close</button>
+          </div>
+          <div style="padding:16px;">
+            <div id="modalBody" class="small">Loading…</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/outcomes.js?v=1"></script>
+  </body>
+</html>
