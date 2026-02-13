@@ -2,11 +2,12 @@ import "dotenv/config";
 import http from "http";
 import path from "path";
 import fs from "fs";
+import https from "https";
 
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
-import { computeMarketDirection, Bar5, MarketDirection } from "./market/marketDirection";
-import { isRegularSessionNY, nyDayKey } from "./market/time";
+import { Bar5, MarketDirection } from "./market/marketDirection";
+import { nyDayKey } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
@@ -29,11 +30,51 @@ const SECRET = process.env.APCA_API_SECRET_KEY || "";
 const HAS_KEYS = Boolean(KEY && SECRET);
 
 console.log("[ENV CHECK]", {
-    key: process.env.APCA_API_KEY_ID ? "loaded" : "missing",
-    secretLen: (process.env.APCA_API_SECRET_KEY || "").length,
-    feed: process.env.ALPACA_FEED
-  });
+  key: process.env.APCA_API_KEY_ID ? "loaded" : "missing",
+  secretLen: (process.env.APCA_API_SECRET_KEY || "").length,
+  feed: process.env.ALPACA_FEED
+});
 
+// -----------------------------
+// Stream stats (for /api/health)
+// -----------------------------
+type StreamStats = {
+  barsTotal: number;
+  barTimestamps: number[]; // rolling window (last 60s)
+  lastBarTs: number | null;
+  lastSpyTs: number | null;
+  lastQqqTs: number | null;
+};
+
+const streamStats: StreamStats = {
+  barsTotal: 0,
+  barTimestamps: [],
+  lastBarTs: null,
+  lastSpyTs: null,
+  lastQqqTs: null
+};
+
+function snapshotStreamStats() {
+  const now = Date.now();
+  streamStats.barTimestamps = streamStats.barTimestamps.filter((t) => now - t <= 60_000);
+
+  const iso = (t: number | null) => (t ? new Date(t).toISOString() : null);
+
+  return {
+    barsTotal: streamStats.barsTotal,
+    bars1m: streamStats.barTimestamps.length,
+    lastBarTs: streamStats.lastBarTs,
+    lastBarIso: iso(streamStats.lastBarTs),
+    lastSpyTs: streamStats.lastSpyTs,
+    lastSpyIso: iso(streamStats.lastSpyTs),
+    lastQqqTs: streamStats.lastQqqTs,
+    lastQqqIso: iso(streamStats.lastQqqTs)
+  };
+}
+
+// -----------------------------
+// Files
+// -----------------------------
 const dataDir = path.resolve(process.cwd(), "data");
 const publicDir = path.resolve(process.cwd(), "public");
 const alertsPath = path.join(dataDir, "alerts.json");
@@ -48,26 +89,6 @@ function readJson<T>(p: string, fallback: T): T {
   }
 }
 
-function getEffectiveMarketDir(): MarketDirection {
-    // Index alignment via VWAP side (your UI already computes this)
-    const spy = computeIndexSide("SPY");
-    const qqq = computeIndexSide("QQQ");
-  
-    const indexAlignedBull = spy.side === "ABOVE" && qqq.side === "ABOVE";
-    const indexAlignedBear = spy.side === "BELOW" && qqq.side === "BELOW";
-  
-    // Majority-of-market via watchlist breadth vs VWAP
-    const symbols = normalizedWatchlist();
-    const bias = computeMarketBiasFromVwap(symbols); // "BULLISH" | "BEARISH" | "NEUTRAL"
-  
-    // Require BOTH indexes aligned AND breadth aligned
-    if (bias === "BULLISH" && indexAlignedBull) return "BULLISH";
-    if (bias === "BEARISH" && indexAlignedBear) return "BEARISH";
-  
-    return "NEUTRAL";
-  }
-
-
 function writeJson(p: string, v: any) {
   fs.writeFileSync(p, JSON.stringify(v, null, 2), "utf8");
 }
@@ -81,15 +102,22 @@ let alerts: Alert[] = readJson<Alert[]>(alertsPath, []);
 let outcomes: TradeOutcome[] = readJson<TradeOutcome[]>(outcomesPath, []);
 let watch = readJson<{ symbols: string[] }>(watchlistPath, { symbols: [] }).symbols;
 
+// -----------------------------
+// Watchlist hardening
+// -----------------------------
 function normalizedWatchlist(): string[] {
-  const extra = watch.map((s) => s.toUpperCase()).filter((s) => s);
-  return Array.from(new Set(extra)).slice(0, 50);
+  const cleaned = (watch || [])
+    .map((s) => String(s ?? "").trim().toUpperCase())
+    .filter(Boolean)
+    .filter((s) => /^[A-Z0-9.\-]{1,10}$/.test(s))
+    .filter((s) => s !== "SPY" && s !== "QQQ");
+
+  return Array.from(new Set(cleaned)).slice(0, 50);
 }
 
 function streamSymbols(): string[] {
-    // Always stream index data, even if not in user watchlist
-    return Array.from(new Set([...normalizedWatchlist(), "SPY", "QQQ"]));
-  }
+  return Array.from(new Set([...normalizedWatchlist(), "SPY", "QQQ"]));
+}
 
 function persistAlerts() {
   if (alerts.length > 2000) alerts = alerts.slice(-2000);
@@ -113,13 +141,13 @@ const lastPriceMap = new Map<string, number>();
 function updateVwap(symbol: string, ts: number, h: number, l: number, c: number, vol: number) {
   lastPriceMap.set(symbol, c);
 
-  if (nyDayKey(ts) !== nyDayKey(Date.now())) return;
   if (!Number.isFinite(vol) || vol <= 0) return;
 
   const dayKey = nyDayKey(ts);
   const typical = (h + l + c) / 3;
 
   const prev = vwapMap.get(symbol);
+
   if (!prev || prev.dayKey !== dayKey) {
     const pv = typical * vol;
     const v = vol;
@@ -136,7 +164,7 @@ function getVwap(symbol: string): number | null {
 }
 
 // -----------------------------
-// Signals snapshot (adds forming list)
+// Signals snapshot
 // -----------------------------
 type SignalsSnapshot = {
   ts: number;
@@ -180,7 +208,6 @@ function computeMarketBiasFromVwap(symbols: string[]): "BULLISH" | "BEARISH" | "
   let below = 0;
 
   for (const s of symbols) {
-    if (s === "SPY" || s === "QQQ") continue;
     const p = lastPriceMap.get(s);
     const v = getVwap(s);
     if (p == null || v == null) continue;
@@ -189,7 +216,15 @@ function computeMarketBiasFromVwap(symbols: string[]): "BULLISH" | "BEARISH" | "
   }
 
   const total = above + below;
-  if (total < 3) return "NEUTRAL";
+
+  // fallback to SPY/QQQ VWAP side if breadth is thin
+  if (total < 3) {
+    const spy = computeIndexSide("SPY");
+    const qqq = computeIndexSide("QQQ");
+    if (spy.side === "ABOVE" && qqq.side === "ABOVE") return "BULLISH";
+    if (spy.side === "BELOW" && qqq.side === "BELOW") return "BEARISH";
+    return "NEUTRAL";
+  }
 
   const ratio = above / total;
   if (ratio >= 0.6) return "BULLISH";
@@ -200,6 +235,21 @@ function computeMarketBiasFromVwap(symbols: string[]): "BULLISH" | "BEARISH" | "
 function biasToMarketDir(bias: "BULLISH" | "BEARISH" | "NEUTRAL"): MarketDirection {
   if (bias === "BULLISH") return "BULLISH";
   if (bias === "BEARISH") return "BEARISH";
+  return "NEUTRAL";
+}
+
+function getEffectiveMarketDir(): MarketDirection {
+  const spy = computeIndexSide("SPY");
+  const qqq = computeIndexSide("QQQ");
+
+  const indexAlignedBull = spy.side === "ABOVE" && qqq.side === "ABOVE";
+  const indexAlignedBear = spy.side === "BELOW" && qqq.side === "BELOW";
+
+  const symbols = normalizedWatchlist();
+  const bias = computeMarketBiasFromVwap(symbols);
+
+  if (bias === "BULLISH" && indexAlignedBull) return "BULLISH";
+  if (bias === "BEARISH" && indexAlignedBear) return "BEARISH";
   return "NEUTRAL";
 }
 
@@ -253,25 +303,6 @@ function isoToMs(iso: string): number {
 }
 
 // -----------------------------
-// Market direction cache
-// -----------------------------
-let latestMarketDir: MarketDirection = "NEUTRAL";
-
-function recomputeMarketDir() {
-  const spyBars5 = getBars5("SPY");
-  const qqqBars5 = getBars5("QQQ");
-  if (spyBars5.length < STRUCTURE_WINDOW || qqqBars5.length < STRUCTURE_WINDOW) return;
-
-  latestMarketDir = computeMarketDirection({
-    spyBars5,
-    qqqBars5,
-    spyLevels: getLevels("SPY"),
-    qqqLevels: getLevels("QQQ"),
-    structureWindow: STRUCTURE_WINDOW
-  });
-}
-
-// -----------------------------
 // DB join rows
 // -----------------------------
 function isEntryAlert(a: Alert) {
@@ -281,13 +312,12 @@ function isEntryAlert(a: Alert) {
 function getDbRows() {
   const outById = new Map(outcomes.map((o) => [o.alertId, o] as const));
 
-  const rows = alerts
+  return alerts
     .filter(isEntryAlert)
     .slice()
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .map((a) => {
       const o = outById.get(a.id) ?? null;
-
       const r = (k: string) => (o?.returnsPct ? o.returnsPct[k] : null);
 
       return {
@@ -315,12 +345,10 @@ function getDbRows() {
         ret60m: r("60m") ?? ""
       };
     });
-
-  return rows;
 }
 
 // -----------------------------
-// Build app/server/realtime
+// HTTP + realtime
 // -----------------------------
 let realtime: ReturnType<typeof attachRealtime>;
 
@@ -329,6 +357,8 @@ const app = createHttpApp({
   getAlerts: () => alerts,
   getWatchlist: () => normalizedWatchlist(),
   getSignals: () => latestSignals,
+  getStreamStats: () => snapshotStreamStats(),
+  replay: (symbols, minutes, emitAlerts) => replayBars(symbols, minutes, emitAlerts),
 
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
@@ -362,9 +392,14 @@ realtime = attachRealtime(server, {
 
 server.listen(PORT, () => {
   console.log(`Dashboard: http://localhost:${PORT}`);
+
   if (!HAS_KEYS) {
     console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");
+    return;
   }
+
+  // STARTUP BACKFILL (warm engine immediately)
+  runStartupBackfill().catch((e) => console.log("[backfill] error", e));
 });
 
 // -----------------------------
@@ -380,14 +415,8 @@ if (HAS_KEYS) {
       onStatus: (s) => {
         console.log(`[alpaca] ${s}`);
         const msg = String(s).toLowerCase();
-      
-        // On reconnect, Alpaca forgets subscriptions.
-        // Force a clean re-subscribe.
-        if (msg.includes("connected")) {
-          currentSubs = [];
-        }
-      
-        // Subscribe only after auth is confirmed.
+
+        if (msg.includes("connected")) currentSubs = [];
         if (msg.includes("authenticated")) {
           currentSubs = [];
           refreshSubscriptions();
@@ -434,14 +463,80 @@ function recomputeSignalsAndBroadcast() {
   const marketDirForRS = biasToMarketDir(marketBias);
 
   const spyBars5 = getBars5("SPY");
+  const qqqBars5 = getBars5("QQQ");
 
   const strong: SignalsSnapshot["strong"] = [];
   const weak: SignalsSnapshot["weak"] = [];
 
+  if (!streamStats.lastBarTs || Date.now() - streamStats.lastBarTs > 15 * 60_000) {
+    latestSignals = { ...latestSignals, ts: Date.now(), strong: [], weak: [], forming: [], marketBias: "NEUTRAL" };
+    realtime.broadcastSignals(latestSignals);
+    return;
+  }
+
+  // Include SPY/QQQ themselves in Strong/Weak columns
+  if (spyBars5.length >= RS_WINDOW_BARS + 1 && qqqBars5.length >= RS_WINDOW_BARS + 1) {
+    const spySide = computeIndexSide("SPY");
+    const qqqSide = computeIndexSide("QQQ");
+
+    // SPY RS benchmarked vs QQQ
+    const rsSpy = computeRS({
+      marketDir: marketDirForRS,
+      symBars5: spyBars5,
+      spyBars5: qqqBars5,
+      windowBars: RS_WINDOW_BARS
+    });
+
+    // QQQ RS benchmarked vs SPY
+    const rsQqq = computeRS({
+      marketDir: marketDirForRS,
+      symBars5: qqqBars5,
+      spyBars5: spyBars5,
+      windowBars: RS_WINDOW_BARS
+    });
+
+    if (marketBias === "BULLISH" && indexAlignedBull) {
+      if (
+        spySide.price != null &&
+        spySide.vwap != null &&
+        spySide.price >= spySide.vwap &&
+        rsSpy === "STRONG"
+      ) {
+        strong.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
+      }
+      if (
+        qqqSide.price != null &&
+        qqqSide.vwap != null &&
+        qqqSide.price >= qqqSide.vwap &&
+        rsQqq === "STRONG"
+      ) {
+        strong.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
+      }
+    }
+
+    if (marketBias === "BEARISH" && indexAlignedBear) {
+      if (
+        spySide.price != null &&
+        spySide.vwap != null &&
+        spySide.price <= spySide.vwap &&
+        rsSpy === "WEAK"
+      ) {
+        weak.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
+      }
+      if (
+        qqqSide.price != null &&
+        qqqSide.vwap != null &&
+        qqqSide.price <= qqqSide.vwap &&
+        rsQqq === "WEAK"
+      ) {
+        weak.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
+      }
+    }
+  }
+
+  // Normal watchlist symbols
   if (spyBars5.length >= RS_WINDOW_BARS + 1) {
     for (const s of symbols) {
-      if (s === "SPY" || s === "QQQ") continue;
-
       const price = lastPriceMap.get(s);
       const vwap = getVwap(s);
       if (price == null || vwap == null) continue;
@@ -467,22 +562,36 @@ function recomputeSignalsAndBroadcast() {
   }
 
   const eff = getEffectiveMarketDir();
-  const forming = eff === "NEUTRAL"
-    ? []
-    : engine.getFormingCandidates({ lastPrice: (sym) => lastPriceMap.get(sym) ?? null })
-        .filter((f) => f.market === eff) // only show forming aligned with effective market
-        .slice(0, 12)
-        .map((f) => ({
-          symbol: f.symbol,
-          dir: f.dir,
-          level: f.levelType,
-          levelPrice: f.levelPrice,
-          lastPrice: f.lastPrice,
-          distancePct: f.distancePct,
-          score: f.score,
-          rs: f.rs,
-          market: f.market
-        }));
+
+  const rawForming = engine.getFormingCandidates({
+    lastPrice: (sym) => lastPriceMap.get(sym) ?? null
+  });
+
+  const filtered = eff === "NEUTRAL" ? rawForming : rawForming.filter((f) => f.market === eff);
+
+  // Priority: SPY then QQQ at the top when present, then highest score
+  const priorityRank = (sym: string) => (sym === "SPY" ? 0 : sym === "QQQ" ? 1 : 2);
+
+  const forming = filtered
+    .slice()
+    .sort((a, b) => {
+      const pa = priorityRank(a.symbol);
+      const pb = priorityRank(b.symbol);
+      if (pa !== pb) return pa - pb;
+      return (b.score ?? 0) - (a.score ?? 0);
+    })
+    .slice(0, 12)
+    .map((f) => ({
+      symbol: f.symbol,
+      dir: f.dir,
+      level: f.levelType,
+      levelPrice: f.levelPrice,
+      lastPrice: f.lastPrice,
+      distancePct: f.distancePct,
+      score: f.score,
+      rs: f.rs,
+      market: f.market
+    }));
 
   latestSignals = {
     ts: Date.now(),
@@ -498,29 +607,49 @@ function recomputeSignalsAndBroadcast() {
 }
 
 // -----------------------------
-// Bar handler
+// Bar handler (LIVE)
 // -----------------------------
 function onAlpacaBar(b: AlpacaBarMsg) {
-    const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
-    const ts = isoToMs(b.t);
-  
-    // Debug (temporary)
-    if (symbol === "SPY" || symbol === "QQQ") {
-      console.log(`[bar] ${symbol} t=${b.t} c=${b.c} v=${b.v}`);
-    }
-  
-    updateVwap(symbol, ts, b.h, b.l, b.c, b.v);
-    onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
-  
-    // Update outcome sessions from minute bar
+  const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
+  const ts = isoToMs(b.t);
+
+  // stream stats
+  streamStats.barsTotal++;
+  streamStats.lastBarTs = ts;
+  streamStats.barTimestamps.push(Date.now());
+  if (symbol === "SPY") streamStats.lastSpyTs = ts;
+  if (symbol === "QQQ") streamStats.lastQqqTs = ts;
+
+  // ingest (live = alerts allowed)
+  ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, false);
+}
+
+// -----------------------------
+// Ingest minute bar (used by LIVE + BACKFILL)
+// -----------------------------
+function ingestMinuteBar(
+  symbol: string,
+  ts: number,
+  o: number,
+  h: number,
+  l: number,
+  c: number,
+  v: number,
+  warmup: boolean
+) {
+  updateVwap(symbol, ts, h, l, c, v);
+  onBarUpdateLevels(getLevels(symbol), ts, h, l);
+
+  // During warmup we only build state. No outcomes, no alerts.
+  if (!warmup) {
     const doneFromMinute = outcomeTracker.onMinuteBar({
       symbol,
       ts,
-      high: b.h,
-      low: b.l,
-      close: b.c
+      high: h,
+      low: l,
+      close: c
     });
-  
+
     for (const id of doneFromMinute) {
       const out = outcomeTracker.finalize(id);
       if (out) {
@@ -528,23 +657,25 @@ function onAlpacaBar(b: AlpacaBarMsg) {
         persistOutcomes();
       }
     }
-  
-    // 1m tap entries
-    const entry = engine.onMinuteBar({
-      symbol,
-      ts,
-      high: b.h,
-      low: b.l,
-      close: b.c,
-      marketDir: getEffectiveMarketDir()
-    });
-  
+
+    const effDir = getEffectiveMarketDir();
+    const entry =
+      effDir === "NEUTRAL"
+        ? null
+        : engine.onMinuteBar({
+            symbol,
+            ts,
+            high: h,
+            low: l,
+            close: c,
+            marketDir: effDir
+          });
+
     if (entry) {
       const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
       if (structureLevel != null && Number.isFinite(structureLevel)) {
-        const tradeDir: TradeDirection =
-          entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-  
+        const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
+
         outcomeTracker.startSession({
           alertId: entry.id,
           symbol: entry.symbol,
@@ -554,21 +685,22 @@ function onAlpacaBar(b: AlpacaBarMsg) {
           entryRefPrice: entry.close
         });
       }
-  
+
       alerts.push(entry);
       persistAlerts();
       realtime.broadcastAlert(entry);
     }
-  
-    // 5m aggregation
-    const bucket = floorBucket(ts, TIMEFRAME_MIN);
-    const cur = aggMap.get(symbol);
-  
-    if (!cur || cur.bucketStart !== bucket) {
-      if (cur) {
-        pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
-  
-        // stop-loss evaluation on completed 5m close
+  }
+
+  // 5m aggregation (always, to warm bars5 + engine)
+  const bucket = floorBucket(ts, TIMEFRAME_MIN);
+  const cur = aggMap.get(symbol);
+
+  if (!cur || cur.bucketStart !== bucket) {
+    if (cur) {
+      pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
+
+      if (!warmup) {
         const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
         const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
         for (const id of doneFromBar5) {
@@ -578,38 +710,26 @@ function onAlpacaBar(b: AlpacaBarMsg) {
             persistOutcomes();
           }
         }
-  
-        if (symbol === "SPY" || symbol === "QQQ") {
-          recomputeMarketDir();
-          evaluateIfNeeded(symbol);
-        } else {
-          evaluateIfNeeded(symbol);
-        }
+
+        evaluateIfNeeded(symbol);
       }
-  
-      aggMap.set(symbol, { bucketStart: bucket, o: b.o, h: b.h, l: b.l, c: b.c, lastMinTs: ts });
-    } else {
-      cur.h = Math.max(cur.h, b.h);
-      cur.l = Math.min(cur.l, b.l);
-      cur.c = b.c;
-      cur.lastMinTs = ts;
     }
-  
-    recomputeSignalsAndBroadcast();
+
+    aggMap.set(symbol, { bucketStart: bucket, o, h, l, c, lastMinTs: ts });
+  } else {
+    cur.h = Math.max(cur.h, h);
+    cur.l = Math.min(cur.l, l);
+    cur.c = c;
+    cur.lastMinTs = ts;
   }
+
+  if (!warmup) recomputeSignalsAndBroadcast();
+}
 
 function evaluateIfNeeded(symbol: string) {
   const spyBars5 = getBars5("SPY");
   const qqqBars5 = getBars5("QQQ");
   if (spyBars5.length < STRUCTURE_WINDOW || qqqBars5.length < STRUCTURE_WINDOW) return;
-
-  latestMarketDir = computeMarketDirection({
-    spyBars5,
-    qqqBars5,
-    spyLevels: getLevels("SPY"),
-    qqqLevels: getLevels("QQQ"),
-    structureWindow: STRUCTURE_WINDOW
-  });
 
   const symBars5 = getBars5(symbol);
   if (!symBars5.length) return;
@@ -618,13 +738,16 @@ function evaluateIfNeeded(symbol: string) {
 
   const benchBars5 = symbol === "SPY" ? qqqBars5 : spyBars5;
 
-const alert = engine.evaluateSymbol({
-  symbol,
-  marketDir: getEffectiveMarketDir(),
-  spyBars5: benchBars5, // for SPY, benchmark vs QQQ; for others, benchmark vs SPY
-  symBars5,
-  symLevels: getLevels(symbol)
-});
+  const effDir = getEffectiveMarketDir();
+  if (effDir === "NEUTRAL") return;
+
+  const alert = engine.evaluateSymbol({
+    symbol,
+    marketDir: effDir,
+    spyBars5: benchBars5,
+    symBars5,
+    symLevels: getLevels(symbol)
+  });
 
   if (alert) {
     alerts.push(alert);
@@ -633,3 +756,89 @@ const alert = engine.evaluateSymbol({
   }
 }
 
+// -----------------------------
+// REST backfill (warm-up)
+// -----------------------------
+function httpGetJson(url: string, headers: Record<string, string>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: "GET", headers }, (res) => {
+      let data = "";
+      res.on("data", (d) => (data += d));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+async function backfillSymbol1m(symbol: string, limit = 300) {
+  const url = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(
+    symbol
+  )}/bars?timeframe=1Min&limit=${limit}&feed=${encodeURIComponent(FEED)}`;
+
+  const json = await httpGetJson(url, {
+    "APCA-API-KEY-ID": KEY,
+    "APCA-API-SECRET-KEY": SECRET
+  });
+
+  const bars: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }> = json?.bars || [];
+  for (const b of bars) {
+    const ts = isoToMs(b.t);
+    ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, true);
+  }
+}
+
+async function replayBars(symbols: string[], minutes: number, emitAlerts: boolean) {
+  const limit = Math.max(10, Math.min(1000, Number(minutes || 240)));
+  const requested = (symbols || []).map((s) => String(s).trim().toUpperCase()).filter(Boolean);
+
+  const syms = requested.length ? requested : streamSymbols();
+  const ordered = Array.from(new Set(["SPY", "QQQ", ...syms])).filter(Boolean);
+
+  console.log(`[replay] start symbols=${ordered.length} minutes=${limit} emitAlerts=${emitAlerts}`);
+
+  for (const s of ordered) {
+    try {
+      await backfillSymbol1m(s, limit);
+    } catch {
+      console.log(`[replay] failed ${s}`);
+    }
+  }
+
+  recomputeSignalsAndBroadcast();
+
+  if (emitAlerts) {
+    for (const s of ordered) {
+      try {
+        evaluateIfNeeded(s);
+      } catch {}
+    }
+  }
+
+  console.log("[replay] done");
+}
+
+async function runStartupBackfill() {
+  const syms = streamSymbols();
+  console.log(`[backfill] starting for ${syms.length} symbols (1m)`);
+
+  const ordered = ["SPY", "QQQ", ...syms.filter((s) => s !== "SPY" && s !== "QQQ")];
+
+  for (const s of ordered) {
+    try {
+      await backfillSymbol1m(s, 300);
+    } catch {
+      console.log(`[backfill] failed ${s}`);
+    }
+  }
+
+  recomputeSignalsAndBroadcast();
+
+  console.log("[backfill] done");
+}

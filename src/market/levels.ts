@@ -1,4 +1,4 @@
-import { isPremarketNY, isRegularSessionNY, nyDayKey } from "./time";
+import { isExtendedSessionNY, isRegularSessionNY, nyDayKey } from "./time";
 
 export type LevelType = "PMH" | "PML" | "PDH" | "PDL";
 
@@ -48,11 +48,13 @@ export function onBarUpdateLevels(levels: Levels, barTimeMs: number, high: numbe
     levels.curRthLow = null;
   }
 
-  if (isPremarketNY(barTimeMs)) {
+  // EXTENDED session levels (premarket OR after-hours)
+  if (isExtendedSessionNY(barTimeMs)) {
     levels.pmh = levels.pmh == null ? high : Math.max(levels.pmh, high);
     levels.pml = levels.pml == null ? low : Math.min(levels.pml, low);
   }
 
+  // Regular session tracking (for tomorrow's PDH/PDL)
   if (isRegularSessionNY(barTimeMs)) {
     levels.curRthHigh = levels.curRthHigh == null ? high : Math.max(levels.curRthHigh, high);
     levels.curRthLow = levels.curRthLow == null ? low : Math.min(levels.curRthLow, low);

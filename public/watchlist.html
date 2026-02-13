@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Watchlist • Trading Agent</title>
+
+    <link rel="stylesheet" href="/styles-v4.css" />
+  </head>
+
+  <body>
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes.html">Outcomes</a>
+          <a class="tab active" href="/watchlist.html">Watch</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Watchlist</div>
+              <div class="card-hint">Add/remove symbols. Saved to data/watchlist.json.</div>
+            </div>
+          </div>
+
+          <div class="watch-controls">
+            <input id="symInput" class="input" placeholder="Add symbol (e.g. PLTR)" />
+            <button id="addBtn" class="btn btn-primary">Add</button>
+          </div>
+
+          <div id="watchChips" class="chips"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js?v=10"></script>
+  </body>
+</html>

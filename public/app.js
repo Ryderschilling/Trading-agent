@@ -7,20 +7,22 @@ const feedBody = document.getElementById("feedBody");
 
 const marketBiasEl = document.getElementById("marketBias");
 const overallBiasPillEl = document.getElementById("overallBiasPill");
+const dataLivePillEl = document.getElementById("dataLivePill");
 const indexStatusEl = document.getElementById("indexStatus");
 const strongListEl = document.getElementById("strongList");
 const weakListEl = document.getElementById("weakList");
 const formingListEl = document.getElementById("formingList");
-
-const symInput = document.getElementById("symInput");
-const addBtn = document.getElementById("addBtn");
-const watchChips = document.getElementById("watchChips");
 
 const enableSoundBtn = document.getElementById("enableSound");
 
 // A+ Pings card
 const aPlusListEl = document.getElementById("aPlusList");
 const aPlusEmptyEl = document.getElementById("aPlusEmpty");
+
+// Watchlist page elements (only exist on watchlist page)
+const symInput = document.getElementById("symInput");
+const addBtn = document.getElementById("addBtn");
+const watchChips = document.getElementById("watchChips");
 
 // Modal
 const modalEl = document.getElementById("modal");
@@ -34,6 +36,15 @@ let audioCtx = null;
 let allAlerts = [];
 let watchSymbols = [];
 let latestSignals = null;
+let dataIsLive = false;
+
+// Perf caps
+const FEED_MAX_ROWS = 200;
+const ALERTS_KEEP_MAX = 2000;
+
+// Health polling
+const HEALTH_POLL_MS = 3000;
+const LIVE_THRESHOLD_MS = 15_000;
 
 // -----------------------
 // Sound (user gesture gated)
@@ -103,6 +114,58 @@ function classifyAlert(a) {
   if (msg.includes("INVALID")) return "INVALID";
   return "INFO";
 }
+
+function trimAlerts() {
+  if (allAlerts.length > ALERTS_KEEP_MAX) {
+    allAlerts = allAlerts.slice(-ALERTS_KEEP_MAX);
+  }
+}
+
+function fmtAge(ms) {
+  if (ms == null || !Number.isFinite(ms)) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  return `${Math.round(ms / 1000)}s`;
+}
+
+// -----------------------
+// Health poll (DATA LIVE / STALE)
+// -----------------------
+async function pollHealth() {
+  if (!dataLivePillEl) return;
+
+  try {
+    const r = await fetch("/api/health", { cache: "no-store" });
+    if (!r.ok) throw new Error("bad response");
+    const j = await r.json();
+
+    const now = Date.now();
+    const lastBarTs = j?.stream?.lastBarTs ?? null;
+
+    if (typeof lastBarTs !== "number") {
+      dataIsLive = false;
+      dataLivePillEl.textContent = "DATA: —";
+      dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
+      dataLivePillEl.classList.add("neutral");
+      return;
+    }
+
+    const age = Math.max(0, now - lastBarTs);
+    const live = age <= LIVE_THRESHOLD_MS;
+    dataIsLive = live;
+
+    dataLivePillEl.textContent = live ? `DATA: LIVE (${fmtAge(age)})` : `DATA: STALE (${fmtAge(age)})`;
+    dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
+    dataLivePillEl.classList.add(live ? "bullish" : "bearish");
+  } catch {
+    dataIsLive = false;
+    dataLivePillEl.textContent = "DATA: ERROR";
+    dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
+    dataLivePillEl.classList.add("neutral");
+  }
+}
+
+setInterval(pollHealth, HEALTH_POLL_MS);
+pollHealth();
 
 // -----------------------
 // Modal
@@ -207,8 +270,15 @@ function row(a) {
 }
 
 function renderFeed(alerts) {
+  if (!feedBody) return;
   feedBody.innerHTML = "";
-  const ordered = (alerts || []).slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+  const ordered = (alerts || [])
+    .slice()
+    .filter((a) => String(a.message || "").includes("A+ ENTRY"))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .slice(0, FEED_MAX_ROWS);
+
   for (const a of ordered) feedBody.appendChild(row(a));
 }
 
@@ -254,9 +324,10 @@ function renderAPlusPings(alerts) {
 }
 
 function renderWatchlist(symbols) {
+  if (!watchChips) return;
   watchChips.innerHTML = "";
 
-  for (const s of symbols) {
+  for (const s of symbols || []) {
     const chip = document.createElement("div");
     chip.className = "chip";
     chip.innerHTML = `
@@ -264,7 +335,7 @@ function renderWatchlist(symbols) {
       <button class="chip-x" aria-label="remove">×</button>
     `;
 
-    chip.querySelector(".chip-x").addEventListener("click", async () => {
+    chip.querySelector(".chip-x")?.addEventListener("click", async () => {
       await fetch("/api/watchlist/remove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -278,8 +349,21 @@ function renderWatchlist(symbols) {
 
 function renderSignals(s) {
   if (!s) return;
-// Top-center bias pill (watchlist breadth vs VWAP)
-if (overallBiasPillEl) {
+
+  // If the stream is stale/closed, blank out signals completely
+  if (!dataIsLive) {
+    if (overallBiasPillEl) {
+      overallBiasPillEl.textContent = "NEUTRAL";
+      overallBiasPillEl.classList.remove("bullish", "bearish", "neutral");
+      overallBiasPillEl.classList.add("neutral");
+    }
+    if (strongListEl) strongListEl.innerHTML = "";
+    if (weakListEl) weakListEl.innerHTML = "";
+    if (formingListEl) formingListEl.innerHTML = "";
+    return;
+  }
+
+  if (overallBiasPillEl) {
     const bias = String(s.marketBias || "NEUTRAL").toUpperCase();
     overallBiasPillEl.textContent = bias;
     overallBiasPillEl.classList.remove("bullish", "bearish", "neutral");
@@ -288,32 +372,37 @@ if (overallBiasPillEl) {
     else overallBiasPillEl.classList.add("neutral");
   }
 
-  marketBiasEl.textContent = `Market Bias: ${s.marketBias} • Updated ${fmtTime(s.ts)}`;
+  // These elements may not exist if removed from index.html; safe to keep.
+  if (marketBiasEl) {
+    marketBiasEl.textContent = `Market Bias: ${s.marketBias} • Updated ${fmtTime(s.ts)}`;
+  }
 
   const spy = s.spy || {};
   const qqq = s.qqq || {};
-  indexStatusEl.textContent =
-    `SPY: ${fmt2(spy.price)} vs VWAP ${fmt2(spy.vwap)} (${spy.side || "NA"}) • ` +
-    `QQQ: ${fmt2(qqq.price)} vs VWAP ${fmt2(qqq.vwap)} (${qqq.side || "NA"})`;
+  if (indexStatusEl) {
+    indexStatusEl.textContent =
+      `SPY: ${fmt2(spy.price)} vs VWAP ${fmt2(spy.vwap)} (${spy.side || "NA"}) • ` +
+      `QQQ: ${fmt2(qqq.price)} vs VWAP ${fmt2(qqq.vwap)} (${qqq.side || "NA"})`;
+  }
 
   function fillList(el, arr, label) {
+    if (!el) return;
     el.innerHTML = "";
     if (!arr || !arr.length) {
       el.innerHTML = `<div class="small">No ${label} tickers right now.</div>`;
       return;
     }
     for (const it of arr) {
+      // IMPORTANT: use a dedicated class to avoid the default "item" box styling
       const div = document.createElement("div");
-      div.className = "item";
-      const sep = (it.price - it.vwap);
+      div.className = "ticker-item";
 
       div.innerHTML = `
-        <div>
-          <div><b>${escapeHtml(it.symbol)}</b> — ${escapeHtml(it.rs)}</div>
-          <div class="small">Price ${fmt2(it.price)} • VWAP ${fmt2(it.vwap)} • Δ ${fmt2(sep)}</div>
-        </div>
-        <div class="badge ${label === "strong" ? "green" : "red"}">${label.toUpperCase()}</div>
+        <span class="ticker-pill ${label === "strong" ? "bullish" : "bearish"}">
+          ${escapeHtml(it.symbol)}
+        </span>
       `;
+
       el.appendChild(div);
     }
   }
@@ -344,13 +433,13 @@ if (overallBiasPillEl) {
 }
 
 // -----------------------
-// Watchlist actions
+// Watchlist actions (only if elements exist)
 // -----------------------
 addBtn?.addEventListener("click", async () => {
-  const symbol = String(symInput.value || "").trim().toUpperCase();
+  const symbol = String(symInput?.value || "").trim().toUpperCase();
   if (!symbol) return;
 
-  symInput.value = "";
+  if (symInput) symInput.value = "";
   await fetch("/api/watchlist/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -359,7 +448,7 @@ addBtn?.addEventListener("click", async () => {
 });
 
 symInput?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") addBtn.click();
+  if (e.key === "Enter") addBtn?.click();
 });
 
 // -----------------------
@@ -375,11 +464,12 @@ socket.on("disconnect", () => {
 
 socket.on("init", (payload) => {
   allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
+  trimAlerts();
+
   watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : [];
   latestSignals = payload.signals || null;
 
-  // Execution feed = ENTRY only
-  renderFeed(allAlerts.filter((a) => String(a.message || "").includes("A+ ENTRY")));
+  renderFeed(allAlerts);
   renderAPlusPings(allAlerts);
   renderWatchlist(watchSymbols);
   renderSignals(latestSignals);
@@ -397,14 +487,21 @@ socket.on("signals", (payload) => {
 
 socket.on("alert", (alert) => {
   allAlerts.push(alert);
+  trimAlerts();
 
   renderAPlusPings(allAlerts);
 
-  // Sound + feed only on ENTRY
   if (String(alert.message || "").includes("A+ ENTRY")) {
     ding();
-    const r = row(alert);
-    r.classList.add("new-animate");
-    feedBody.prepend(r);
+
+    if (feedBody) {
+      const r = row(alert);
+      r.classList.add("new-animate");
+      feedBody.prepend(r);
+
+      while (feedBody.children.length > FEED_MAX_ROWS) {
+        feedBody.removeChild(feedBody.lastChild);
+      }
+    }
   }
 });
