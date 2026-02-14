@@ -1,10 +1,8 @@
 {
   "symbols": [
-    "MSFT",
     "NVDA",
     "TSLA",
     "AMZN",
-    "PLTR",
     "MU",
     "HOOD",
     "META",
@@ -12,6 +10,8 @@
     "IWM",
     "SPY",
     "QQQ",
-    "AAPL"
+    "AAPL",
+    "MSFT",
+    "PLTR"
   ]
 }
