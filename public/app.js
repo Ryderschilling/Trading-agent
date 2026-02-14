@@ -1,6 +1,15 @@
 /* global io */
 
-const socket = io();
+// -----------------------
+// Safe Socket.IO init (DO NOT crash if io is missing in production)
+// -----------------------
+let socket = null;
+try {
+  if (typeof io === "function") socket = io();
+} catch {
+  socket = null;
+}
+
 const socketDot = document.getElementById("socketDot");
 
 const feedBody = document.getElementById("feedBody");
@@ -324,9 +333,8 @@ function renderAPlusPings(alerts) {
 }
 
 async function refreshWatchlistFromApi() {
-  // Fallback for environments where Socket.IO isn't delivering updates
   try {
-    const res = await fetch("/api/watchlist", { headers: { "Accept": "application/json" } });
+    const res = await fetch("/api/watchlist", { headers: { "Accept": "application/json" }, cache: "no-store" });
     if (!res.ok) throw new Error(`watchlist fetch failed: ${res.status}`);
     const data = await res.json();
     watchSymbols = Array.isArray(data.symbols) ? data.symbols : watchSymbols;
@@ -338,7 +346,7 @@ async function refreshWatchlistFromApi() {
 
 async function refreshSignalsFromApi() {
   try {
-    const res = await fetch("/api/signals", { headers: { "Accept": "application/json" } });
+    const res = await fetch("/api/signals", { headers: { "Accept": "application/json" }, cache: "no-store" });
     if (!res.ok) throw new Error(`signals fetch failed: ${res.status}`);
     const data = await res.json();
     latestSignals = data?.signals || null;
@@ -361,7 +369,6 @@ function renderWatchlist(symbols) {
     `;
 
     chip.querySelector(".chip-x")?.addEventListener("click", async () => {
-      // Optimistic UI update
       watchSymbols = watchSymbols.filter((x) => x !== s);
       renderWatchlist(watchSymbols);
 
@@ -372,13 +379,10 @@ function renderWatchlist(symbols) {
           body: JSON.stringify({ symbol: s })
         });
         if (!res.ok) throw new Error(`remove failed: ${res.status}`);
-
-        // Force-refresh from API so live deployments without Socket.IO still update
         await refreshWatchlistFromApi();
       } catch (err) {
         console.error("[watchlist] remove error", err);
         alert("Could not remove symbol. Your server/API may not be running in this deployment.");
-        // Roll back optimistic update (re-add)
         if (!watchSymbols.includes(s)) watchSymbols = [...watchSymbols, s];
         renderWatchlist(watchSymbols);
       }
@@ -391,7 +395,6 @@ function renderWatchlist(symbols) {
 function renderSignals(s) {
   if (!s) return;
 
-  // If the stream is stale/closed, blank out signals completely
   if (!dataIsLive) {
     if (overallBiasPillEl) {
       overallBiasPillEl.textContent = "NEUTRAL";
@@ -413,7 +416,6 @@ function renderSignals(s) {
     else overallBiasPillEl.classList.add("neutral");
   }
 
-  // These elements may not exist if removed from index.html; safe to keep.
   if (marketBiasEl) {
     marketBiasEl.textContent = `Market Bias: ${s.marketBias} • Updated ${fmtTime(s.ts)}`;
   }
@@ -434,16 +436,13 @@ function renderSignals(s) {
       return;
     }
     for (const it of arr) {
-      // IMPORTANT: use a dedicated class to avoid the default "item" box styling
       const div = document.createElement("div");
       div.className = "ticker-item";
-
       div.innerHTML = `
         <span class="ticker-pill ${label === "strong" ? "bullish" : "bearish"}">
           ${escapeHtml(it.symbol)}
         </span>
       `;
-
       el.appendChild(div);
     }
   }
@@ -474,19 +473,19 @@ function renderSignals(s) {
 }
 
 // -----------------------
-// Watchlist actions (only if elements exist)
+// Watchlist actions
 // -----------------------
 addBtn?.addEventListener("click", async () => {
   const symbol = String(symInput?.value || "").trim().toUpperCase();
   if (!symbol) return;
 
-  // Optimistic UI update (instant feedback)
+  // This is the key: user sees something even if backend fails
+  if (symInput) symInput.value = "";
+
   if (!watchSymbols.includes(symbol)) {
     watchSymbols = [...watchSymbols, symbol];
     renderWatchlist(watchSymbols);
   }
-
-  if (symInput) symInput.value = "";
 
   try {
     addBtn.disabled = true;
@@ -498,12 +497,9 @@ addBtn?.addEventListener("click", async () => {
     });
 
     if (!res.ok) throw new Error(`add failed: ${res.status}`);
-
-    // Force-refresh from API so live deployments without Socket.IO still update
     await refreshWatchlistFromApi();
   } catch (err) {
     console.error("[watchlist] add error", err);
-    // Roll back optimistic update if server call failed
     watchSymbols = watchSymbols.filter((s) => s !== symbol);
     renderWatchlist(watchSymbols);
     alert("Could not add symbol. Your server/API may not be running in this deployment.");
@@ -517,72 +513,71 @@ symInput?.addEventListener("keydown", (e) => {
 });
 
 // -----------------------
-// Socket wiring
+// Socket wiring (only if socket exists)
 // -----------------------
-socket.on("connect", () => {
-  if (socketDot) socketDot.classList.add("on");
-});
+if (socket) {
+  socket.on("connect", () => {
+    if (socketDot) socketDot.classList.add("on");
+  });
 
-socket.on("disconnect", () => {
-  if (socketDot) socketDot.classList.remove("on");
-});
+  socket.on("disconnect", () => {
+    if (socketDot) socketDot.classList.remove("on");
+  });
 
-// Fallback polling for deployments where Socket.IO/WebSockets are blocked (common on some hosts/proxies).
-// If sockets never connect, we still keep the UI usable via plain HTTP.
-setTimeout(() => {
-  if (socket.connected) return;
+  socket.on("init", (payload) => {
+    allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
+    trimAlerts();
 
-  // Initial snapshots
-  refreshWatchlistFromApi();
-  refreshSignalsFromApi();
+    watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : [];
+    latestSignals = payload.signals || null;
 
-  // Keep it fresh
-  setInterval(() => {
-    refreshWatchlistFromApi();
-    refreshSignalsFromApi();
-  }, 5000);
-}, 2000);
+    renderFeed(allAlerts);
+    renderAPlusPings(allAlerts);
+    renderWatchlist(watchSymbols);
+    renderSignals(latestSignals);
+  });
 
-socket.on("init", (payload) => {
-  allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
-  trimAlerts();
+  socket.on("watchlist", (payload) => {
+    watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : watchSymbols;
+    renderWatchlist(watchSymbols);
+  });
 
-  watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : [];
-  latestSignals = payload.signals || null;
+  socket.on("signals", (payload) => {
+    latestSignals = payload?.signals || null;
+    renderSignals(latestSignals);
+  });
 
-  renderFeed(allAlerts);
-  renderAPlusPings(allAlerts);
-  renderWatchlist(watchSymbols);
-  renderSignals(latestSignals);
-});
+  socket.on("alert", (alert) => {
+    allAlerts.push(alert);
+    trimAlerts();
 
-socket.on("watchlist", (payload) => {
-  watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : watchSymbols;
-  renderWatchlist(watchSymbols);
-});
+    renderAPlusPings(allAlerts);
 
-socket.on("signals", (payload) => {
-  latestSignals = payload?.signals || null;
-  renderSignals(latestSignals);
-});
+    if (String(alert.message || "").includes("A+ ENTRY")) {
+      ding();
 
-socket.on("alert", (alert) => {
-  allAlerts.push(alert);
-  trimAlerts();
+      if (feedBody) {
+        const r = row(alert);
+        r.classList.add("new-animate");
+        feedBody.prepend(r);
 
-  renderAPlusPings(allAlerts);
-
-  if (String(alert.message || "").includes("A+ ENTRY")) {
-    ding();
-
-    if (feedBody) {
-      const r = row(alert);
-      r.classList.add("new-animate");
-      feedBody.prepend(r);
-
-      while (feedBody.children.length > FEED_MAX_ROWS) {
-        feedBody.removeChild(feedBody.lastChild);
+        while (feedBody.children.length > FEED_MAX_ROWS) {
+          feedBody.removeChild(feedBody.lastChild);
+        }
       }
     }
-  }
-});
+  });
+} else {
+  // No socket available (likely static deployment). Still keep UI functional.
+  if (socketDot) socketDot.classList.remove("on");
+}
+
+// -----------------------
+// Always-on fallback polling (keeps prod usable even without sockets)
+// -----------------------
+refreshWatchlistFromApi();
+refreshSignalsFromApi();
+setInterval(() => {
+  refreshWatchlistFromApi();
+  refreshSignalsFromApi();
+}, 5000);
