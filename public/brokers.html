@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brokers • Trading Agent</title>
+    <link rel="stylesheet" href="/styles-v4.css" />
+    <style>
+      /* ============================
+         Brokers page — premium skin
+         (page-scoped, does not affect other pages)
+         ============================ */
+
+      /* Make this page use more horizontal space without changing global layout */
+      .shell {
+        max-width: 1320px; /* wider than default 1120 */
+      }
+
+      /* Subtle section heading above cards */
+      .page-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 14px;
+      }
+      .page-head .title {
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      .page-head .subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+        max-width: 70ch;
+      }
+      .page-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      /* Card system: reuse your vars for perfect match */
+      .panel {
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 18px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
+        overflow: hidden;
+      }
+      .panel-h {
+        padding: 14px 14px 12px 14px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .panel-h .h-title {
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      .panel-h .h-sub {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .panel-b {
+        padding: 14px;
+      }
+
+      /* Grid layout */
+      .brokers-grid {
+        display: grid;
+        grid-template-columns: 390px 1fr;
+        gap: 14px;
+        margin-top: 14px;
+        align-items: start;
+      }
+      @media (max-width: 980px) {
+        .brokers-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* Form styling (clean, premium, consistent) */
+      .form {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .field {
+        display: grid;
+        grid-template-columns: 92px 1fr;
+        gap: 10px;
+        align-items: center;
+      }
+      .field label {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .control,
+      select.control,
+      input.control {
+        width: 100%;
+        height: 34px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        padding: 0 10px;
+        font-size: 13px;
+        outline: none;
+      }
+      .control:focus {
+        border-color: rgba(0, 0, 0, 0.22);
+        box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
+      }
+
+      /* Broker fields container injected by JS */
+      #brokerFields .form-row {
+        display: grid;
+        grid-template-columns: 92px 1fr;
+        gap: 10px;
+        align-items: center;
+        margin-top: 10px;
+      }
+      #brokerFields .form-row label {
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 700;
+      }
+      #brokerFields input,
+      #brokerFields select {
+        width: 100%;
+        height: 34px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: rgba(255, 255, 255, 0.72);
+        padding: 0 10px;
+        font-size: 13px;
+        outline: none;
+      }
+      #brokerFields input:focus,
+      #brokerFields select:focus {
+        border-color: rgba(0, 0, 0, 0.22);
+        box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
+      }
+
+      /* Buttons */
+      .btn {
+        height: 34px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 0, 0, 0.14);
+        background: rgba(255, 255, 255, 0.75);
+        cursor: pointer;
+        font-weight: 800;
+        font-size: 12px;
+        letter-spacing: -0.01em;
+      }
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.9);
+      }
+      .btn.primary {
+        background: #111;
+        color: #fff;
+        border-color: rgba(0, 0, 0, 0.35);
+      }
+      .btn.primary:hover {
+        background: #000;
+      }
+
+      /* Pills / status */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        background: rgba(255, 255, 255, 0.6);
+        font-size: 12px;
+        font-weight: 800;
+        color: #222;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #999;
+      }
+
+      /* Execution toggle row */
+      .exec-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid rgba(0, 0, 0, 0.10);
+        background: rgba(255, 255, 255, 0.52);
+        border-radius: 14px;
+      }
+      .exec-row .left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .exec-row .left span {
+        font-weight: 800;
+      }
+      .exec-row .hint {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      /* KPI row */
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 10px;
+      }
+      @media (max-width: 980px) {
+        .kpi-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .kpi {
+        border: 1px solid rgba(0, 0, 0, 0.10);
+        background: rgba(255, 255, 255, 0.58);
+        border-radius: 16px;
+        padding: 12px;
+      }
+      .kpi .label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .kpi .value {
+        margin-top: 6px;
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      /* Two tables */
+      .tables {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 12px;
+      }
+      @media (max-width: 980px) {
+        .tables {
+          grid-template-columns: 1fr;
+        }
+      }
+      .table {
+        border: 1px solid rgba(0, 0, 0, 0.10);
+        background: rgba(255, 255, 255, 0.52);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .table-h {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      }
+      .table-h .t-title {
+        font-weight: 900;
+      }
+      .table-b {
+        padding: 8px 10px 10px 10px;
+      }
+
+      /* rows rendered by brokers.js */
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        background: rgba(255, 255, 255, 0.55);
+        margin-bottom: 8px;
+      }
+      .row:last-child {
+        margin-bottom: 0;
+      }
+      .row .left {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .row .left b {
+        font-size: 12px;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .left .small {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .right {
+        font-weight: 900;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .empty {
+        color: var(--muted);
+        font-size: 12px;
+        padding: 8px 2px 0 2px;
+      }
+
+      /* Connection details */
+      .kvs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 12px;
+      }
+      @media (max-width: 980px) {
+        .kvs {
+          grid-template-columns: 1fr;
+        }
+      }
+      .kv {
+        border: 1px solid rgba(0, 0, 0, 0.10);
+        background: rgba(255, 255, 255, 0.55);
+        border-radius: 14px;
+        padding: 10px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .kv span:first-child {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .kv span:last-child {
+        font-weight: 900;
+      }
+
+      /* Divider */
+      .hr {
+        height: 1px;
+        background: rgba(0, 0, 0, 0.08);
+        margin: 14px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <!-- TOP BAR: keep identical structure/pattern to the rest of the app -->
+      <div class="topbar">
+        <div class="brand">
+          <div class="dot"></div>
+          <div>
+            <div style="font-weight: 800">Trading Agent</div>
+            <div class="small">Brokers dashboard</div>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/watchlist">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab active" href="/brokers">Brokers</a>
+        </div>
+
+        <div class="actions">
+          <button class="btn" id="refreshBtn">Refresh</button>
+          <span class="pill" id="brokerStatusPill"><span class="dot"></span>Not connected</span>
+        </div>
+      </div>
+
+      <!-- PAGE HEAD -->
+      <div class="page-head">
+        <div>
+          <div class="title">Brokers</div>
+          <div class="subtitle">
+            Configure broker integration, view account status, and keep execution <b>OFF</b> until signals/rules are dialed.
+          </div>
+        </div>
+
+        <div class="page-actions">
+          <!-- keep using refreshBtn / brokerStatusPill above (JS binds to those) -->
+        </div>
+      </div>
+
+      <!-- MAIN GRID -->
+      <div class="brokers-grid">
+        <!-- LEFT COLUMN -->
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <!-- Connection panel -->
+          <div class="panel">
+            <div class="panel-h">
+              <div>
+                <div class="h-title">Connection</div>
+                <div class="h-sub">Select broker + mode, enter credentials, then save.</div>
+              </div>
+            </div>
+
+            <div class="panel-b">
+              <div class="form">
+                <div class="field">
+                  <label for="brokerSelect">Broker</label>
+                  <select class="control" id="brokerSelect"></select>
+                </div>
+
+                <div class="field">
+                  <label for="modeSelect">Mode</label>
+                  <select class="control" id="modeSelect">
+                    <option value="paper">paper</option>
+                    <option value="live">live</option>
+                  </select>
+                </div>
+
+                <!-- JS injects additional fields here; styling handled above -->
+                <div id="brokerFields"></div>
+
+                <div style="display:flex; gap:10px; align-items:center; margin-top: 8px;">
+                  <button class="btn primary" id="saveCfg">Save Broker Config</button>
+                  <span class="pill" id="saveStatus" style="display:none"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Execution panel -->
+          <div class="panel">
+            <div class="panel-h">
+              <div>
+                <div class="h-title">Execution</div>
+                <div class="h-sub">Hard-toggle execution. Leave OFF until you trust the signals + rules.</div>
+              </div>
+            </div>
+
+            <div class="panel-b">
+              <div class="exec-row">
+                <div class="left">
+                  <input type="checkbox" id="tradingEnabled" />
+                  <span>Trading execution</span>
+                </div>
+                <button class="btn" id="saveExec">Save</button>
+              </div>
+
+              <div class="hint" id="execHint">
+                Execution is OFF by default. When ON, future builds can place trades through the connected broker.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="panel">
+          <div class="panel-h">
+            <div>
+              <div class="h-title">Account dashboard</div>
+              <div class="h-sub" id="dashSubtitle">Live snapshot from the connected broker (Alpaca status implemented first).</div>
+            </div>
+          </div>
+
+          <div class="panel-b">
+            <!-- KPIs -->
+            <div class="kpi-grid" aria-label="account kpis">
+              <div class="kpi">
+                <div class="label">Equity</div>
+                <div class="value" id="kpiEquity">—</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Cash</div>
+                <div class="value" id="kpiCash">—</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Buying power</div>
+                <div class="value" id="kpiBuyingPower">—</div>
+              </div>
+            </div>
+
+            <!-- Tables -->
+            <div class="tables">
+              <div class="table">
+                <div class="table-h">
+                  <div class="t-title">Positions</div>
+                </div>
+                <div class="table-b">
+                  <div id="positionsList"></div>
+                  <div class="empty" id="positionsEmpty" style="display:none">No open positions.</div>
+                </div>
+              </div>
+
+              <div class="table">
+                <div class="table-h">
+                  <div class="t-title">Open orders</div>
+                </div>
+                <div class="table-b">
+                  <div id="ordersList"></div>
+                  <div class="empty" id="ordersEmpty" style="display:none">No open orders.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="hr"></div>
+
+            <!-- Connection details -->
+            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px;">
+              <div style="font-weight:900;">Connection details</div>
+            </div>
+
+            <div class="kvs" id="connDetails">
+              <div class="kv"><span>Broker</span><span id="kvBroker">—</span></div>
+              <div class="kv"><span>Mode</span><span id="kvMode">—</span></div>
+              <div class="kv"><span>Status</span><span id="kvStatus">—</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/brokers.js"></script>
+  </body>
+</html>
