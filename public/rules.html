@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Rules • Trading Agent</title>
+    <link rel="stylesheet" href="/styles-v4.css" />
+  </head>
+
+  <body>
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab active" href="/rules">Rules</a>
+          <a class="tab" href="/brokers">Brokers</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="shell">
+      <!-- RULES CARD -->
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Rules</div>
+            <div class="card-hint">Edit rules live (versioned). Requires x-admin-token if set.</div>
+          </div>
+        </div>
+
+        <div style="padding: 16px;">
+          <div class="grid" style="display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
+            <label class="small">
+              Timeframe (minutes)
+              <input id="timeframeMin" class="input" type="number" min="1" step="1" />
+            </label>
+
+            <label class="small">
+              Retest tolerance (pct)
+              <input id="retestTol" class="input" type="number" min="0" step="0.0001" />
+            </label>
+
+            <label class="small">
+              RS window (5m bars)
+              <input id="rsWindow" class="input" type="number" min="1" step="1" />
+            </label>
+
+            <label class="small">
+              Premarket enabled
+              <select id="premarketEnabled" class="input">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+
+            <label class="small">
+              Sector alignment enabled
+              <select id="sectorEnabled" class="input">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </label>
+
+            <label class="small">
+              Long min bias score
+              <input id="longMinBias" class="input" type="number" step="1" />
+            </label>
+
+            <label class="small">
+              Short max bias score
+              <input id="shortMaxBias" class="input" type="number" step="1" />
+            </label>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:16px;">
+            <input id="rulesetName" class="input" placeholder="Ruleset name" style="flex:1;" />
+            <input id="adminToken" class="input" placeholder="Admin token (if set)" style="flex:1;" />
+            <button id="saveBtn" class="btn">Save + Activate</button>
+          </div>
+
+          <div class="small" id="status" style="margin-top:12px;"></div>
+
+          <div style="margin-top:18px;">
+            <div class="small" style="margin-bottom:8px;">History</div>
+            <div id="history" class="list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BROKER CARD (NEW) -->
+      <div class="card" style="margin-top: 14px;">
+        <div class="card-head">
+          <div>
+            <div class="card-title">Broker Integration</div>
+            <div class="card-hint">Choose a broker from the approved list and save the required connection fields.</div>
+          </div>
+        </div>
+
+        <div style="padding: 16px;">
+          <div style="display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
+            <label class="small">
+              Broker
+              <select id="brokerKey" class="input"></select>
+            </label>
+
+            <label class="small">
+              Mode
+              <select id="brokerMode" class="input">
+                <option value="paper">paper</option>
+                <option value="live">live</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="brokerFields" style="margin-top: 12px; display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));"></div>
+
+          <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
+            <button id="saveBrokerBtn" class="btn">Save Broker Config</button>
+            <div class="small" id="brokerStatus"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="/rules.js"></script>
+  </body>
+</html>

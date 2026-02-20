@@ -28,3 +28,7 @@ Untitled
 # Backup directories
 public_backup/
 
+data/*.sqlite
+data/*.sqlite-*
+*.sqlite
+*.sqlite-*

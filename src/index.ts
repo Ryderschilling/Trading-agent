@@ -1,9 +1,18 @@
 import "dotenv/config";
 import http from "http";
-import path from "path";
-import fs from "fs";
 import https from "https";
+import path from "path";
 
+import {
+  openDb,
+  loadActiveRuleset,
+  insertRuleset,
+  setActiveRuleset,
+  loadBrokerConfig,
+  saveBrokerConfig
+} from "./db/db";
+
+import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { Bar5, MarketDirection } from "./market/marketDirection";
@@ -16,6 +25,87 @@ import { createHttpApp } from "./server/http";
 import { attachRealtime } from "./server/realtime";
 
 const PORT = Number(process.env.PORT || 3000);
+
+// -----------------------------
+// Approved broker catalog (UI + validation only for now)
+// -----------------------------
+type BrokerAuthType = "api_key" | "oauth" | "gateway";
+
+type BrokerField = {
+  key: string;
+  label: string;
+  placeholder?: string;
+  secret?: boolean;
+  type?: "text" | "number" | "password";
+};
+
+type BrokerDescriptor = {
+  key: string;
+  name: string;
+  markets: Array<"stocks" | "options" | "crypto">;
+  authType: BrokerAuthType;
+  fields: BrokerField[];
+  notes?: string;
+};
+
+const BROKERS: BrokerDescriptor[] = [
+  {
+    key: "ibkr",
+    name: "Interactive Brokers (IBKR)",
+    markets: ["stocks", "options"],
+    authType: "gateway",
+    fields: [
+      { key: "host", label: "Host", placeholder: "127.0.0.1" },
+      { key: "port", label: "Port", placeholder: "7497 (paper) / 7496 (live)", type: "number" },
+      { key: "clientId", label: "Client ID", placeholder: "1", type: "number" },
+      { key: "accountId", label: "Account ID", placeholder: "DU1234567" }
+    ],
+    notes: "Requires IB Gateway or TWS running with API enabled."
+  },
+  {
+    key: "alpaca",
+    name: "Alpaca",
+    markets: ["stocks", "options", "crypto"],
+    authType: "api_key",
+    fields: [
+      { key: "key", label: "API Key", placeholder: "APCA-...", secret: true, type: "password" },
+      { key: "secret", label: "API Secret", placeholder: "********", secret: true, type: "password" }
+    ]
+  },
+  {
+    key: "tradier",
+    name: "Tradier",
+    markets: ["stocks", "options"],
+    authType: "oauth",
+    fields: [
+      { key: "token", label: "Access Token", placeholder: "Bearer token", secret: true, type: "password" },
+      { key: "accountId", label: "Account ID", placeholder: "12345678" },
+      { key: "sandbox", label: "Sandbox (true/false)", placeholder: "true" }
+    ]
+  },
+  {
+    key: "kraken",
+    name: "Kraken",
+    markets: ["crypto"],
+    authType: "api_key",
+    fields: [
+      { key: "key", label: "API Key", placeholder: "KRAKEN-...", secret: true, type: "password" },
+      { key: "secret", label: "API Secret", placeholder: "********", secret: true, type: "password" }
+    ]
+  },
+  {
+    key: "coinbase",
+    name: "Coinbase Advanced Trade",
+    markets: ["crypto"],
+    authType: "api_key",
+    fields: [
+      { key: "apiKey", label: "API Key", placeholder: "organizations/.../apiKeys/...", secret: true, type: "password" },
+      { key: "apiSecret", label: "API Secret", placeholder: "-----BEGIN PRIVATE KEY-----", secret: true, type: "password" },
+      { key: "apiPassphrase", label: "Passphrase", placeholder: "Passphrase", secret: true, type: "password" }
+    ]
+  }
+];
+
 const FEED = (process.env.ALPACA_FEED || "iex") as "iex" | "sip" | "delayed_sip";
 
 const TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
@@ -36,11 +126,189 @@ console.log("[ENV CHECK]", {
 });
 
 // -----------------------------
+// DB + Rules
+// -----------------------------
+const db = openDb();
+let activeRules = loadActiveRuleset(db);
+
+function getRules() {
+  return activeRules;
+}
+
+function listRulesets() {
+  return db
+    .prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`)
+    .all();
+}
+
+function saveRules(name: string, config: any, changedBy?: string) {
+  if (!config || typeof config !== "object") throw new Error("config required");
+  if (!Number.isFinite(config.timeframeMin) || config.timeframeMin < 1) throw new Error("bad timeframeMin");
+  if (!Number.isFinite(config.retestTolerancePct) || config.retestTolerancePct < 0) throw new Error("bad retestTolerancePct");
+  if (!Number.isFinite(config.rsWindowBars5m) || config.rsWindowBars5m < 1) throw new Error("bad rsWindowBars5m");
+  if (!Number.isFinite(config.longMinBiasScore)) throw new Error("bad longMinBiasScore");
+  if (!Number.isFinite(config.shortMaxBiasScore)) throw new Error("bad shortMaxBiasScore");
+
+  const r = insertRuleset(db, name, config, changedBy) as any;
+  const version = Number(r?.version ?? r);
+
+  activeRules = loadActiveRuleset(db);
+
+  const maybeUpdate = (engine as any).updateConfig;
+  if (typeof maybeUpdate === "function") {
+    maybeUpdate.call(engine, {
+      timeframeMin: activeRules.config.timeframeMin,
+      retestTolerancePct: activeRules.config.retestTolerancePct,
+      rsWindowBars5m: activeRules.config.rsWindowBars5m
+    });
+  }
+
+  return { version };
+}
+
+function activateRuleset(version: number) {
+  setActiveRuleset(db, version);
+  activeRules = loadActiveRuleset(db);
+
+  const maybeUpdate = (engine as any).updateConfig;
+  if (typeof maybeUpdate === "function") {
+    maybeUpdate.call(engine, {
+      timeframeMin: activeRules.config.timeframeMin,
+      retestTolerancePct: activeRules.config.retestTolerancePct,
+      rsWindowBars5m: activeRules.config.rsWindowBars5m
+    });
+  }
+
+  return { version };
+}
+
+// -----------------------------
+// Load persisted watchlist / alerts / outcomes
+// -----------------------------
+let watch: string[] = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`).all().map((r: any) => String(r.symbol));
+
+let alerts: Alert[] = db
+  .prepare(
+    `SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs
+     FROM alerts
+     ORDER BY ts DESC
+     LIMIT 2000`
+  )
+  .all()
+  .reverse()
+  .map((r: any) => ({
+    id: String(r.id),
+    ts: Number(r.ts),
+    symbol: String(r.symbol),
+    market: (r.market as MarketDirection) ?? "NEUTRAL",
+    rs: (r.rs as any) ?? "NONE",
+    dir: (r.dir as any) ?? "—",
+    level: (r.level as any) ?? "—",
+    levelPrice: r.level_price == null ? null : Number(r.level_price),
+    structureLevel: r.structure_level == null ? null : Number(r.structure_level),
+    breakBarTime: null,
+    close: Number(r.close ?? 0),
+    message: (r.message as any) ?? "—"
+  }));
+
+let outcomes: TradeOutcome[] = db
+  .prepare(
+    `SELECT
+      alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
+      mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
+      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
+     FROM outcomes
+     ORDER BY entry_ts DESC
+     LIMIT 5000`
+  )
+  .all()
+  .reverse()
+  .map((r: any) => ({
+    alertId: String(r.alert_id),
+    symbol: String(r.symbol),
+    dir: String(r.dir) as TradeDirection,
+    structureLevel: Number(r.structure_level),
+    entryTs: Number(r.entry_ts),
+    entryRefPrice: Number(r.entry_ref_price),
+    status: String(r.status) as TradeOutcome["status"],
+    endTs: Number(r.end_ts),
+
+    mfeAbs: Number(r.mfe_abs ?? 0),
+    maeAbs: Number(r.mae_abs ?? 0),
+    mfePct: Number(r.mfe_pct ?? 0),
+    maePct: Number(r.mae_pct ?? 0),
+    timeToMfeSec: Number(r.time_to_mfe_sec ?? 0),
+
+    stoppedOut: Boolean(r.stopped_out),
+    stopTs: Number(r.stop_ts ?? 0),
+    stopClose: Number(r.stop_close ?? 0),
+    stopReturnPct: Number(r.stop_return_pct ?? 0),
+    barsToStop: Number(r.bars_to_stop ?? 0),
+
+    returnsPct: r.returns_json ? JSON.parse(String(r.returns_json)) : {}
+  }));
+
+function dbInsertAlert(a: Alert) {
+  db.prepare(
+    `INSERT OR REPLACE INTO alerts
+      (id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json)
+     VALUES
+      (?,  ?,  ?,     ?,       ?,   ?,     ?,          ?,              ?,     ?,      ?,  ?)`
+  ).run(
+    a.id,
+    a.ts,
+    a.symbol,
+    a.message ?? null,
+    a.dir ?? null,
+    a.level ?? null,
+    a.levelPrice ?? null,
+    a.structureLevel ?? null,
+    Number(a.close ?? 0),
+    a.market ?? null,
+    a.rs ?? null,
+    null
+  );
+}
+
+function dbInsertOutcome(o: TradeOutcome) {
+  db.prepare(
+    `INSERT OR REPLACE INTO outcomes(
+      alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
+      mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
+      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    o.alertId,
+    o.symbol,
+    o.dir,
+    o.structureLevel,
+    o.entryTs,
+    o.entryRefPrice,
+    String(o.status),
+    o.endTs,
+
+    Number((o as any).mfeAbs ?? 0),
+    Number((o as any).maeAbs ?? 0),
+    Number((o as any).mfePct ?? 0),
+    Number((o as any).maePct ?? 0),
+    Number((o as any).timeToMfeSec ?? 0),
+
+    o.stoppedOut ? 1 : 0,
+    Number((o as any).stopTs ?? 0),
+    Number((o as any).stopClose ?? 0),
+    Number((o as any).stopReturnPct ?? 0),
+    Number((o as any).barsToStop ?? 0),
+
+    JSON.stringify(o.returnsPct || {})
+  );
+}
+
+// -----------------------------
 // Stream stats (for /api/health)
 // -----------------------------
 type StreamStats = {
   barsTotal: number;
-  barTimestamps: number[]; // rolling window (last 60s)
+  barTimestamps: number[];
   lastBarTs: number | null;
   lastSpyTs: number | null;
   lastQqqTs: number | null;
@@ -57,7 +325,6 @@ const streamStats: StreamStats = {
 function snapshotStreamStats() {
   const now = Date.now();
   streamStats.barTimestamps = streamStats.barTimestamps.filter((t) => now - t <= 60_000);
-
   const iso = (t: number | null) => (t ? new Date(t).toISOString() : null);
 
   return {
@@ -73,34 +340,9 @@ function snapshotStreamStats() {
 }
 
 // -----------------------------
-// Files
+// Paths (FIXED: stable even if process.cwd() changes)
 // -----------------------------
-const dataDir = path.resolve(process.cwd(), "data");
-const publicDir = path.resolve(process.cwd(), "public");
-const alertsPath = path.join(dataDir, "alerts.json");
-const outcomesPath = path.join(dataDir, "outcomes.json");
-const watchlistPath = path.join(dataDir, "watchlist.json");
-
-function readJson<T>(p: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(p, "utf8"));
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJson(p: string, v: any) {
-  fs.writeFileSync(p, JSON.stringify(v, null, 2), "utf8");
-}
-
-if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-if (!fs.existsSync(alertsPath)) writeJson(alertsPath, []);
-if (!fs.existsSync(outcomesPath)) writeJson(outcomesPath, []);
-if (!fs.existsSync(watchlistPath)) writeJson(watchlistPath, { symbols: [] });
-
-let alerts: Alert[] = readJson<Alert[]>(alertsPath, []);
-let outcomes: TradeOutcome[] = readJson<TradeOutcome[]>(outcomesPath, []);
-let watch = readJson<{ symbols: string[] }>(watchlistPath, { symbols: [] }).symbols;
+const publicDir = path.join(__dirname, "..", "public");
 
 // -----------------------------
 // Watchlist hardening
@@ -119,18 +361,6 @@ function streamSymbols(): string[] {
   return Array.from(new Set([...normalizedWatchlist(), "SPY", "QQQ"]));
 }
 
-function persistAlerts() {
-  if (alerts.length > 2000) alerts = alerts.slice(-2000);
-  writeJson(alertsPath, alerts);
-}
-function persistOutcomes() {
-  if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
-  writeJson(outcomesPath, outcomes);
-}
-function persistWatchlist() {
-  writeJson(watchlistPath, { symbols: watch });
-}
-
 // -----------------------------
 // VWAP + last price
 // -----------------------------
@@ -140,12 +370,10 @@ const lastPriceMap = new Map<string, number>();
 
 function updateVwap(symbol: string, ts: number, h: number, l: number, c: number, vol: number) {
   lastPriceMap.set(symbol, c);
-
   if (!Number.isFinite(vol) || vol <= 0) return;
 
   const dayKey = nyDayKey(ts);
   const typical = (h + l + c) / 3;
-
   const prev = vwapMap.get(symbol);
 
   if (!prev || prev.dayKey !== dayKey) {
@@ -159,6 +387,7 @@ function updateVwap(symbol: string, ts: number, h: number, l: number, c: number,
   prev.v += vol;
   prev.vwap = prev.pv / prev.v;
 }
+
 function getVwap(symbol: string): number | null {
   return vwapMap.get(symbol)?.vwap ?? null;
 }
@@ -217,7 +446,6 @@ function computeMarketBiasFromVwap(symbols: string[]): "BULLISH" | "BEARISH" | "
 
   const total = above + below;
 
-  // fallback to SPY/QQQ VWAP side if breadth is thin
   if (total < 3) {
     const spy = computeIndexSide("SPY");
     const qqq = computeIndexSide("QQQ");
@@ -259,9 +487,9 @@ let lastSignalsBroadcast = 0;
 // Engine + tracker
 // -----------------------------
 const engine = new SignalEngine({
-  timeframeMin: TIMEFRAME_MIN,
-  retestTolerancePct: RETEST_TOL,
-  rsWindowBars5m: RS_WINDOW_BARS
+  timeframeMin: activeRules.config.timeframeMin ?? TIMEFRAME_MIN,
+  retestTolerancePct: activeRules.config.retestTolerancePct ?? RETEST_TOL,
+  rsWindowBars5m: activeRules.config.rsWindowBars5m ?? RS_WINDOW_BARS
 });
 
 const outcomeTracker = new OutcomeTracker({
@@ -282,10 +510,12 @@ function getLevels(symbol: string) {
   if (!levelsMap.has(symbol)) levelsMap.set(symbol, initLevels(Date.now()));
   return levelsMap.get(symbol)!;
 }
+
 function getBars5(symbol: string) {
   if (!bars5Map.has(symbol)) bars5Map.set(symbol, []);
   return bars5Map.get(symbol)!;
 }
+
 function pushBar5(symbol: string, bar: Bar5) {
   const arr = getBars5(symbol);
   arr.push(bar);
@@ -298,6 +528,7 @@ function floorBucket(ms: number, minutes: number): number {
   const size = minutes * 60_000;
   return Math.floor(ms / size) * size;
 }
+
 function isoToMs(iso: string): number {
   return new Date(iso).getTime();
 }
@@ -318,7 +549,7 @@ function getDbRows() {
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .map((a) => {
       const o = outById.get(a.id) ?? null;
-      const r = (k: string) => (o?.returnsPct ? o.returnsPct[k] : null);
+      const r = (k: string) => (o?.returnsPct ? (o.returnsPct as any)[k] : null);
 
       return {
         alertId: a.id,
@@ -352,31 +583,85 @@ function getDbRows() {
 // -----------------------------
 let realtime: ReturnType<typeof attachRealtime>;
 
+// Broker config wiring (single-tenant for now)
+function getBrokers() {
+  return BROKERS;
+}
+
+function getBrokerConfig() {
+  return loadBrokerConfig(db);
+}
+
+/**
+ * FIX: persist tradingEnabled and allow clearing broker config.
+ * Also normalizes mode.
+ */
+function setBrokerConfig(next: any, _changedBy?: string) {
+  const brokerKey = String(next?.brokerKey || "").trim();
+  const mode = String(next?.mode || "paper") === "live" ? "live" : "paper";
+  const config = next?.config && typeof next.config === "object" ? next.config : {};
+  const tradingEnabled = Boolean(next?.tradingEnabled);
+
+  // allow clearing config
+  if (!brokerKey) {
+    return saveBrokerConfig(db, { brokerKey: "", mode, config: {}, tradingEnabled: false });
+  }
+
+  const allowed = new Set(BROKERS.map((b) => b.key));
+  if (!allowed.has(brokerKey)) throw new Error("unsupported broker");
+
+  return saveBrokerConfig(db, { brokerKey, mode, config, tradingEnabled });
+}
+
 const app = createHttpApp({
   publicDir,
+
   getAlerts: () => alerts,
   getWatchlist: () => normalizedWatchlist(),
   getSignals: () => latestSignals,
   getStreamStats: () => snapshotStreamStats(),
   replay: (symbols, minutes, emitAlerts) => replayBars(symbols, minutes, emitAlerts),
 
+  // broker integration endpoints (http.ts must call these)
+  getBrokers,
+  getBrokerConfig,
+  saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
+
+  // used by /api/broker/status (Alpaca calls)
+  httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
+
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
-
   getDbRows,
 
-  addSymbol: (s: string) => {
-    const sym = s.toUpperCase();
-    if (!watch.includes(sym)) watch.push(sym);
-    persistWatchlist();
+  getRules,
+  listRulesets,
+  saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
+  activateRuleset: (v: number) => activateRuleset(v),
+
+  addSymbol: async (s: string) => {
+    const sym = String(s || "").trim().toUpperCase();
+    if (!sym) return;
+    if (!/^[A-Z0-9.\-]{1,10}$/.test(sym)) return;
+    if (sym === "SPY" || sym === "QQQ") return;
+
+    if (!watch.includes(sym)) {
+      watch.push(sym);
+      const etf = await resolveSectorEtf(sym);
+      db.prepare(`INSERT OR REPLACE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`).run(sym, etf, Date.now());
+    }
+
     refreshSubscriptions();
     realtime?.broadcastWatchlist(normalizedWatchlist());
   },
 
-  removeSymbol: (s: string) => {
-    const sym = s.toUpperCase();
+  removeSymbol: async (s: string) => {
+    const sym = String(s || "").trim().toUpperCase();
+    if (!sym) return;
+
     watch = watch.filter((x) => x !== sym);
-    persistWatchlist();
+    db.prepare(`DELETE FROM watchlist WHERE symbol=?`).run(sym);
+
     refreshSubscriptions();
     realtime?.broadcastWatchlist(normalizedWatchlist());
   }
@@ -398,7 +683,6 @@ server.listen(PORT, () => {
     return;
   }
 
-  // STARTUP BACKFILL (warm engine immediately)
   runStartupBackfill().catch((e) => console.log("[backfill] error", e));
 });
 
@@ -429,6 +713,7 @@ if (HAS_KEYS) {
 }
 
 let currentSubs: string[] = [];
+
 function refreshSubscriptions() {
   if (!stream) return;
 
@@ -441,6 +726,7 @@ function refreshSubscriptions() {
 
   currentSubs = next;
 }
+
 setTimeout(() => refreshSubscriptions(), 5000);
 
 // -----------------------------
@@ -479,7 +765,6 @@ function recomputeSignalsAndBroadcast() {
     const spySide = computeIndexSide("SPY");
     const qqqSide = computeIndexSide("QQQ");
 
-    // SPY RS benchmarked vs QQQ
     const rsSpy = computeRS({
       marketDir: marketDirForRS,
       symBars5: spyBars5,
@@ -487,7 +772,6 @@ function recomputeSignalsAndBroadcast() {
       windowBars: RS_WINDOW_BARS
     });
 
-    // QQQ RS benchmarked vs SPY
     const rsQqq = computeRS({
       marketDir: marketDirForRS,
       symBars5: qqqBars5,
@@ -496,39 +780,19 @@ function recomputeSignalsAndBroadcast() {
     });
 
     if (marketBias === "BULLISH" && indexAlignedBull) {
-      if (
-        spySide.price != null &&
-        spySide.vwap != null &&
-        spySide.price >= spySide.vwap &&
-        rsSpy === "STRONG"
-      ) {
+      if (spySide.price != null && spySide.vwap != null && spySide.price >= spySide.vwap && rsSpy === "STRONG") {
         strong.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
       }
-      if (
-        qqqSide.price != null &&
-        qqqSide.vwap != null &&
-        qqqSide.price >= qqqSide.vwap &&
-        rsQqq === "STRONG"
-      ) {
+      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price >= qqqSide.vwap && rsQqq === "STRONG") {
         strong.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
       }
     }
 
     if (marketBias === "BEARISH" && indexAlignedBear) {
-      if (
-        spySide.price != null &&
-        spySide.vwap != null &&
-        spySide.price <= spySide.vwap &&
-        rsSpy === "WEAK"
-      ) {
+      if (spySide.price != null && spySide.vwap != null && spySide.price <= spySide.vwap && rsSpy === "WEAK") {
         weak.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
       }
-      if (
-        qqqSide.price != null &&
-        qqqSide.vwap != null &&
-        qqqSide.price <= qqqSide.vwap &&
-        rsQqq === "WEAK"
-      ) {
+      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price <= qqqSide.vwap && rsQqq === "WEAK") {
         weak.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
       }
     }
@@ -569,7 +833,6 @@ function recomputeSignalsAndBroadcast() {
 
   const filtered = eff === "NEUTRAL" ? rawForming : rawForming.filter((f) => f.market === eff);
 
-  // Priority: SPY then QQQ at the top when present, then highest score
   const priorityRank = (sym: string) => (sym === "SPY" ? 0 : sym === "QQQ" ? 1 : 2);
 
   const forming = filtered
@@ -613,69 +876,41 @@ function onAlpacaBar(b: AlpacaBarMsg) {
   const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
   const ts = isoToMs(b.t);
 
-  // stream stats
   streamStats.barsTotal++;
   streamStats.lastBarTs = ts;
   streamStats.barTimestamps.push(Date.now());
   if (symbol === "SPY") streamStats.lastSpyTs = ts;
   if (symbol === "QQQ") streamStats.lastQqqTs = ts;
 
-  // ingest (live = alerts allowed)
   ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, false);
 }
 
 // -----------------------------
-// Ingest minute bar (used by LIVE + BACKFILL)
+// Ingest minute bar (LIVE + BACKFILL)
 // -----------------------------
-function ingestMinuteBar(
-  symbol: string,
-  ts: number,
-  o: number,
-  h: number,
-  l: number,
-  c: number,
-  v: number,
-  warmup: boolean
-) {
+function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: number, c: number, v: number, warmup: boolean) {
   updateVwap(symbol, ts, h, l, c, v);
   onBarUpdateLevels(getLevels(symbol), ts, h, l);
 
-  // During warmup we only build state. No outcomes, no alerts.
   if (!warmup) {
-    const doneFromMinute = outcomeTracker.onMinuteBar({
-      symbol,
-      ts,
-      high: h,
-      low: l,
-      close: c
-    });
+    const doneFromMinute = outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
 
     for (const id of doneFromMinute) {
       const out = outcomeTracker.finalize(id);
       if (out) {
         outcomes.push(out);
-        persistOutcomes();
+        if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
+        dbInsertOutcome(out);
       }
     }
 
     const effDir = getEffectiveMarketDir();
-    const entry =
-      effDir === "NEUTRAL"
-        ? null
-        : engine.onMinuteBar({
-            symbol,
-            ts,
-            high: h,
-            low: l,
-            close: c,
-            marketDir: effDir
-          });
+    const entry = effDir === "NEUTRAL" ? null : engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
     if (entry) {
       const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
       if (structureLevel != null && Number.isFinite(structureLevel)) {
         const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-
         outcomeTracker.startSession({
           alertId: entry.id,
           symbol: entry.symbol,
@@ -687,12 +922,12 @@ function ingestMinuteBar(
       }
 
       alerts.push(entry);
-      persistAlerts();
+      if (alerts.length > 2000) alerts = alerts.slice(-2000);
+      dbInsertAlert(entry);
       realtime.broadcastAlert(entry);
     }
   }
 
-  // 5m aggregation (always, to warm bars5 + engine)
   const bucket = floorBucket(ts, TIMEFRAME_MIN);
   const cur = aggMap.get(symbol);
 
@@ -703,11 +938,13 @@ function ingestMinuteBar(
       if (!warmup) {
         const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
         const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
+
         for (const id of doneFromBar5) {
           const out = outcomeTracker.finalize(id);
           if (out) {
             outcomes.push(out);
-            persistOutcomes();
+            if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
+            dbInsertOutcome(out);
           }
         }
 
@@ -751,7 +988,8 @@ function evaluateIfNeeded(symbol: string) {
 
   if (alert) {
     alerts.push(alert);
-    persistAlerts();
+    if (alerts.length > 2000) alerts = alerts.slice(-2000);
+    dbInsertAlert(alert);
     realtime.broadcastAlert(alert);
   }
 }
@@ -778,9 +1016,9 @@ function httpGetJson(url: string, headers: Record<string, string>): Promise<any>
 }
 
 async function backfillSymbol1m(symbol: string, limit = 300) {
-  const url = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(
-    symbol
-  )}/bars?timeframe=1Min&limit=${limit}&feed=${encodeURIComponent(FEED)}`;
+  const url = `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(symbol)}/bars?timeframe=1Min&limit=${limit}&feed=${encodeURIComponent(
+    FEED
+  )}`;
 
   const json = await httpGetJson(url, {
     "APCA-API-KEY-ID": KEY,
@@ -839,6 +1077,5 @@ async function runStartupBackfill() {
   }
 
   recomputeSignalsAndBroadcast();
-
   console.log("[backfill] done");
 }

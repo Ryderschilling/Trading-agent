@@ -117,11 +117,13 @@ body{
 .btn-ghost{background:#fff; color:var(--muted);}
 
 /* Cards */
+/* Cards */
 .card{
   background: var(--card);
   border:1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  overflow: hidden; /* <-- ADD THIS */
 }
 
 .card-head{
@@ -366,7 +368,7 @@ body{
 
 /* Table */
 .table-wrap{overflow:auto;}
-table{width:100%; border-collapse:collapse; font-size:13px;}
+table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px;}
 thead th{
   text-align:left;
   padding:12px 14px;
