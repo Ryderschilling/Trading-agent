@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Backtest • Trading Agent</title>
+
+    <link rel="stylesheet" href="/styles-v4.css" />
+  </head>
+
+  <body>
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab active" href="/backtest">Backtest</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
+
+        <!-- INPUTS -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Backtest</div>
+              <div class="card-hint">Run deterministic intraday backtests on stored 1m candles (rolling 365d).</div>
+            </div>
+
+            <div class="card-actions">
+              <span id="btStatusPill" class="pill">Idle</span>
+            </div>
+          </div>
+
+          <div style="padding:16px; display:grid; gap:12px;">
+            <div style="display:grid; gap:12px; grid-template-columns: 1.4fr 0.7fr 0.6fr 0.6fr;">
+              <label class="small" style="display:block;">
+                Tickers (watchlist)
+                <select
+                id="tickersSelect"
+                multiple
+                size="10"
+                style="
+                  width:100%;
+                  margin-top:6px;
+                  border:1px solid var(--border);
+                  border-radius:10px; /* keep page consistency but not pill */
+                  background:rgba(255,255,255,0.02);
+                  color:var(--text);
+                  padding:10px;
+                  line-height:1.4;
+                  appearance:auto;
+                  -webkit-appearance:auto;
+                  outline:none;
+                  box-shadow:none;
+                "
+              ></select>                <div class="card-hint" style="margin-top:6px;">Multi-select: Cmd/Ctrl + click</div>
+              </label>
+
+              <label class="small" style="display:block;">
+                Timeframe
+                <select id="timeframeSelect" class="input" style="width:100%; margin-top:6px;">
+                  <option value="1m">1m</option>
+                  <option value="5m">5m</option>
+                </select>
+                <div class="card-hint" style="margin-top:6px;">5m is resampled from 1m.</div>
+              </label>
+
+              <label class="small" style="display:block;">
+                Start date (NY)
+                <input id="startDate" class="input" type="date" style="width:100%; margin-top:6px;" />
+              </label>
+
+              <label class="small" style="display:block;">
+                End date (NY)
+                <input id="endDate" class="input" type="date" style="width:100%; margin-top:6px;" />
+              </label>
+            </div>
+
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button id="runBtn" class="btn">Run Backtest</button>
+              <button id="refreshBtn" class="btn btn-ghost">Refresh Status</button>
+              <div id="runMeta" class="card-hint" style="margin:0;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- METRICS -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Summary Metrics</div>
+              <div class="card-hint">All returns are in R-multiples (2R target, fixed stop).</div>
+            </div>
+          </div>
+
+          <div id="metricsGrid" style="padding:16px; display:grid; gap:12px; grid-template-columns: repeat(4, minmax(0, 1fr));"></div>
+        </div>
+
+<!-- EQUITY -->
+<div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Equity Curve</div>
+        <div class="card-hint">Cumulative R across trades.</div>
+      </div>
+  
+      <div class="card-actions" style="display:flex; gap:8px; align-items:center;">
+        <span class="small" style="color:var(--muted);">Starting account ($)</span>
+        <input
+          id="startEquity"
+          class="input small"
+          type="number"
+          min="0"
+          step="100"
+          placeholder="10000"
+          style="width:120px;"
+        />
+      </div>
+    </div>
+  
+    <div style="padding:16px;">
+      <canvas id="equityCanvas" width="1000" height="220" style="width:100%; height:220px; display:block;"></canvas>
+    </div>
+  </div>
+
+        <!-- TRADES -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Trade Log</div>
+              <div class="card-hint">Signal on close → fill next open. No lookahead.</div>
+            </div>
+
+            <div class="card-actions" style="display:flex; gap:8px; align-items:center;">
+              <span class="small" style="color:var(--muted);">Sort</span>
+              <select id="sortSelect" class="input small">
+                <option value="entryTs_desc">Entry time ↓</option>
+                <option value="entryTs_asc">Entry time ↑</option>
+                <option value="r_desc">R ↓</option>
+                <option value="r_asc">R ↑</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Dir</th>
+                  <th>Level</th>
+                  <th>Entry</th>
+                  <th>Stop</th>
+                  <th>Target</th>
+                  <th>Exit</th>
+                  <th>Reason</th>
+                  <th>R</th>
+                  <th>Hold</th>
+                </tr>
+              </thead>
+              <tbody id="tradesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/backtest.js"></script>
+  </body>
+</html>

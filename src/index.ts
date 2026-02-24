@@ -2,6 +2,7 @@ import "dotenv/config";
 import http from "http";
 import https from "https";
 import path from "path";
+import { BacktestQueue } from "./sim/backtestQueue";
 
 import {
   openDb,
@@ -130,6 +131,26 @@ console.log("[ENV CHECK]", {
 // -----------------------------
 const db = openDb();
 let activeRules = loadActiveRuleset(db);
+const backtestQueue = new BacktestQueue(db);
+
+// ------------------------------------------------------------------
+// Ruleset name cache
+// ------------------------------------------------------------------
+let rulesetNameMap: Record<number, string> = {};
+
+function loadRulesetNames() {
+  rulesetNameMap = {};
+  try {
+    const rows = db.prepare(`SELECT version, name FROM rulesets`).all() as any[];
+    for (const r of rows) {
+      const v = Number(r?.version ?? 0);
+      if (v > 0) rulesetNameMap[v] = String(r?.name ?? "");
+    }
+  } catch {
+    rulesetNameMap = {};
+  }
+}
+loadRulesetNames();
 
 function getRules() {
   return activeRules;
@@ -153,6 +174,7 @@ function saveRules(name: string, config: any, changedBy?: string) {
   const version = Number(r?.version ?? r);
 
   activeRules = loadActiveRuleset(db);
+  loadRulesetNames();
 
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
@@ -169,6 +191,7 @@ function saveRules(name: string, config: any, changedBy?: string) {
 function activateRuleset(version: number) {
   setActiveRuleset(db, version);
   activeRules = loadActiveRuleset(db);
+  loadRulesetNames();
 
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
@@ -189,27 +212,36 @@ let watch: string[] = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`)
 
 let alerts: Alert[] = db
   .prepare(
-    `SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs
+    `SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json
      FROM alerts
      ORDER BY ts DESC
      LIMIT 2000`
   )
   .all()
   .reverse()
-  .map((r: any) => ({
-    id: String(r.id),
-    ts: Number(r.ts),
-    symbol: String(r.symbol),
-    market: (r.market as MarketDirection) ?? "NEUTRAL",
-    rs: (r.rs as any) ?? "NONE",
-    dir: (r.dir as any) ?? "—",
-    level: (r.level as any) ?? "—",
-    levelPrice: r.level_price == null ? null : Number(r.level_price),
-    structureLevel: r.structure_level == null ? null : Number(r.structure_level),
-    breakBarTime: null,
-    close: Number(r.close ?? 0),
-    message: (r.message as any) ?? "—"
-  }));
+  .map((r: any) => {
+    let meta: any = undefined;
+    try {
+      if (r.meta_json) meta = JSON.parse(String(r.meta_json));
+    } catch {
+      meta = undefined;
+    }
+    return {
+      id: String(r.id),
+      ts: Number(r.ts),
+      symbol: String(r.symbol),
+      market: (r.market as MarketDirection) ?? "NEUTRAL",
+      rs: (r.rs as any) ?? "NONE",
+      dir: (r.dir as any) ?? "—",
+      level: (r.level as any) ?? "—",
+      levelPrice: r.level_price == null ? null : Number(r.level_price),
+      structureLevel: r.structure_level == null ? null : Number(r.structure_level),
+      breakBarTime: null,
+      close: Number(r.close ?? 0),
+      message: (r.message as any) ?? "—",
+      meta
+    } as any;
+  });
 
 let outcomes: TradeOutcome[] = db
   .prepare(
@@ -253,7 +285,7 @@ function dbInsertAlert(a: Alert) {
     `INSERT OR REPLACE INTO alerts
       (id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json)
      VALUES
-      (?,  ?,  ?,     ?,       ?,   ?,     ?,          ?,              ?,     ?,      ?,  ?)`
+      (?,  ?,  ?,     ?,       ?,   ?,     ?,          ?,               ?,     ?,      ?,  ?)`
   ).run(
     a.id,
     a.ts,
@@ -266,7 +298,7 @@ function dbInsertAlert(a: Alert) {
     Number(a.close ?? 0),
     a.market ?? null,
     a.rs ?? null,
-    null
+    (a as any)?.meta != null ? JSON.stringify((a as any).meta) : null
   );
 }
 
@@ -340,18 +372,70 @@ function snapshotStreamStats() {
 }
 
 // -----------------------------
-// Paths (FIXED: stable even if process.cwd() changes)
+// Paths (stable even if process.cwd() changes)
 // -----------------------------
 const publicDir = path.join(__dirname, "..", "public");
 
 // -----------------------------
+// Canonical 1m candle persistence + 365d retention (on ingest)
+// -----------------------------
+const upsertCandle1m = db.prepare(
+  `INSERT INTO candles_1m (ticker, ts, open, high, low, close, volume, session)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(ticker, ts) DO UPDATE SET
+     open=excluded.open,
+     high=excluded.high,
+     low=excluded.low,
+     close=excluded.close,
+     volume=excluded.volume,
+     session=excluded.session`
+);
+
+const deleteOldCandles = db.prepare(`DELETE FROM candles_1m WHERE ts < ?`);
+let lastCandlePruneTs = 0;
+
+function candleSessionNY(ts: number): "PREMARKET" | "RTH" | "AFTERHOURS" {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(new Date(ts));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value;
+  const hh = Number(get("hour") || "0");
+  const mm = Number(get("minute") || "0");
+  const mins = hh * 60 + mm;
+
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return "PREMARKET";
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return "RTH";
+  return "AFTERHOURS";
+}
+
+function persistCandle1m(symbol: string, ts: number, o: number, h: number, l: number, c: number, v: number) {
+  const sess = candleSessionNY(ts);
+  upsertCandle1m.run(symbol, ts, o, h, l, c, Number(v || 0), sess);
+
+  // prune at most once per ~10 minutes (avoid constant deletes)
+  const now = Date.now();
+  if (now - lastCandlePruneTs > 10 * 60_000) {
+    lastCandlePruneTs = now;
+    const cutoff = now - 365 * 24 * 60 * 60_000;
+    deleteOldCandles.run(cutoff);
+  }
+}
+
+// -----------------------------
 // Watchlist hardening
 // -----------------------------
+function isValidSymbol(sym: string) {
+  return /^[A-Z0-9.\-]{1,10}$/.test(sym);
+}
+
 function normalizedWatchlist(): string[] {
   const cleaned = (watch || [])
     .map((s) => String(s ?? "").trim().toUpperCase())
     .filter(Boolean)
-    .filter((s) => /^[A-Z0-9.\-]{1,10}$/.test(s))
+    .filter(isValidSymbol)
     .filter((s) => s !== "SPY" && s !== "QQQ");
 
   return Array.from(new Set(cleaned)).slice(0, 50);
@@ -529,8 +613,34 @@ function floorBucket(ms: number, minutes: number): number {
   return Math.floor(ms / size) * size;
 }
 
-function isoToMs(iso: string): number {
-  return new Date(iso).getTime();
+function isoToMsSafe(iso: string): number | null {
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function isRegularMarketHours(ts: number): boolean {
+  // NYSE RTH: 9:30–16:00 America/New_York, Mon–Fri
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).formatToParts(new Date(ts));
+
+    const get = (type: string) => parts.find((p) => p.type === type)?.value;
+    const wd = get("weekday") || "";
+    const hh = Number(get("hour") || "0");
+    const mm = Number(get("minute") || "0");
+
+    if (wd === "Sat" || wd === "Sun") return false;
+
+    const mins = hh * 60 + mm;
+    return mins >= 9 * 60 + 30 && mins < 16 * 60;
+  } catch {
+    return false;
+  }
 }
 
 // -----------------------------
@@ -550,6 +660,16 @@ function getDbRows() {
     .map((a) => {
       const o = outById.get(a.id) ?? null;
       const r = (k: string) => (o?.returnsPct ? (o.returnsPct as any)[k] : null);
+
+      const strategyVersion =
+        (a as any)?.meta?.rulesetVersion != null ? Number((a as any).meta.rulesetVersion) : Number(activeRules?.version ?? 0);
+
+      const strategyName =
+        strategyVersion && rulesetNameMap[strategyVersion]
+          ? rulesetNameMap[strategyVersion]
+          : strategyVersion
+          ? `v${strategyVersion}`
+          : "";
 
       return {
         alertId: a.id,
@@ -573,7 +693,9 @@ function getDbRows() {
         ret5m: r("5m") ?? "",
         ret15m: r("15m") ?? "",
         ret30m: r("30m") ?? "",
-        ret60m: r("60m") ?? ""
+        ret60m: r("60m") ?? "",
+        strategyVersion,
+        strategyName
       };
     });
 }
@@ -593,8 +715,8 @@ function getBrokerConfig() {
 }
 
 /**
- * FIX: persist tradingEnabled and allow clearing broker config.
- * Also normalizes mode.
+ * Persist tradingEnabled and allow clearing broker config.
+ * Normalizes mode.
  */
 function setBrokerConfig(next: any, _changedBy?: string) {
   const brokerKey = String(next?.brokerKey || "").trim();
@@ -634,6 +756,12 @@ const app = createHttpApp({
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
 
+    // backtests
+    createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
+    getBacktestRun: (id: string) => backtestQueue.getRun(id),
+    getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
+    getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
+
   getRules,
   listRulesets,
   saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
@@ -642,7 +770,7 @@ const app = createHttpApp({
   addSymbol: async (s: string) => {
     const sym = String(s || "").trim().toUpperCase();
     if (!sym) return;
-    if (!/^[A-Z0-9.\-]{1,10}$/.test(sym)) return;
+    if (!isValidSymbol(sym)) return;
     if (sym === "SPY" || sym === "QQQ") return;
 
     if (!watch.includes(sym)) {
@@ -873,24 +1001,40 @@ function recomputeSignalsAndBroadcast() {
 // Bar handler (LIVE)
 // -----------------------------
 function onAlpacaBar(b: AlpacaBarMsg) {
-  const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
-  const ts = isoToMs(b.t);
+  try {
+    const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
+    if (!symbol || !isValidSymbol(symbol)) return;
 
-  streamStats.barsTotal++;
-  streamStats.lastBarTs = ts;
-  streamStats.barTimestamps.push(Date.now());
-  if (symbol === "SPY") streamStats.lastSpyTs = ts;
-  if (symbol === "QQQ") streamStats.lastQqqTs = ts;
+    const ts = isoToMsSafe((b as any).t);
+    if (ts == null) return;
 
-  ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, false);
+    streamStats.barsTotal++;
+    streamStats.lastBarTs = ts;
+    streamStats.barTimestamps.push(Date.now());
+    if (symbol === "SPY") streamStats.lastSpyTs = ts;
+    if (symbol === "QQQ") streamStats.lastQqqTs = ts;
+
+    ingestMinuteBar(symbol, ts, Number((b as any).o), Number((b as any).h), Number((b as any).l), Number((b as any).c), Number((b as any).v), false);
+  } catch (e) {
+    console.log("[alpaca] onBar error", e);
+  }
 }
 
 // -----------------------------
 // Ingest minute bar (LIVE + BACKFILL)
 // -----------------------------
 function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: number, c: number, v: number, warmup: boolean) {
+  // Hardening: ignore broken payloads
+  if (!symbol || !isValidSymbol(symbol)) return;
+  if (!Number.isFinite(ts)) return;
+  if (![o, h, l, c].every(Number.isFinite)) return;
+
   updateVwap(symbol, ts, h, l, c, v);
   onBarUpdateLevels(getLevels(symbol), ts, h, l);
+  persistCandle1m(symbol, ts, o, h, l, c, v);
+
+  // ✅ FIX: single source of truth, scoped for full function
+  const allowSignals = !warmup && isRegularMarketHours(ts);
 
   if (!warmup) {
     const doneFromMinute = outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
@@ -905,7 +1049,11 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
     }
 
     const effDir = getEffectiveMarketDir();
-    const entry = effDir === "NEUTRAL" ? null : engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
+
+    const entry =
+      !allowSignals || effDir === "NEUTRAL"
+        ? null
+        : engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
     if (entry) {
       const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
@@ -920,6 +1068,9 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
           entryRefPrice: entry.close
         });
       }
+
+      // Tag entry with current ruleset version for strategy filtering
+      (entry as any).meta = { rulesetVersion: activeRules.version };
 
       alerts.push(entry);
       if (alerts.length > 2000) alerts = alerts.slice(-2000);
@@ -948,7 +1099,8 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
           }
         }
 
-        evaluateIfNeeded(symbol);
+        // ✅ allowSignals is in-scope and correct for this bar's timestamp
+        if (allowSignals) evaluateIfNeeded(symbol, closeTs);
       }
     }
 
@@ -963,10 +1115,13 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
   if (!warmup) recomputeSignalsAndBroadcast();
 }
 
-function evaluateIfNeeded(symbol: string) {
+function evaluateIfNeeded(symbol: string, ts: number) {
   const spyBars5 = getBars5("SPY");
   const qqqBars5 = getBars5("QQQ");
   if (spyBars5.length < STRUCTURE_WINDOW || qqqBars5.length < STRUCTURE_WINDOW) return;
+
+  // Use the bar timestamp (not Date.now) so backfill/replay stays sane
+  if (!isRegularMarketHours(ts)) return;
 
   const symBars5 = getBars5(symbol);
   if (!symBars5.length) return;
@@ -987,6 +1142,8 @@ function evaluateIfNeeded(symbol: string) {
   });
 
   if (alert) {
+    (alert as any).meta = { rulesetVersion: activeRules.version };
+
     alerts.push(alert);
     if (alerts.length > 2000) alerts = alerts.slice(-2000);
     dbInsertAlert(alert);
@@ -1004,7 +1161,12 @@ function httpGetJson(url: string, headers: Record<string, string>): Promise<any>
       res.on("data", (d) => (data += d));
       res.on("end", () => {
         try {
-          resolve(JSON.parse(data));
+          const parsed = JSON.parse(data || "{}");
+          if ((res.statusCode || 0) >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(parsed).slice(0, 300)}`));
+            return;
+          }
+          resolve(parsed);
         } catch (e) {
           reject(e);
         }
@@ -1027,7 +1189,8 @@ async function backfillSymbol1m(symbol: string, limit = 300) {
 
   const bars: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }> = json?.bars || [];
   for (const b of bars) {
-    const ts = isoToMs(b.t);
+    const ts = isoToMsSafe(b.t);
+    if (ts == null) continue;
     ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, true);
   }
 }
@@ -1054,7 +1217,8 @@ async function replayBars(symbols: string[], minutes: number, emitAlerts: boolea
   if (emitAlerts) {
     for (const s of ordered) {
       try {
-        evaluateIfNeeded(s);
+        // Use "now" for replay alert eval, but evaluateIfNeeded also checks RTH by ts
+        evaluateIfNeeded(s, Date.now());
       } catch {}
     }
   }

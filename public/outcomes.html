@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Outcomes • Trading Agent</title>
 
     <link rel="stylesheet" href="/styles-v4.css" />
@@ -23,7 +23,7 @@
           <a class="tab active" href="/outcomes">Outcomes</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
-          <a class="tab" href="/brokers">Brokers</a>
+          <a class="tab" href="/backtest">Backtest</a>
         </nav>
       </div>
 
@@ -41,11 +41,34 @@
           <div class="card-head">
             <div>
               <div class="card-title">Outcomes</div>
-              <div class="card-hint">Performance tracking for A+ entries.</div>
+              <div class="card-hint">Performance tracking for A+ entries (stocks only for now).</div>
             </div>
           </div>
 
           <div class="table-wrap">
+            <!-- Filters -->
+            <div class="table-controls" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+              <select id="dbStrategy" class="input small"></select>
+
+              <input id="dbSym" class="input small" placeholder="Symbol" />
+
+              <select id="dbStatus" class="input small">
+                <option value="">All statuses</option>
+                <option value="LIVE">LIVE</option>
+                <option value="STOPPED">STOPPED</option>
+                <option value="COMPLETED">COMPLETED</option>
+              </select>
+
+              <label class="small" style="display:flex;align-items:center;">
+                <input id="dbStoppedOnly" type="checkbox" />
+                <span style="margin-left:4px;">Stopped only</span>
+              </label>
+
+              <button id="refreshBtn" class="btn small">Refresh</button>
+            </div>
+
+            <div id="dbEmpty" class="small" style="padding:8px; display:none;">No rows.</div>
+
             <table>
               <thead>
                 <tr>
@@ -55,6 +78,7 @@
                   <th>RS</th>
                   <th>Dir</th>
                   <th>Level</th>
+                  <th>Level Px</th>
                   <th>Structure</th>
                   <th>Entry Ref</th>
                   <th>Status</th>
@@ -68,9 +92,11 @@
                   <th>15m</th>
                   <th>30m</th>
                   <th>60m</th>
+                  <th>Strategy</th>
                 </tr>
               </thead>
-              <tbody id="rows"></tbody>
+
+              <tbody id="dbBody"></tbody>
             </table>
           </div>
         </div>
@@ -78,6 +104,6 @@
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/outcomes.js?v=10"></script>
+    <script src="/outcomes.js?v=11"></script>
   </body>
 </html>

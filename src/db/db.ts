@@ -115,7 +115,83 @@ function migrate(db: Database.Database) {
       config_json TEXT NOT NULL,
       updated_ts INTEGER NOT NULL
     );
+
+
+    -- Canonical 1m candle store (rolling 365d retention enforced on ingest)
+    CREATE TABLE IF NOT EXISTS candles_1m (
+      ticker TEXT NOT NULL,
+      ts INTEGER NOT NULL,
+      open REAL NOT NULL,
+      high REAL NOT NULL,
+      low REAL NOT NULL,
+      close REAL NOT NULL,
+      volume REAL NOT NULL,
+      session TEXT NOT NULL, -- PREMARKET | RTH | AFTERHOURS
+      PRIMARY KEY (ticker, ts)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_candles_1m_ts ON candles_1m(ts);
+    CREATE INDEX IF NOT EXISTS idx_candles_1m_ticker_ts ON candles_1m(ticker, ts);
+
+    -- Backtest run + results storage
+    CREATE TABLE IF NOT EXISTS backtest_runs (
+      id TEXT PRIMARY KEY,
+      created_ts INTEGER NOT NULL,
+      started_ts INTEGER,
+      finished_ts INTEGER,
+      status TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      config_hash TEXT NOT NULL,
+      error TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backtest_runs_created ON backtest_runs(created_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_backtest_runs_hash ON backtest_runs(config_hash);
+
+    CREATE TABLE IF NOT EXISTS backtest_trades (
+      run_id TEXT NOT NULL,
+      trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker TEXT NOT NULL,
+      dir TEXT NOT NULL,
+      level_key TEXT NOT NULL,
+      level_price REAL NOT NULL,
+      entry_ts INTEGER NOT NULL,
+      entry_price REAL NOT NULL,
+      stop_price REAL NOT NULL,
+      target_price REAL NOT NULL,
+      exit_ts INTEGER NOT NULL,
+      exit_price REAL NOT NULL,
+      exit_reason TEXT NOT NULL,
+      r_mult REAL NOT NULL,
+      bars_held INTEGER NOT NULL,
+      meta_json TEXT,
+      FOREIGN KEY(run_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backtest_trades_run ON backtest_trades(run_id, trade_id);
+    CREATE INDEX IF NOT EXISTS idx_backtest_trades_entry ON backtest_trades(entry_ts);
+
+    CREATE TABLE IF NOT EXISTS backtest_metrics (
+      run_id TEXT PRIMARY KEY,
+      metrics_json TEXT NOT NULL,
+      FOREIGN KEY(run_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS backtest_equity (
+      run_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      ts INTEGER NOT NULL,
+      equity REAL NOT NULL,
+      drawdown REAL NOT NULL,
+      PRIMARY KEY (run_id, seq),
+      FOREIGN KEY(run_id) REFERENCES backtest_runs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backtest_equity_run ON backtest_equity(run_id, seq);
+
   `);
+
+
 
   // seed default ruleset if none exist
   const cnt = db.prepare(`SELECT COUNT(*) as c FROM rulesets`).get() as any;

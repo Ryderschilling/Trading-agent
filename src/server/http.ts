@@ -32,7 +32,15 @@ export function createHttpApp(args: {
 
   // helper for broker status fetches
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
+    // -----------------------------
+  // Backtests (optional)
+  // -----------------------------
+  createBacktestRun?: (cfg: any) => { runId: string; reused?: boolean };
+  getBacktestRun?: (id: string) => any | null;
+  getBacktestTrades?: (id: string) => any[];
+  getBacktestEquity?: (id: string) => any[];
 }) {
+  
   const app = express();
   app.use(express.json());
 
@@ -64,13 +72,15 @@ export function createHttpApp(args: {
   app.get("/watchlist", (_req, res) => sendPage(res, "watchlist.html")); // backward compat
   app.get("/rules", (_req, res) => sendPage(res, "rules.html"));
   app.get("/brokers", (_req, res) => sendPage(res, "brokers.html"));
+  app.get("/backtest", (_req, res) => sendPage(res, "backtest.html"));
+  app.get("/__ping_backtest", (_req, res) => res.send("ok"));
 
   // optional backward-compat for old direct links
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
   app.get("/brokers.html", (_req, res) => res.redirect(301, "/brokers"));
-
+  app.get("/backtest.html", (_req, res) => res.redirect(301, "/backtest"));
   // Serve static assets (css/js/images)
   app.use(express.static(args.publicDir));
 
@@ -269,6 +279,61 @@ export function createHttpApp(args: {
       return res.json({ ok: true, tradingEnabled: enabled });
     } catch (e: any) {
       return res.status(400).json({ ok: false, error: e?.message || "toggle error" });
+    }
+  });
+  
+    // -----------------------------
+  // Backtests
+  // -----------------------------
+  app.post("/api/backtests", (req, res) => {
+    try {
+      if (!args.createBacktestRun) return res.status(400).json({ ok: false, error: "backtests not enabled" });
+
+      const tickers = Array.isArray(req.body?.tickers) ? req.body.tickers : [];
+      const timeframe = String(req.body?.timeframe || "1m");
+      const startDate = String(req.body?.startDate || "");
+      const endDate = String(req.body?.endDate || "");
+
+      const out = args.createBacktestRun({ tickers, timeframe, startDate, endDate });
+      res.json({ ok: true, runId: out.runId, reused: Boolean(out.reused) });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.get("/api/backtests/:id", (req, res) => {
+    try {
+      if (!args.getBacktestRun) return res.status(400).json({ ok: false, error: "backtests not enabled" });
+
+      const id = String(req.params.id || "");
+      const run = args.getBacktestRun(id);
+      if (!run) return res.status(404).json({ ok: false, error: "not found" });
+
+      res.json(run);
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.get("/api/backtests/:id/trades", (req, res) => {
+    try {
+      if (!args.getBacktestTrades) return res.status(400).json({ ok: false, error: "backtests not enabled" });
+
+      const id = String(req.params.id || "");
+      res.json(args.getBacktestTrades(id) || []);
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.get("/api/backtests/:id/equity", (req, res) => {
+    try {
+      if (!args.getBacktestEquity) return res.status(400).json({ ok: false, error: "backtests not enabled" });
+
+      const id = String(req.params.id || "");
+      res.json(args.getBacktestEquity(id) || []);
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
     }
   });
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>Trading Agent</title>
+    <title>Workspace • Trading Agent</title>
 
     <link rel="stylesheet" href="/styles-v4.css" />
   </head>
@@ -23,12 +23,11 @@
           <a class="tab" href="/outcomes">Outcomes</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
-          <a class="tab" href="/brokers">Brokers</a>
+          <a class="tab" href="/backtest">Backtest</a>
         </nav>
       </div>
 
       <div class="topbar-right">
-        <button id="enableSound" class="btn btn-ghost">Enable Sound</button>
         <div class="status">
           <div class="status-dot" id="socketDot"></div>
           <div class="status-text">Realtime</div>
@@ -37,80 +36,17 @@
     </header>
 
     <main class="shell">
-      <section class="hero">
-        <div class="hero-card card">
-          <div class="hero-head">
-            <div>
-              <div class="hero-title">Trading Agent Active</div>
-              <div class="hero-sub">Signals scanner + A+ entry feed (break + retest).</div>
-            </div>
+      <section class="stack">
 
-            <div id="overallBiasPill" class="bias-pill neutral">NEUTRAL</div>
-
-            <div class="hero-chip">
-              <span class="chip-dot"></span>
-              Scanning Watchlist
-            </div>
-          </div>
-
-          <div class="hero-grid">
-            <!-- SIGNALS SCANNER -->
-            <div class="card card-inner" id="signalsCard">
-              <div class="card-head">
-                <div>
-                  <div class="card-title">Signals</div>
-                  <!-- removed the descriptive hint line -->
-                </div>
-                <a class="card-link" href="#feed">A+ entries</a>
-              </div>
-
-              <!-- removed the Market Bias + SPY/QQQ status lines -->
-              <!-- <div class="small" id="marketBias"></div> -->
-              <!-- <div class="small" id="indexStatus" style="margin-top:6px;"></div> -->
-
-              <div class="signals-cols">
-                <div class="signals-col">
-                  <div class="small" style="margin-bottom:8px;">Strong</div>
-                  <div id="strongList" class="list"></div>
-                </div>
-
-                <div class="signals-col">
-                  <div class="small" style="margin-bottom:8px;">Weak</div>
-                  <div id="weakList" class="list"></div>
-                </div>
-
-                <div class="signals-col">
-                  <div class="small" style="margin-bottom:8px;">Forming</div>
-                  <div id="formingList" class="list"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- A+ PINGS -->
-            <div class="card card-inner" id="aplusCard">
-              <div class="card-head">
-                <div>
-                  <div class="card-title">A+ Pings</div>
-                  <div class="card-hint">Newest A+ events (forming/entry/invalidation)</div>
-                </div>
-                <a class="card-link" href="#feed">Full feed</a>
-              </div>
-
-              <div id="aPlusList" class="list"></div>
-              <div id="aPlusEmpty" class="small" style="padding: 0 16px 16px 16px;">
-                No pings yet.
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="stack" id="feed">
+        <!-- ROW 1: Activity feed (full width) -->
         <div class="card">
           <div class="card-head">
             <div>
-              <div class="card-title">Activity Feed</div>
-              <div class="card-hint">A+ ENTRY only (execution feed)</div>
+              <div class="card-title">Activity feed</div>
+              <div class="card-hint">Live signals only (auto-expire). Outcomes stores history.</div>
+            </div>
+            <div class="card-actions">
+              <button class="btn small" id="enableSound">Enable sound</button>
             </div>
           </div>
 
@@ -118,40 +54,94 @@
             <table>
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Symbol</th>
+                  <th style="width:88px;">Time</th>
+                  <th style="width:90px;">Symbol</th>
+                  <th style="width:90px;">Market</th>
+                  <th style="width:70px;">RS</th>
+                  <th style="width:70px;">Dir</th>
                   <th>Message</th>
-                  <th>Market</th>
-                  <th>RS</th>
-                  <th>Dir</th>
-                  <th>Level</th>
-                  <th>Level Px</th>
-                  <th>Close</th>
                 </tr>
               </thead>
               <tbody id="feedBody"></tbody>
             </table>
           </div>
         </div>
-      </section>
 
-      <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999;">
-        <div style="max-width:760px; margin:6vh auto; background:#0b1020; border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08);">
-            <div>
-              <div style="font-weight:700;">Signal Details</div>
-              <div class="small" id="modalSub">—</div>
+        <!-- ROW 2: A+ pings (left) + Market snapshot (right) -->
+        <div class="workspace-row2">
+
+          <!-- A+ PINGS -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">A+ pings</div>
+                <div class="card-hint">Clean list: forming removed once A+ triggers.</div>
+              </div>
             </div>
-            <button id="modalClose" class="btn btn-ghost">Close</button>
+
+            <div id="aPlusEmpty" class="small" style="padding: 12px;">No A+ entries yet.</div>
+            <div class="list" id="aPlusList"></div>
           </div>
-          <div style="padding:16px;">
-            <div id="modalBody" class="small">Loading…</div>
+
+          <!-- MARKET SNAPSHOT (single contained box with categories) -->
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Market snapshot</div>
+                <div class="card-hint">Bias + index VWAP status.</div>
+              </div>
+              <div class="card-actions">
+                <span id="overallBiasPill" class="pill">—</span>
+                <span id="dataLivePill" class="pill">—</span>
+              </div>
+            </div>
+
+            <!-- Top summary (same as before) -->
+            <div class="grid-3">
+              <div class="panel">
+                <div class="panel-title">Market Bias</div>
+                <div class="panel-value" id="marketBias">—</div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Index Status</div>
+                <div class="panel-value" id="indexStatus">—</div>
+              </div>
+              <div class="panel">
+                <div class="panel-title">Notes</div>
+                <div class="panel-value small">Signals only during market hours.</div>
+              </div>
+            </div>
+
+            <!-- Divider (kept inside the same box) -->
+            <div style="height:1px;background:var(--border);margin:12px 0;"></div>
+
+            <!-- Categories for tickers (inside same card) -->
+            <div class="grid-3">
+              <div class="panel">
+                <div class="panel-title">Strong</div>
+                <div class="panel-value small">Aligned with market bias.</div>
+                <div class="list" id="strongList" style="margin-top:10px;"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-title">Weak</div>
+                <div class="panel-value small">Aligned with market bias.</div>
+                <div class="list" id="weakList" style="margin-top:10px;"></div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-title">Forming</div>
+                <div class="panel-value small">Only during market hours.</div>
+                <div class="list" id="formingList" style="margin-top:10px;"></div>
+              </div>
+            </div>
           </div>
+
         </div>
-      </div>
+      </section>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/app.js?v=11"></script>
+    <script src="/app.js?v=12"></script>
   </body>
 </html>
