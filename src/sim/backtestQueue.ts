@@ -1,4 +1,3 @@
-// src/sim/backtestQueue.ts
 import crypto from "crypto";
 import https from "https";
 import type Database from "better-sqlite3";
@@ -8,6 +7,7 @@ import { runBacktest, BacktestConfig, Candle } from "./backtestEngine";
 export type BacktestRunStatus = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
 
 export function hashConfig(cfg: BacktestConfig): string {
+  // IMPORTANT: keep hash independent of strategy tags (tags should not change candle coverage)
   const canon = {
     tickers: (cfg.tickers || [])
       .slice()
@@ -109,8 +109,17 @@ function msToIso(ms: number) {
   return new Date(ms).toISOString();
 }
 
+function safeJson(s: any) {
+  if (!s || typeof s !== "string") return null;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
 export class BacktestQueue {
-  private q: Array<{ runId: string; config: BacktestConfig }> = [];
+    private q: Array<{ runId: string; config: any }> = [];
   private running = false;
 
   private upsertCandle1m: Database.Statement;
@@ -144,26 +153,78 @@ export class BacktestQueue {
     );
   }
 
-  createRun(config: BacktestConfig) {
-    const cfg: BacktestConfig = {
-      tickers: (config.tickers || []).map((s) => String(s).toUpperCase()).filter(Boolean),
+  createRun(config: any) {
+    const cfg: any = {
+      tickers: (config.tickers || [])
+        .map((s: string) => String(s).toUpperCase())
+        .filter(Boolean),
+  
       timeframe: config.timeframe === "5m" ? "5m" : "1m",
       startDate: String(config.startDate || ""),
-      endDate: String(config.endDate || "")
+      endDate: String(config.endDate || ""),
+  
+      // Strategy tagging
+      strategyVersion: Number.isFinite(Number(config.strategyVersion))
+        ? Number(config.strategyVersion)
+        : undefined,
+  
+      strategyName:
+        config.strategyName != null
+          ? String(config.strategyName)
+          : undefined,
+  
+      // -----------------------------
+      // NEW ENGINE FIELDS (CRITICAL)
+      // -----------------------------
+  
+      levelSource:
+        config.levelSource === "REPEAT" ||
+        config.levelSource === "BOTH"
+          ? config.levelSource
+          : "DAILY",
+  
+      entryMode:
+        config.entryMode === "BREAK" ||
+        config.entryMode === "RETEST"
+          ? config.entryMode
+          : "BREAK_RETEST",
+  
+      repeatSr: {
+        tolerancePct:
+          Number.isFinite(Number(config?.repeatSr?.tolerancePct)) &&
+          Number(config.repeatSr.tolerancePct) > 0
+            ? Number(config.repeatSr.tolerancePct)
+            : 0.05,
+  
+        touchCount:
+          Number.isFinite(Number(config?.repeatSr?.touchCount)) &&
+          Number(config.repeatSr.touchCount) >= 2
+            ? Math.floor(Number(config.repeatSr.touchCount))
+            : 3,
+  
+        lookbackBars:
+          Number.isFinite(Number(config?.repeatSr?.lookbackBars)) &&
+          Number(config.repeatSr.lookbackBars) >= 20
+            ? Math.floor(Number(config.repeatSr.lookbackBars))
+            : 150
+      }
     };
+  
     if (!cfg.tickers.length) throw new Error("tickers required");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cfg.startDate)) throw new Error("bad startDate");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cfg.endDate)) throw new Error("bad endDate");
-
-    // NOTE: de-dupe intentionally disabled so reruns reflect newly-fetched candles.
+  
     const runId = genId();
     const now = Date.now();
     const h = hashConfig(cfg);
-
+  
     this.db
-      .prepare(`INSERT INTO backtest_runs(id, created_ts, status, config_json, config_hash) VALUES(?,?,?,?,?)`)
+      .prepare(
+        `INSERT INTO backtest_runs(id, created_ts, status, config_json, config_hash)
+         VALUES(?,?,?,?,?)`
+      )
       .run(runId, now, "QUEUED", JSON.stringify(cfg), h);
-
+  
     this.enqueue(runId, cfg);
     return { runId, reused: false };
   }
@@ -181,7 +242,10 @@ export class BacktestQueue {
       cfg = null;
     }
 
-    const metricsRow = this.db.prepare(`SELECT metrics_json FROM backtest_metrics WHERE run_id=?`).get(String(runId)) as any;
+    const metricsRow = this.db
+      .prepare(`SELECT metrics_json FROM backtest_metrics WHERE run_id=?`)
+      .get(String(runId)) as any;
+
     let metrics: any = null;
     if (metricsRow?.metrics_json) {
       try {
@@ -201,6 +265,50 @@ export class BacktestQueue {
       metrics,
       error: row.error ? String(row.error) : null
     };
+  }
+
+  // NEW: list recent runs (for Rules "View" modal)
+  // This does NOT change existing backtest behavior.
+  listRuns(opts: { limit: number; strategyVersion?: number }) {
+    const limit = Math.min(50, Math.max(1, Number(opts.limit || 10)));
+    const sv = opts.strategyVersion;
+
+    const rows = this.db
+      .prepare(
+        `SELECT id, created_ts, started_ts, finished_ts, status, config_json, error
+         FROM backtest_runs
+         ORDER BY created_ts DESC
+         LIMIT ?`
+      )
+      .all(limit) as any[];
+
+    const out = rows.map((r) => {
+      const cfg = safeJson(r.config_json) || null;
+
+      const metricsRow = this.db
+        .prepare(`SELECT metrics_json FROM backtest_metrics WHERE run_id=?`)
+        .get(String(r.id)) as any;
+
+      const metrics = metricsRow?.metrics_json ? safeJson(metricsRow.metrics_json) : null;
+
+      return {
+        id: String(r.id),
+        createdTs: Number(r.created_ts || 0),
+        startedTs: r.started_ts == null ? null : Number(r.started_ts),
+        finishedTs: r.finished_ts == null ? null : Number(r.finished_ts),
+        status: String(r.status || "QUEUED") as BacktestRunStatus,
+        config: cfg,
+        metrics,
+        error: r.error ? String(r.error) : null
+      };
+    });
+
+    if (Number.isFinite(Number(sv))) {
+      const want = Number(sv);
+      return out.filter((x) => Number(x?.config?.strategyVersion) === want);
+    }
+
+    return out;
   }
 
   listTrades(runId: string, limit = 5000) {
@@ -305,14 +413,14 @@ export class BacktestQueue {
     let total = 0;
 
     for (;;) {
-      const qs = new URLSearchParams({
-        timeframe: "1Min",
-        start: msToIso(startMs),
-        end: msToIso(endMs),
-        limit: "10000",
-        feed,
-        sort: "asc"
-      });
+        const qs = new URLSearchParams({
+            timeframe: "1Min",
+            start: msToIso(startMs),
+            end: msToIso(endMs),
+            limit: "10000",
+            feed,
+            sort: "asc"
+          });
 
       if (pageToken) qs.set("page_token", pageToken);
 
@@ -428,13 +536,17 @@ export class BacktestQueue {
           insEq.run(runId, i, p.ts, p.equity, p.drawdown);
         }
 
-        this.db.prepare(`UPDATE backtest_runs SET status='DONE', finished_ts=?, error=NULL WHERE id=?`).run(Date.now(), runId);
+        this.db
+          .prepare(`UPDATE backtest_runs SET status='DONE', finished_ts=?, error=NULL WHERE id=?`)
+          .run(Date.now(), runId);
       });
 
       tx();
     } catch (e: any) {
       const msg = String(e?.message || e || "backtest failed");
-      this.db.prepare(`UPDATE backtest_runs SET status='FAILED', finished_ts=?, error=? WHERE id=?`).run(Date.now(), msg, runId);
+      this.db
+        .prepare(`UPDATE backtest_runs SET status='FAILED', finished_ts=?, error=? WHERE id=?`)
+        .run(Date.now(), msg, runId);
     }
   }
 }

@@ -189,6 +189,7 @@ function migrate(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_backtest_equity_run ON backtest_equity(run_id, seq);
 
+
   `);
 
 
@@ -232,6 +233,10 @@ export function setActiveRuleset(db: Database.Database, version: number) {
     db.prepare(`UPDATE rulesets SET active=1 WHERE version=?`).run(version);
   });
   tx();
+}
+
+export function setRulesetActive(db: Database.Database, version: number, active: boolean) {
+  db.prepare(`UPDATE rulesets SET active=? WHERE version=?`).run(active ? 1 : 0, Number(version));
 }
 
 export function insertRuleset(db: Database.Database, name: string, cfg: RuleConfig, changedBy?: string) {

@@ -5,6 +5,11 @@ import path from "path";
 import { BacktestQueue } from "./sim/backtestQueue";
 
 import {
+  // ...
+  setRulesetActive,
+} from "./db/db";
+
+import {
   openDb,
   loadActiveRuleset,
   insertRuleset,
@@ -203,6 +208,11 @@ function activateRuleset(version: number) {
   }
 
   return { version };
+}
+
+function setRulesetActiveFn(version: number, active: boolean) {
+  setRulesetActive(db, Number(version), Boolean(active));
+  return { ok: true, version: Number(version), active: Boolean(active) };
 }
 
 // -----------------------------
@@ -765,7 +775,7 @@ const app = createHttpApp({
   getRules,
   listRulesets,
   saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
-  activateRuleset: (v: number) => activateRuleset(v),
+  setRulesetActive: (v: number, active: boolean) => setRulesetActiveFn(v, active),
 
   addSymbol: async (s: string) => {
     const sym = String(s || "").trim().toUpperCase();

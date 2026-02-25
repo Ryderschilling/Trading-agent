@@ -9,38 +9,39 @@ export function createHttpApp(args: {
   addSymbol: (s: string) => void | Promise<void>;
   removeSymbol: (s: string) => void | Promise<void>;
 
-  // existing additions
   getSignals?: () => any;
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
 
-  // health + replay
   getStreamStats?: () => any;
   replay?: (symbols: string[], minutes: number, emitAlerts: boolean) => Promise<void>;
 
   // rules
   getRules?: () => any;
   listRulesets?: () => any[];
+  getRulesetByVersion?: (version: number) => any | null; // NEW
   saveRules?: (name: string, config: any, changedBy?: string) => any;
-  activateRuleset?: (version: number) => any;
+
+  // IMPORTANT: make this a TOGGLE (multi-active), not exclusive
+  setRulesetActive?: (version: number, active: boolean) => any; // NEW
 
   // brokers
   getBrokers?: () => any[];
   getBrokerConfig?: () => any;
   saveBrokerConfig?: (cfg: any, changedBy?: string) => any;
 
-  // helper for broker status fetches
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
-    // -----------------------------
-  // Backtests (optional)
-  // -----------------------------
+
+  // backtests
   createBacktestRun?: (cfg: any) => { runId: string; reused?: boolean };
   getBacktestRun?: (id: string) => any | null;
   getBacktestTrades?: (id: string) => any[];
   getBacktestEquity?: (id: string) => any[];
+
+  // NEW: list runs for strategy “View” modal
+  listBacktestRuns?: (opts: { limit: number; strategyVersion?: number }) => any[];
 }) {
-  
   const app = express();
   app.use(express.json());
 
@@ -60,7 +61,6 @@ export function createHttpApp(args: {
 
   // -----------------------------
   // Page routes (CLEAN URLS)
-  // This is the key fix: /brokers, /rules, etc must serve HTML files.
   // -----------------------------
   function sendPage(res: express.Response, file: string) {
     return res.sendFile(path.join(args.publicDir, file));
@@ -75,28 +75,23 @@ export function createHttpApp(args: {
   app.get("/backtest", (_req, res) => sendPage(res, "backtest.html"));
   app.get("/__ping_backtest", (_req, res) => res.send("ok"));
 
-  // optional backward-compat for old direct links
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
   app.get("/brokers.html", (_req, res) => res.redirect(301, "/brokers"));
   app.get("/backtest.html", (_req, res) => res.redirect(301, "/backtest"));
-  // Serve static assets (css/js/images)
+
   app.use(express.static(args.publicDir));
 
   // -----------------------------
   // API: alerts
   // -----------------------------
-  app.get("/api/alerts", (_req, res) => {
-    res.json({ alerts: args.getAlerts() });
-  });
+  app.get("/api/alerts", (_req, res) => res.json({ alerts: args.getAlerts() }));
 
   // -----------------------------
   // API: watchlist
   // -----------------------------
-  app.get("/api/watchlist", (_req, res) => {
-    res.json({ symbols: args.getWatchlist() });
-  });
+  app.get("/api/watchlist", (_req, res) => res.json({ symbols: args.getWatchlist() }));
 
   app.post("/api/watchlist/add", async (req, res) => {
     try {
@@ -121,16 +116,12 @@ export function createHttpApp(args: {
   // -----------------------------
   // API: signals snapshot
   // -----------------------------
-  app.get("/api/signals", (_req, res) => {
-    res.json({ signals: args.getSignals ? args.getSignals() : null });
-  });
+  app.get("/api/signals", (_req, res) => res.json({ signals: args.getSignals ? args.getSignals() : null }));
 
   // -----------------------------
   // API: outcomes
   // -----------------------------
-  app.get("/api/outcomes", (_req, res) => {
-    res.json({ outcomes: args.getOutcomes ? args.getOutcomes() : [] });
-  });
+  app.get("/api/outcomes", (_req, res) => res.json({ outcomes: args.getOutcomes ? args.getOutcomes() : [] }));
 
   app.get("/api/outcomes/:id", (req, res) => {
     const id = String(req.params.id || "");
@@ -138,9 +129,7 @@ export function createHttpApp(args: {
     res.json({ outcome: o });
   });
 
-  app.get("/api/dbrows", (_req, res) => {
-    res.json({ rows: args.getDbRows ? args.getDbRows() : [] });
-  });
+  app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
 
   // -----------------------------
   // API: health
@@ -155,13 +144,11 @@ export function createHttpApp(args: {
   });
 
   // -----------------------------
-  // API: replay (off-hours testing)
+  // API: replay
   // -----------------------------
   app.post("/api/replay", async (req, res) => {
     try {
-      if (!args.replay) {
-        return res.status(400).json({ ok: false, error: "replay not enabled" });
-      }
+      if (!args.replay) return res.status(400).json({ ok: false, error: "replay not enabled" });
 
       const symbols = Array.isArray(req.body?.symbols) ? req.body.symbols : [];
       const minutes = Number(req.body?.minutes || 240);
@@ -175,114 +162,6 @@ export function createHttpApp(args: {
   });
 
   // -----------------------------
-  // Brokers
-  // -----------------------------
-  app.get("/api/brokers", (_req, res) => {
-    const brokers = args.getBrokers ? args.getBrokers() : [];
-    res.json({ ok: true, brokers });
-  });
-
-  app.get("/api/broker-config", (_req, res) => {
-    const brokerConfig = args.getBrokerConfig ? args.getBrokerConfig() : null;
-    res.json({ ok: true, brokerConfig });
-  });
-
-  app.post("/api/broker-config", (req, res) => {
-    try {
-      if (!requireAdmin(req, res)) return;
-      if (!args.saveBrokerConfig) return res.status(400).json({ ok: false, error: "broker config not enabled" });
-
-      const cfg = req.body ?? null;
-      const changedBy = String(req.body?.changedBy || "admin");
-      const out = args.saveBrokerConfig(cfg, changedBy);
-
-      res.json({ ok: true, result: out });
-    } catch (e: any) {
-      res.status(400).json({ ok: false, error: e?.message || "failed" });
-    }
-  });
-
-  // --- Broker dashboard/status (Alpaca first) ---
-  app.get("/api/broker/status", async (_req, res) => {
-    try {
-      const cfg = args.getBrokerConfig ? args.getBrokerConfig() : null;
-      if (!cfg || !cfg.brokerKey) {
-        return res.json({ ok: false, error: "No broker configured." });
-      }
-
-      if (cfg.brokerKey !== "alpaca") {
-        return res.json({
-          ok: false,
-          brokerKey: cfg.brokerKey,
-          mode: cfg.mode,
-          error: "Status only implemented for Alpaca right now."
-        });
-      }
-
-      const key = String(cfg.config?.key || cfg.config?.apiKey || "");
-      const secret = String(cfg.config?.secret || cfg.config?.apiSecret || "");
-      if (!key || !secret) {
-        return res.json({
-          ok: false,
-          brokerKey: cfg.brokerKey,
-          mode: cfg.mode,
-          error: "Missing Alpaca API key/secret in broker config."
-        });
-      }
-
-      const mode = String(cfg.mode || "paper") === "live" ? "live" : "paper";
-      const base = mode === "live" ? "https://api.alpaca.markets" : "https://paper-api.alpaca.markets";
-
-      async function alpacaGet(p: string) {
-        const url = `${base}${p}`;
-        return await args.httpGetJson(url, {
-          "APCA-API-KEY-ID": key,
-          "APCA-API-SECRET-KEY": secret
-        });
-      }
-
-      const [account, positions, orders] = await Promise.all([
-        alpacaGet("/v2/account"),
-        alpacaGet("/v2/positions"),
-        alpacaGet("/v2/orders?status=open&limit=200")
-      ]);
-
-      return res.json({
-        ok: true,
-        brokerKey: cfg.brokerKey,
-        mode,
-        tradingEnabled: Boolean((cfg as any).tradingEnabled),
-        account,
-        positions: Array.isArray(positions) ? positions : [],
-        orders: Array.isArray(orders) ? orders : []
-      });
-    } catch (e: any) {
-      return res.json({ ok: false, error: e?.message || "broker status error" });
-    }
-  });
-
-  // --- Execution toggle (OFF by default) ---
-  app.post("/api/broker/trading-enabled", async (req, res) => {
-    try {
-      const enabled = Boolean(req.body?.enabled);
-
-      const cfg = (args.getBrokerConfig ? args.getBrokerConfig() : null) || {};
-      const next = {
-        brokerKey: cfg.brokerKey || "",
-        mode: cfg.mode || "paper",
-        config: cfg.config || {},
-        tradingEnabled: enabled
-      };
-
-      if (!args.saveBrokerConfig) return res.status(400).json({ ok: false, error: "broker config not enabled" });
-      args.saveBrokerConfig(next, "ui");
-      return res.json({ ok: true, tradingEnabled: enabled });
-    } catch (e: any) {
-      return res.status(400).json({ ok: false, error: e?.message || "toggle error" });
-    }
-  });
-  
-    // -----------------------------
   // Backtests
   // -----------------------------
   app.post("/api/backtests", (req, res) => {
@@ -294,8 +173,36 @@ export function createHttpApp(args: {
       const startDate = String(req.body?.startDate || "");
       const endDate = String(req.body?.endDate || "");
 
-      const out = args.createBacktestRun({ tickers, timeframe, startDate, endDate });
+      const strategyVersion =
+        Number.isFinite(Number(req.body?.strategyVersion)) ? Number(req.body.strategyVersion) : undefined;
+      const strategyName = typeof req.body?.strategyName === "string" ? String(req.body.strategyName) : undefined;
+
+      const out = args.createBacktestRun({
+        tickers,
+        timeframe,
+        startDate,
+        endDate,
+        strategyVersion,
+        strategyName
+      });
+
       res.json({ ok: true, runId: out.runId, reused: Boolean(out.reused) });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  // list recent runs (used by rules “View” modal)
+  app.get("/api/backtests", (req, res) => {
+    try {
+      if (!args.listBacktestRuns) return res.status(400).json({ ok: false, error: "backtest listing not enabled" });
+
+      const limit = Math.min(50, Math.max(1, Number(req.query.limit || 10)));
+      const sv = req.query.strategyVersion == null ? undefined : Number(req.query.strategyVersion);
+      const strategyVersion = Number.isFinite(sv as any) ? (sv as number) : undefined;
+
+      const runs = args.listBacktestRuns({ limit, strategyVersion }) || [];
+      res.json({ ok: true, runs });
     } catch (e: any) {
       res.status(400).json({ ok: false, error: e?.message || "failed" });
     }
@@ -340,12 +247,23 @@ export function createHttpApp(args: {
   // -----------------------------
   // Rules
   // -----------------------------
-  app.get("/api/rules", (_req, res) => {
-    res.json({ ok: true, rules: args.getRules ? args.getRules() : null });
-  });
+  app.get("/api/rules", (_req, res) => res.json({ ok: true, rules: args.getRules ? args.getRules() : null }));
 
-  app.get("/api/rulesets", (_req, res) => {
-    res.json({ ok: true, rulesets: args.listRulesets ? args.listRulesets() : [] });
+  app.get("/api/rulesets", (_req, res) =>
+    res.json({ ok: true, rulesets: args.listRulesets ? args.listRulesets() : [] })
+  );
+
+  // NEW: fetch a single ruleset for “Load/Edit”
+  app.get("/api/rulesets/:version", (req, res) => {
+    try {
+      if (!args.getRulesetByVersion) return res.status(400).json({ ok: false, error: "ruleset fetch not enabled" });
+      const v = Number(req.params.version);
+      const rs = args.getRulesetByVersion(v);
+      if (!rs) return res.status(404).json({ ok: false, error: "not found" });
+      res.json({ ok: true, ruleset: rs });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
   });
 
   app.post("/api/rules", (req, res) => {
@@ -364,13 +282,15 @@ export function createHttpApp(args: {
     }
   });
 
-  app.post("/api/rules/activate/:version", (req, res) => {
+  // NEW: toggle active (multi-active)
+  app.post("/api/rules/toggle/:version", (req, res) => {
     try {
       if (!requireAdmin(req, res)) return;
-      if (!args.activateRuleset) return res.status(400).json({ ok: false, error: "rules not enabled" });
+      if (!args.setRulesetActive) return res.status(400).json({ ok: false, error: "rules toggle not enabled" });
 
       const v = Number(req.params.version);
-      const out = args.activateRuleset(v);
+      const active = Boolean(req.body?.active);
+      const out = args.setRulesetActive(v, active);
       res.json({ ok: true, result: out });
     } catch (e: any) {
       res.status(400).json({ ok: false, error: e?.message || "failed" });

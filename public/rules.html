@@ -8,15 +8,12 @@
   </head>
 
   <body>
-    <div class="bg-wash"></div>
-
-    <header class="topbar">
-      <div class="topbar-left">
+    <div class="appShell">
+      <header class="topbar">
         <div class="brand">
-          <div class="brand-dot"></div>
-          <div class="brand-text">Trading Agent</div>
+          <span class="dot"></span>
+          <span>Trading Agent</span>
         </div>
-
         <nav class="tabs">
           <a class="tab" href="/">Workspace</a>
           <a class="tab" href="/outcomes">Outcomes</a>
@@ -24,112 +21,188 @@
           <a class="tab active" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
         </nav>
-      </div>
-    </header>
-
-    <main class="shell">
-      <!-- RULES CARD -->
-      <div class="card">
-        <div class="card-head">
-          <div>
-            <div class="card-title">Rules</div>
-            <div class="card-hint">Edit rules live (versioned). Requires x-admin-token if set.</div>
-          </div>
+        <div class="right">
+          <span class="pill pill-live">Realtime</span>
         </div>
+      </header>
 
-        <div style="padding: 16px;">
-          <div class="grid" style="display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
-            <label class="small">
-              Timeframe (minutes)
-              <input id="timeframeMin" class="input" type="number" min="1" step="1" />
+      <main class="content">
+        <!-- Strategies -->
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Strategies</div>
+              <div class="small muted">Strategies are saved rule versions. One strategy is ACTIVE at a time (safe mode).</div>
+            </div>
+            <div class="card-actions">
+              <input id="adminToken" class="input" placeholder="Admin token (optional)" style="width: 240px;" />
+              <button id="newStrategyBtn" class="btn">New Strategy</button>
+            </div>
+          </div>
+
+          <div id="bootStatus" class="small muted" style="padding: 8px 0;"></div>
+          <div id="strategiesList"></div>
+        </section>
+
+        <!-- Rules -->
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Rules</div>
+              <div class="small muted">Tune scanning + filters + post-signal management. Fields that aren't used by the engine are safely stored for future upgrades.</div>
+            </div>
+            <div class="card-actions">
+              <button id="saveRulesBtn" class="btn btn-primary">Save Rules</button>
+            </div>
+          </div>
+
+          <div class="formGrid" style="margin-top: 10px;">
+            <label class="small" style="grid-column: 1 / -1;">
+              Strategy name
+              <input id="strategyName" class="input" placeholder="e.g., Break & Retest (1m NY AM)" style="width:100%; margin-top:6px;" />
             </label>
 
-            <label class="small">
-              Retest tolerance (pct)
-              <input id="retestTol" class="input" type="number" min="0" step="0.0001" />
-            </label>
+            <!-- Scan -->
+            <div class="sectionTitle" style="grid-column: 1 / -1;">Scan</div>
 
             <label class="small">
-              RS window (5m bars)
-              <input id="rsWindow" class="input" type="number" min="1" step="1" />
-            </label>
-
-            <label class="small">
-              Premarket enabled
-              <select id="premarketEnabled" class="input">
-                <option value="true">true</option>
-                <option value="false">false</option>
+              Candle size
+              <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
+                <option value="1">1 minute</option>
+                <option value="2">2 minute</option>
+                <option value="5">5 minute</option>
+                <option value="15">15 minute</option>
+                <option value="30">30 minute</option>
+                <option value="60">1 hour</option>
+                <option value="240">4 hour</option>
+                <option value="1440">1 day</option>
+                <option value="10080">1 week</option>
               </select>
             </label>
 
             <label class="small">
-              Sector alignment enabled
-              <select id="sectorEnabled" class="input">
-                <option value="true">true</option>
-                <option value="false">false</option>
+              Session
+              <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
+                <option value="RTH">RTH (Regular hours)</option>
+                <option value="PREMARKET">Premarket</option>
+                <option value="ALL">All sessions</option>
               </select>
             </label>
 
             <label class="small">
-              Long min bias score
-              <input id="longMinBias" class="input" type="number" step="1" />
+              Universe
+              <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
+                <option value="WATCHLIST">Watchlist</option>
+                <option value="MAG7+INDEX">Mag 7 + Index</option>
+              </select>
             </label>
 
             <label class="small">
-              Short max bias score
-              <input id="shortMaxBias" class="input" type="number" step="1" />
-            </label>
-          </div>
-
-          <div style="display:flex; gap:10px; margin-top:16px;">
-            <input id="rulesetName" class="input" placeholder="Ruleset name" style="flex:1;" />
-            <input id="adminToken" class="input" placeholder="Admin token (if set)" style="flex:1;" />
-            <button id="saveBtn" class="btn">Save + Activate</button>
-          </div>
-
-          <div class="small" id="status" style="margin-top:12px;"></div>
-
-          <div style="margin-top:18px;">
-            <div class="small" style="margin-bottom:8px;">History</div>
-            <div id="history" class="list"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- BROKER CARD (NEW) -->
-      <div class="card" style="margin-top: 14px;">
-        <div class="card-head">
-          <div>
-            <div class="card-title">Broker Integration</div>
-            <div class="card-hint">Choose a broker from the approved list and save the required connection fields.</div>
-          </div>
-        </div>
-
-        <div style="padding: 16px;">
-          <div style="display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
-            <label class="small">
-              Broker
-              <select id="brokerKey" class="input"></select>
+              Premarket enabled (engine uses this)
+              <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
             </label>
 
             <label class="small">
-              Mode
-              <select id="brokerMode" class="input">
-                <option value="paper">paper</option>
-                <option value="live">live</option>
+              Market bias required
+              <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
+            </label>
+
+            <!-- Technical Filters -->
+            <div class="sectionTitle" style="grid-column: 1 / -1;">Technical Filters</div>
+
+            <label class="small">
+              Retest tolerance % (engine uses this)
+              <input id="retestTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              RS window (5m bars) (engine uses this)
+              <input id="rsWindowBars5m" class="input" placeholder="24" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Structure window (stored)
+              <input id="structureWindow" class="input" placeholder="100" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Sector alignment enabled (engine uses this)
+              <select id="sectorAlignmentEnabled" class="input" style="width:100%; margin-top:6px;">
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </select>
+            </label>
+
+            <label class="small">
+              Trigger type (stored)
+              <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
+                <option value="BREAK_RETEST">Break & Retest</option>
+              </select>
+            </label>
+
+            <label class="small">
+              Long min bias score (engine uses this)
+              <input id="longMinBiasScore" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Short max bias score (engine uses this)
+              <input id="shortMaxBiasScore" class="input" placeholder="40" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <div style="grid-column: 1 / -1;">
+              <div class="small muted" style="margin-bottom:6px;">Indicators to scan (stored)</div>
+              <label class="small" style="margin-right:14px;"><input id="indVwap" type="checkbox" /> VWAP</label>
+              <label class="small" style="margin-right:14px;"><input id="indMa" type="checkbox" /> Moving Averages</label>
+              <label class="small" style="margin-right:14px;"><input id="indRs" type="checkbox" /> Relative Strength</label>
+              <label class="small" style="margin-right:14px;"><input id="indVol" type="checkbox" /> Volume</label>
+            </div>
+
+            <!-- Post-signal Management -->
+            <div class="sectionTitle" style="grid-column: 1 / -1;">Post-signal Management</div>
+
+            <label class="small">
+              Target (R) (stored)
+              <input id="targetR" class="input" placeholder="2" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Stop (R) (stored)
+              <input id="stopR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Max hold (bars) (stored)
+              <input id="maxHoldBars" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
+            </label>
+
+            <label class="small">
+              Trail stop (stored)
+              <select id="trailStop" class="input" style="width:100%; margin-top:6px;">
+                <option value="OFF">Off</option>
+                <option value="MOVE_BE_1R">Move to BE @1R</option>
+                <option value="TRAIL_AFTER_1R">Trail after 1R</option>
+              </select>
+            </label>
+
+            <label class="small">
+              Exit on market bias flip (stored)
+              <select id="exitOnBiasFlip" class="input" style="width:100%; margin-top:6px;">
+                <option value="false">False</option>
+                <option value="true">True</option>
               </select>
             </label>
           </div>
+        </section>
 
-          <div id="brokerFields" style="margin-top: 12px; display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0, 1fr));"></div>
-
-          <div style="display:flex; gap:10px; margin-top:16px; align-items:center;">
-            <button id="saveBrokerBtn" class="btn">Save Broker Config</button>
-            <div class="small" id="brokerStatus"></div>
-          </div>
-        </div>
-      </div>
-    </main>
+      </main>
+    </div>
 
     <script src="/rules.js"></script>
   </body>

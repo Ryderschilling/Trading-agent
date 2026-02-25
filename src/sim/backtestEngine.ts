@@ -1,12 +1,54 @@
+// src/sim/backtestEngine.ts
 import { nyDayKey, nyPartsFromMs, isRegularSessionNY } from "../market/time";
 
-export type Timeframe = "1m" | "5m";
+/**
+ * Timeframes supported by backtest engine.
+ * NOTE: We still fetch canonical 1m bars, then resample to requested timeframe.
+ */
+export type Timeframe = "1m" | "2m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d" | "1w";
+
+/**
+ * Level source presets:
+ * - DAILY: uses PMH/PML/PDH/PDL (existing behavior)
+ * - REPEAT: uses repeat S/R levels derived from recent price touches
+ * - BOTH: union of DAILY + REPEAT
+ */
+export type LevelSourcePreset = "DAILY" | "REPEAT" | "BOTH";
+
+/**
+ * Entry mode:
+ * - BREAK: enter on breakout close (fill next candle open)
+ * - BREAK_RETEST: break then retest then confirm (existing behavior)
+ * - RETEST: enter on retest/hold without requiring a prior break
+ */
+export type EntryMode = "BREAK" | "BREAK_RETEST" | "RETEST";
+
+/**
+ * Repeat S/R parameters:
+ * tolerancePct: how close counts as a touch (percent of level price)
+ * touchCount: how many touches to qualify
+ * lookbackBars: how many prior candles to scan (no lookahead)
+ */
+export type RepeatSrConfig = {
+  tolerancePct: number; // e.g. 0.05 = 0.05%
+  touchCount: number; // e.g. 3
+  lookbackBars: number; // e.g. 150
+};
 
 export type BacktestConfig = {
   tickers: string[];
   timeframe: Timeframe;
   startDate: string; // YYYY-MM-DD (America/New_York)
   endDate: string; // YYYY-MM-DD (America/New_York)
+
+  // Strategy tagging (safe metadata only)
+  strategyVersion?: number;
+  strategyName?: string;
+
+  // NEW: support/resistance + entry behavior (backend only; UI can be wired later)
+  levelSource?: LevelSourcePreset; // default "DAILY"
+  entryMode?: EntryMode; // default "BREAK_RETEST"
+  repeatSr?: Partial<RepeatSrConfig>; // only used when levelSource includes REPEAT
 };
 
 export type Candle = {
@@ -27,11 +69,14 @@ export type DailyLevels = {
   priorRthLow: number | null;
 };
 
-export type LevelKey = "PMH" | "PML" | "PDH" | "PDL";
+export type LevelKey = "PMH" | "PML" | "PDH" | "PDL" | "RR";
 
 export type ResolvedLevel = {
   key: LevelKey;
   price: number;
+
+  // for repeat levels we include a stable id for "one level per day" gating
+  levelId?: string;
 };
 
 export type TradeDir = "LONG" | "SHORT";
@@ -75,11 +120,19 @@ export function runBacktest(args: {
   const { config, candlesByTicker } = args;
 
   const allTrades: SimTrade[] = [];
+
   const runMeta: any = {
     timeframe: config.timeframe,
     tickers: config.tickers,
     startDate: config.startDate,
-    endDate: config.endDate
+    endDate: config.endDate,
+
+    strategyVersion: config.strategyVersion ?? null,
+    strategyName: config.strategyName ?? null,
+
+    levelSource: config.levelSource ?? "DAILY",
+    entryMode: config.entryMode ?? "BREAK_RETEST",
+    repeatSr: normalizeRepeatSr(config.repeatSr)
   };
 
   for (const ticker of config.tickers) {
@@ -87,7 +140,10 @@ export function runBacktest(args: {
     if (!c1m.length) continue;
 
     const daily = computeDailyLevels(c1m);
-    const simCandles = config.timeframe === "5m" ? resampleTo5m(c1m) : c1m;
+
+    // resample from canonical 1m into requested timeframe (engine reads all candle types)
+    const simCandles = resampleToTimeframe(c1m, config.timeframe);
+
     const vwap = computeVWAP(simCandles);
 
     const trades = simulateStrategy({
@@ -95,13 +151,16 @@ export function runBacktest(args: {
       candles: simCandles,
       dailyLevels: daily,
       vwap,
-      timeframe: config.timeframe
+      timeframe: config.timeframe,
+      levelSource: config.levelSource ?? "DAILY",
+      entryMode: config.entryMode ?? "BREAK_RETEST",
+      repeatSr: normalizeRepeatSr(config.repeatSr)
     });
 
     allTrades.push(...trades);
   }
 
-  // Deterministic ordering
+  // deterministic ordering
   allTrades.sort((a, b) => a.entryTs - b.entryTs || a.ticker.localeCompare(b.ticker));
 
   const metrics = calculateMetrics(allTrades);
@@ -160,9 +219,7 @@ export function computeDailyLevels(candles: Candle[]): Record<string, DailyLevel
 // VWAP (intraday cumulative, RTH only)
 // ------------------------------------------------------------
 export function computeVWAP(candles: Candle[]): Map<number, number> {
-  // key: candle.ts -> vwap value at close
   const out = new Map<number, number>();
-
   let curDay: string | null = null;
   let pv = 0;
   let vol = 0;
@@ -185,11 +242,36 @@ export function computeVWAP(candles: Candle[]): Map<number, number> {
 }
 
 // ------------------------------------------------------------
-// Resampling
+// Resampling (from 1m candles)
 // ------------------------------------------------------------
+const TF_TO_MINUTES: Record<Exclude<Timeframe, "1d" | "1w">, number> = {
+  "1m": 1,
+  "2m": 2,
+  "5m": 5,
+  "15m": 15,
+  "30m": 30,
+  "1h": 60,
+  "4h": 240
+};
+
+export function resampleToTimeframe(candles1m: Candle[], tf: Timeframe): Candle[] {
+  if (tf === "1m") return candles1m;
+
+  if (tf === "1d") return resampleToNyDayRth(candles1m);
+  if (tf === "1w") return resampleToNyWeekRth(candles1m);
+
+  const mins = TF_TO_MINUTES[tf as Exclude<Timeframe, "1d" | "1w">];
+  if (!Number.isFinite(mins) || mins <= 1) return candles1m;
+  return resampleToMinutes(candles1m, mins);
+}
+
 export function resampleTo5m(candles1m: Candle[]): Candle[] {
+  return resampleToMinutes(candles1m, 5);
+}
+
+export function resampleToMinutes(candles1m: Candle[], minutes: number): Candle[] {
   const out: Candle[] = [];
-  const bucketMs = 5 * 60_000;
+  const bucketMs = Math.max(1, Math.floor(minutes)) * 60_000;
 
   let cur: Candle | null = null;
   let curBucket = 0;
@@ -215,8 +297,193 @@ export function resampleTo5m(candles1m: Candle[]): Candle[] {
       cur.volume += c.volume;
     }
   }
+
   if (cur) out.push(cur);
   return out;
+}
+
+/**
+ * Daily candle built from RTH-only 1m bars.
+ * Important: set ts to last included RTH candle so isRegularSessionNY(ts) stays true.
+ */
+function resampleToNyDayRth(candles1m: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  let curDay: string | null = null;
+  let cur: Candle | null = null;
+
+  for (const c of candles1m) {
+    if (!isRegularSessionNY(c.ts)) continue;
+    const day = nyDayKey(c.ts);
+
+    if (!cur || day !== curDay || c.ticker !== cur.ticker) {
+      if (cur) out.push(cur);
+      curDay = day;
+      cur = {
+        ticker: c.ticker,
+        ts: c.ts,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume
+      };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume += c.volume;
+      cur.ts = c.ts; // keep last RTH ts
+    }
+  }
+
+  if (cur) out.push(cur);
+  return out;
+}
+
+function weekKeyFromNyDay(dayKey: string): string {
+  // convert YYYY-MM-DD to a stable "week key" anchored to Monday (UTC calc on date only)
+  const [yy, mm, dd] = dayKey.split("-").map((x) => Number(x));
+  const utc = Date.UTC(yy, mm - 1, dd, 0, 0, 0, 0);
+  const d = new Date(utc);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const offset = (dow + 6) % 7; // Mon=0
+  const monday = utc - offset * 24 * 60 * 60_000;
+  const md = new Date(monday);
+  const y = md.getUTCFullYear();
+  const m = String(md.getUTCMonth() + 1).padStart(2, "0");
+  const da = String(md.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${da}`;
+}
+
+/**
+ * Weekly candle built from RTH-only 1m bars. ts stays within RTH.
+ */
+function resampleToNyWeekRth(candles1m: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  let curWeek: string | null = null;
+  let cur: Candle | null = null;
+
+  for (const c of candles1m) {
+    if (!isRegularSessionNY(c.ts)) continue;
+    const wk = weekKeyFromNyDay(nyDayKey(c.ts));
+
+    if (!cur || wk !== curWeek || c.ticker !== cur.ticker) {
+      if (cur) out.push(cur);
+      curWeek = wk;
+      cur = {
+        ticker: c.ticker,
+        ts: c.ts,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: c.volume
+      };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume += c.volume;
+      cur.ts = c.ts; // last RTH ts
+    }
+  }
+
+  if (cur) out.push(cur);
+  return out;
+}
+
+// ------------------------------------------------------------
+// Repeat S/R (no lookahead)
+// ------------------------------------------------------------
+type RepeatLevel = {
+  id: string;
+  price: number; // representative price
+  touches: number;
+};
+
+function normalizeRepeatSr(inp?: Partial<RepeatSrConfig>): RepeatSrConfig {
+  const tol = Number(inp?.tolerancePct);
+  const touches = Number(inp?.touchCount);
+  const lookback = Number(inp?.lookbackBars);
+
+  return {
+    tolerancePct: Number.isFinite(tol) && tol > 0 ? tol : 0.05, // 0.05%
+    touchCount: Number.isFinite(touches) && touches >= 2 ? Math.floor(touches) : 3,
+    lookbackBars: Number.isFinite(lookback) && lookback >= 20 ? Math.floor(lookback) : 150
+  };
+}
+
+/**
+ * Build repeat S/R levels from PRIOR candles only:
+ * - window = [i - lookbackBars, i-1]
+ * - count touches when candle high/low is within tolerance of an existing level
+ * - cluster by incremental averaging
+ *
+ * Returns levels meeting touchCount threshold.
+ */
+function computeRepeatLevelsNoLookahead(
+  candles: Candle[],
+  i: number,
+  cfg: RepeatSrConfig
+): RepeatLevel[] {
+  const end = Math.max(0, Math.min(candles.length, i));
+  const start = Math.max(0, end - cfg.lookbackBars);
+  if (end - start < Math.max(5, cfg.touchCount)) return [];
+
+  const levels: Array<{ price: number; touches: number }> = [];
+
+  function tolAbs(price: number) {
+    return Math.max(1e-9, (Math.abs(price) * cfg.tolerancePct) / 100);
+  }
+
+  function addTouch(px: number) {
+    if (!Number.isFinite(px) || px <= 0) return;
+
+    // find nearest within tolerance
+    let bestIdx = -1;
+    let bestDist = Infinity;
+
+    for (let j = 0; j < levels.length; j++) {
+      const L = levels[j];
+      const dist = Math.abs(px - L.price);
+      if (dist <= tolAbs(L.price) && dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      // update cluster price as running average
+      const L = levels[bestIdx];
+      const n = L.touches + 1;
+      L.price = (L.price * L.touches + px) / n;
+      L.touches = n;
+    } else {
+      levels.push({ price: px, touches: 1 });
+    }
+  }
+
+  for (let k = start; k < end; k++) {
+    const c = candles[k];
+    // only use RTH candles for intraday S/R so it matches engine trading window
+    if (!isRegularSessionNY(c.ts)) continue;
+
+    addTouch(Number(c.high));
+    addTouch(Number(c.low));
+  }
+
+  // qualify
+  const qualified = levels
+    .filter((L) => L.touches >= cfg.touchCount)
+    .sort((a, b) => b.touches - a.touches || a.price - b.price)
+    .slice(0, 12) // cap to avoid excessive per-candle loops
+    .map((L, idx) => ({
+      id: `RR_${idx}_${L.price.toFixed(2)}`,
+      price: L.price,
+      touches: L.touches
+    }));
+
+  return qualified;
 }
 
 // ------------------------------------------------------------
@@ -229,11 +496,16 @@ export function simulateStrategy(args: {
   dailyLevels: Record<string, DailyLevels>;
   vwap: Map<number, number>;
   timeframe: Timeframe;
+
+  // NEW behavior controls (backend only)
+  levelSource: LevelSourcePreset;
+  entryMode: EntryMode;
+  repeatSr: RepeatSrConfig;
 }): SimTrade[] {
-  const { ticker, candles, dailyLevels } = args;
+  const { ticker, candles, dailyLevels, levelSource, entryMode, repeatSr } = args;
   const trades: SimTrade[] = [];
 
-  // One trade open max across all levels.
+  // One trade open max.
   let openTrade:
     | {
         dir: TradeDir;
@@ -243,13 +515,14 @@ export function simulateStrategy(args: {
         target: number;
         levelKey: LevelKey;
         levelPrice: number;
+        levelId: string;
         entryIdx: number;
       }
     | null = null;
   let openBarsHeld = 0;
 
   // per day: prevent re-trading the same level
-  const tradedLevelByDay: Record<string, Set<LevelKey>> = {};
+  const tradedLevelByDay: Record<string, Set<string>> = {};
 
   type SetupState = {
     phase: "IDLE" | "BROKE" | "RETEST";
@@ -258,42 +531,55 @@ export function simulateStrategy(args: {
     retestExtreme: number; // low for long, high for short
   };
 
-  const state: Record<string, Record<LevelKey, { long: SetupState; short: SetupState }>> = {};
+  // state keys now include a unique per-level id string (PMH/PML/PDH/PDL or RR_*).
+  const state: Record<string, Record<string, { long: SetupState; short: SetupState }>> = {};
 
   function ensureDayState(day: string) {
-    if (!tradedLevelByDay[day]) tradedLevelByDay[day] = new Set<LevelKey>();
-    if (!state[day]) {
-      state[day] = {
-        PMH: {
-          long: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN },
-          short: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN }
-        },
-        PML: {
-          long: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN },
-          short: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN }
-        },
-        PDH: {
-          long: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN },
-          short: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN }
-        },
-        PDL: {
-          long: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN },
-          short: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN }
-        }
+    if (!tradedLevelByDay[day]) tradedLevelByDay[day] = new Set<string>();
+    if (!state[day]) state[day] = {};
+  }
+
+  function ensureLevelState(day: string, levelId: string) {
+    ensureDayState(day);
+    if (!state[day][levelId]) {
+      state[day][levelId] = {
+        long: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN },
+        short: { phase: "IDLE", breakIdx: -1, retestIdx: -1, retestExtreme: NaN }
       };
     }
   }
 
-  function resolveLevels(day: string): ResolvedLevel[] {
+  function resolveDailyLevels(day: string): ResolvedLevel[] {
     const d = dailyLevels[day];
     if (!d) return [];
     const lvls: Array<ResolvedLevel | null> = [
-      d.preHigh != null ? { key: "PMH", price: d.preHigh } : null,
-      d.preLow != null ? { key: "PML", price: d.preLow } : null,
-      d.priorRthHigh != null ? { key: "PDH", price: d.priorRthHigh } : null,
-      d.priorRthLow != null ? { key: "PDL", price: d.priorRthLow } : null
+      d.preHigh != null ? { key: "PMH", price: d.preHigh, levelId: "PMH" } : null,
+      d.preLow != null ? { key: "PML", price: d.preLow, levelId: "PML" } : null,
+      d.priorRthHigh != null ? { key: "PDH", price: d.priorRthHigh, levelId: "PDH" } : null,
+      d.priorRthLow != null ? { key: "PDL", price: d.priorRthLow, levelId: "PDL" } : null
     ];
     return lvls.filter(Boolean) as ResolvedLevel[];
+  }
+
+  function resolveLevelsForCandle(day: string, i: number): ResolvedLevel[] {
+    const out: ResolvedLevel[] = [];
+
+    if (levelSource === "DAILY" || levelSource === "BOTH") {
+      out.push(...resolveDailyLevels(day));
+    }
+
+    if (levelSource === "REPEAT" || levelSource === "BOTH") {
+      const rr = computeRepeatLevelsNoLookahead(candles, i, repeatSr);
+      for (const L of rr) {
+        out.push({
+          key: "RR",
+          price: L.price,
+          levelId: L.id
+        });
+      }
+    }
+
+    return out;
   }
 
   function isAfter330(ts: number) {
@@ -306,21 +592,26 @@ export function simulateStrategy(args: {
     return p.hh * 60 + p.mm >= 15 * 60 + 55;
   }
 
+  function tolAbsForPrice(price: number) {
+    // reuse repeat tolerance for "break-only" stop padding when needed
+    const pct = Number(repeatSr.tolerancePct || 0.05);
+    return Math.max(1e-9, (Math.abs(price) * pct) / 100);
+  }
+
   // Iterate sequentially; never read future candles when deciding.
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
 
     // Only trade RTH candles.
-    if (!isRegularSessionNY(c.ts)) {
-      continue;
-    }
+    if (!isRegularSessionNY(c.ts)) continue;
 
     const day = nyDayKey(c.ts);
     ensureDayState(day);
-    const dayLevels = resolveLevels(day);
-    if (!dayLevels.length) continue;
 
-    // EOD force-exit at 15:55 close
+    const levels = resolveLevelsForCandle(day, i);
+    if (!levels.length) continue;
+
+    // Manage open trade
     if (openTrade) {
       openBarsHeld++;
 
@@ -346,7 +637,12 @@ export function simulateStrategy(args: {
           exitPrice,
           exitReason,
           rMult: r,
-          barsHeld: openBarsHeld
+          barsHeld: openBarsHeld,
+          meta: {
+            levelId: openTrade.levelId,
+            entryMode,
+            levelSource
+          }
         });
 
         openTrade = null;
@@ -368,7 +664,12 @@ export function simulateStrategy(args: {
           exitPrice,
           exitReason: "EOD",
           rMult: r,
-          barsHeld: openBarsHeld
+          barsHeld: openBarsHeld,
+          meta: {
+            levelId: openTrade.levelId,
+            entryMode,
+            levelSource
+          }
         });
 
         openTrade = null;
@@ -381,13 +682,160 @@ export function simulateStrategy(args: {
     if (isAfter330(c.ts)) continue;
 
     // Evaluate setups for each level (one trade per level per day)
-    for (const L of dayLevels) {
-      const key = L.key;
-      if (tradedLevelByDay[day].has(key)) continue;
+    for (const L of levels) {
+      const levelId = String(L.levelId || L.key);
+      ensureLevelState(day, levelId);
 
-      // Long setup against this level
+      if (tradedLevelByDay[day].has(levelId)) continue;
+
+      // ---------------------------
+      // EntryMode: RETEST (no prior break required)
+      // Long: candle touches/pierces level and closes back above -> enter next open
+      // Short: candle touches/pierces level and closes back below -> enter next open
+      // ---------------------------
+      if (entryMode === "RETEST") {
+        // LONG retest-hold
+        if (c.low <= L.price && c.close > L.price) {
+          const entryIdx = i + 1;
+          if (entryIdx < candles.length) {
+            const entryC = candles[entryIdx];
+            if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
+              const entryPrice = entryC.open;
+              const stop = c.low; // use current candle extreme
+              const risk = entryPrice - stop;
+              if (Number.isFinite(risk) && risk > 0) {
+                const target = entryPrice + 2 * risk;
+                openTrade = {
+                  dir: "LONG",
+                  entryTs: entryC.ts,
+                  entryPrice,
+                  stop,
+                  target,
+                  levelKey: L.key,
+                  levelPrice: L.price,
+                  levelId,
+                  entryIdx
+                };
+                openBarsHeld = 0;
+                tradedLevelByDay[day].add(levelId);
+              }
+            }
+          }
+        }
+
+        if (openTrade) break;
+
+        // SHORT retest-hold
+        if (c.high >= L.price && c.close < L.price) {
+          const entryIdx = i + 1;
+          if (entryIdx < candles.length) {
+            const entryC = candles[entryIdx];
+            if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
+              const entryPrice = entryC.open;
+              const stop = c.high;
+              const risk = stop - entryPrice;
+              if (Number.isFinite(risk) && risk > 0) {
+                const target = entryPrice - 2 * risk;
+                openTrade = {
+                  dir: "SHORT",
+                  entryTs: entryC.ts,
+                  entryPrice,
+                  stop,
+                  target,
+                  levelKey: L.key,
+                  levelPrice: L.price,
+                  levelId,
+                  entryIdx
+                };
+                openBarsHeld = 0;
+                tradedLevelByDay[day].add(levelId);
+              }
+            }
+          }
+        }
+
+        if (openTrade) break;
+        continue;
+      }
+
+      // ---------------------------
+      // EntryMode: BREAK (enter on breakout close)
+      // Uses a conservative stop around the level with tolerance padding.
+      // ---------------------------
+      if (entryMode === "BREAK") {
+        // LONG break
+        if (c.close > L.price) {
+          const entryIdx = i + 1;
+          if (entryIdx < candles.length) {
+            const entryC = candles[entryIdx];
+            if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
+              const entryPrice = entryC.open;
+              const stop = L.price - tolAbsForPrice(L.price);
+              const risk = entryPrice - stop;
+              if (Number.isFinite(risk) && risk > 0) {
+                const target = entryPrice + 2 * risk;
+                openTrade = {
+                  dir: "LONG",
+                  entryTs: entryC.ts,
+                  entryPrice,
+                  stop,
+                  target,
+                  levelKey: L.key,
+                  levelPrice: L.price,
+                  levelId,
+                  entryIdx
+                };
+                openBarsHeld = 0;
+                tradedLevelByDay[day].add(levelId);
+              }
+            }
+          }
+        }
+
+        if (openTrade) break;
+
+        // SHORT break
+        if (c.close < L.price) {
+          const entryIdx = i + 1;
+          if (entryIdx < candles.length) {
+            const entryC = candles[entryIdx];
+            if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
+              const entryPrice = entryC.open;
+              const stop = L.price + tolAbsForPrice(L.price);
+              const risk = stop - entryPrice;
+              if (Number.isFinite(risk) && risk > 0) {
+                const target = entryPrice - 2 * risk;
+                openTrade = {
+                  dir: "SHORT",
+                  entryTs: entryC.ts,
+                  entryPrice,
+                  stop,
+                  target,
+                  levelKey: L.key,
+                  levelPrice: L.price,
+                  levelId,
+                  entryIdx
+                };
+                openBarsHeld = 0;
+                tradedLevelByDay[day].add(levelId);
+              }
+            }
+          }
+        }
+
+        if (openTrade) break;
+        continue;
+      }
+
+      // ---------------------------
+      // EntryMode: BREAK_RETEST (existing behavior)
+      // state machine per level
+      // ---------------------------
+
+      // LONG setup
       {
-        const st = state[day][key].long;
+        const st = state[day][levelId].long;
+
         if (st.phase === "IDLE") {
           if (c.close > L.price) {
             st.phase = "BROKE";
@@ -407,6 +855,7 @@ export function simulateStrategy(args: {
           if (c.close > L.price) {
             const retestLow = st.retestExtreme;
             const entryIdx = i + 1;
+
             if (entryIdx < candles.length) {
               const entryC = candles[entryIdx];
               if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
@@ -421,16 +870,18 @@ export function simulateStrategy(args: {
                     entryPrice,
                     stop,
                     target,
-                    levelKey: key,
+                    levelKey: L.key,
                     levelPrice: L.price,
+                    levelId,
                     entryIdx
                   };
                   openBarsHeld = 0;
-                  tradedLevelByDay[day].add(key);
+                  tradedLevelByDay[day].add(levelId);
                 }
               }
             }
-            // reset state regardless
+
+            // reset regardless
             st.phase = "IDLE";
           } else {
             // keep updating retest low while in retest phase
@@ -439,11 +890,12 @@ export function simulateStrategy(args: {
         }
       }
 
-      if (openTrade) break; // no overlap
+      if (openTrade) break;
 
-      // Short setup against this level
+      // SHORT setup
       {
-        const st = state[day][key].short;
+        const st = state[day][levelId].short;
+
         if (st.phase === "IDLE") {
           if (c.close < L.price) {
             st.phase = "BROKE";
@@ -461,6 +913,7 @@ export function simulateStrategy(args: {
           if (c.close < L.price) {
             const retestHigh = st.retestExtreme;
             const entryIdx = i + 1;
+
             if (entryIdx < candles.length) {
               const entryC = candles[entryIdx];
               if (isRegularSessionNY(entryC.ts) && !isAfter330(entryC.ts)) {
@@ -475,15 +928,17 @@ export function simulateStrategy(args: {
                     entryPrice,
                     stop,
                     target,
-                    levelKey: key,
+                    levelKey: L.key,
                     levelPrice: L.price,
+                    levelId,
                     entryIdx
                   };
                   openBarsHeld = 0;
-                  tradedLevelByDay[day].add(key);
+                  tradedLevelByDay[day].add(levelId);
                 }
               }
             }
+
             st.phase = "IDLE";
           } else {
             st.retestExtreme = Math.max(st.retestExtreme, c.high);
@@ -551,7 +1006,6 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
       winStreak = 0;
       longestLossStreak = Math.max(longestLossStreak, lossStreak);
     } else {
-      // flat counts toward breaking streaks
       winStreak = 0;
       lossStreak = 0;
     }
@@ -559,10 +1013,9 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
 
   const winRate = wins / totalTrades;
   const avgR = sumR / totalTrades;
-  const expectancy = avgR; // R-expectancy per trade
+  const expectancy = avgR;
   const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0;
 
-  // drawdown computed from equity curve
   const equity = generateEquityCurve(trades);
   let maxDrawdown = 0;
   for (const p of equity) maxDrawdown = Math.min(maxDrawdown, p.drawdown);
