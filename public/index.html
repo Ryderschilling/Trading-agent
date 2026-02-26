@@ -6,6 +6,7 @@
     <title>Workspace • Trading Agent</title>
 
     <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="/ui.js" defer></script>
   </head>
 
   <body>
@@ -32,8 +33,15 @@
           <div class="status-dot" id="socketDot"></div>
           <div class="status-text">Realtime</div>
         </div>
-      </div>
-    </header>
+      
+        <!-- NEW: Theme toggle -->
+        <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
+      </div><div class="topbar-right">
+  <div class="status">
+    <div class="status-dot" id="socketDot"></div>
+    <div class="status-text">Realtime</div>
+  </div>
+</header>
 
     <main class="shell">
       <section class="stack">

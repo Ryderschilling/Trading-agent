@@ -499,57 +499,951 @@ tbody td{
   }
 }
 
-/* ------------------------------
-   Backtest page polish (surgical)
-   ------------------------------ */
+/* =========================================================
+   UI REVAMP LAYER (visual only)
+   - Dark default + Light theme
+   - Glass topbar/cards + premium spacing
+   - Adds dropdown + theme toggle styling
+   ========================================================= */
 
-/* Metric cards inside #metricsGrid (Backtest only) */
-#metricsGrid .metricCard{
+   html[data-theme="dark"]{
+    --bg:#0b0f15;
+    --card:#0f1520;
+    --text:#e7edf6;
+    --muted:#9aa6bb;
+    --line: rgba(255,255,255,0.10);
+  
+    --shadow: 0 14px 34px rgba(0,0,0,0.40);
+    --shadowLift: 0 18px 48px rgba(0,0,0,0.50);
+  
+    /* keep P/L reserved */
+    --pos:#22c55e;
+    --neg:#ef4444;
+  
+    /* UI accent (not P/L) */
+    --accent:#5da9ff;
+  }
+  
+  html[data-theme="light"]{
+    --bg:#f4f6f9;
+    --card:#ffffff;
+    --text:#101827;
+    --muted:#5d6676;
+    --line: rgba(16,24,39,0.10);
+  
+    --shadow: 0 14px 34px rgba(0,0,0,0.10);
+    --shadowLift: 0 18px 48px rgba(0,0,0,0.14);
+  
+    --accent:#2b6fff;
+  }
+  
+  /* Background like your reference image */
+  body{
+    background:
+      radial-gradient(1200px 900px at 18% -10%, rgba(93,169,255,0.14), transparent 55%),
+      radial-gradient(1100px 800px at 110% 10%, rgba(34,197,94,0.08), transparent 55%),
+      linear-gradient(180deg, var(--bg), var(--bg));
+  }
+  
+  /* Glass topbar */
+  .topbar{
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    height: 64px;
+    margin: 14px auto 18px;
+    max-width: 1120px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+    backdrop-filter: blur(14px);
+    box-shadow: var(--shadow);
+  }
+
+  /* Topbar becomes solid once you scroll (prevents “see-through” jumble) */
+.topbar{
+  transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.topbar.is-solid{
+
+html[data-theme="light"] .topbar.is-solid{
+  background: rgba(255, 255, 255, 0.94); /* solid light */
+}}
+  
+  /* Make tabs match “pill segmented” feel */
+  .tabs{
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  
+  .tab{
+    border: 1px solid rgba(255,255,255,0.10);
+    background: rgba(255,255,255,0.04);
+    color: var(--muted);
+  }
+  
+  .tab:hover{
+    box-shadow: none;
+    background: rgba(93,169,255,0.10);
+    border-color: rgba(93,169,255,0.18);
+  }
+  
+  .tab.active{
+    background: rgba(255,255,255,0.10);
+    border-color: rgba(255,255,255,0.16);
+    color: var(--text);
+  }
+  
+  /* Cards: glass panels */
+  .card, .panel{
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+  }
+  
+  /* Tables: nicer header + zebra rows */
+  table thead th{
+    background: rgba(255,255,255,0.06);
+    color: var(--muted);
+  }
+  table tbody tr:nth-child(even){
+    background: rgba(255,255,255,0.03);
+  }
+  
+  /* Buttons + focus */
+  .btn, .input, button{
+    border-color: var(--line);
+  }
+  
+  .btn:focus-visible,
+  .input:focus{
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(93,169,255,0.35);
+    border-color: rgba(93,169,255,0.35);
+  }
+  
+  /* Theme toggle button (small icon pill) */
+  #themeToggle{
+    width: 40px;
+    height: 36px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  
+  /* Pages dropdown */
+  .pages-dd{ position: relative; display:inline-flex; }
+  #pagesMenuBtn{ white-space: nowrap; }
+  
+  #pagesMenu{
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 190px;
+    padding: 10px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+    backdrop-filter: blur(14px);
+    box-shadow: var(--shadowLift);
+    display: none;
+    z-index: 999;
+  }
+  #pagesMenu.open{ display:block; }
+  
+  #pagesMenu a{
+    display: block;
+    padding: 10px 10px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: var(--text);
+  }
+  #pagesMenu a:hover{
+    background: rgba(93,169,255,0.12);
+  }
+  
+  /* Mobile safety */
+  @media (max-width: 720px){
+    .topbar{ margin: 10px 12px 14px; }
+  }
+
+  /* =========================================================
+   UI FIXUPS: contrast + pills + chips + primary buttons
+   ========================================================= */
+
+/* Make inputs readable in dark mode (and still fine in light) */
+.input, select.input, textarea.input{
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px 14px;
-  background: #fff;
-  min-height: 74px;
+}
+.input::placeholder{ color: rgba(154,166,187,0.75); }
+
+html[data-theme="dark"] select option{
+  background: #0f1520;
+  color: var(--text);
+}
+
+/* Buttons: ensure good contrast in dark mode */
+.btn, button.btn{
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.btn-ghost{
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+}
+
+/* Primary action (used by watchlist Add, Save Rules, etc.) */
+.btn-primary,
+.btn.primary{
+  background: rgba(93,169,255,0.18);
+  border-color: rgba(93,169,255,0.28);
+  color: var(--text);
+}
+.btn-primary:hover,
+.btn.primary:hover{
+  background: rgba(93,169,255,0.26);
+  border-color: rgba(93,169,255,0.36);
+}
+
+/* Pills used across the app */
+.pill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Watchlist chips */
+.chip{
+  background: rgba(255,255,255,0.06);
+  border-color: var(--line);
+  color: var(--text);
+}
+.chip-x{
+  background: rgba(255,255,255,0.06);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* Cards/list items in dark mode shouldn’t go “white” */
+.item{
+  background: rgba(255,255,255,0.04);
+  border-color: var(--line);
+}
+
+/* Brand dot: make it look like the goal image (subtle premium glow) */
+.brand-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(255,255,255,0.18) 45%, rgba(93,169,255,0.18) 70%, rgba(0,0,0,0) 100%),
+    linear-gradient(135deg, rgba(93,169,255,0.55), rgba(255,255,255,0.15));
+  box-shadow:
+    0 0 0 4px rgba(255,255,255,0.05),
+    0 10px 22px rgba(0,0,0,0.35);
+}
+
+/* =========================================================
+   BACKTEST PAGE — photo-matching layout + controls
+   (safe: only visual rules, no JS logic changes)
+   ========================================================= */
+
+   .page-backtest { max-width: 1120px; }
+
+   .page-backtest .bt-card{
+     border-radius: 18px;
+   }
+   
+   .page-backtest .bt-head{
+     padding-bottom: 12px;
+   }
+   
+   .page-backtest .bt-actions{
+     display:flex;
+     gap:10px;
+     align-items:center;
+   }
+   
+   .page-backtest .bt-btn{
+     padding: 10px 14px;
+     border-radius: 999px;
+     background: rgba(255,255,255,0.06);
+     border: 1px solid var(--line);
+     color: var(--text);
+   }
+   
+   .page-backtest .bt-btn-primary{
+     padding: 10px 16px;
+     border-radius: 999px;
+     background: rgba(255,255,255,0.78); /* light pill like the reference */
+     border: 1px solid rgba(255,255,255,0.70);
+     color: rgba(10,14,20,0.92);
+   }
+   html[data-theme="light"] .page-backtest .bt-btn-primary{
+     background: rgba(20,24,30,0.92);
+     border-color: rgba(20,24,30,0.75);
+     color: #fff;
+   }
+   
+   .page-backtest .bt-form{ margin-top: 2px; }
+   
+   .page-backtest .bt-grid{
+     display:grid;
+     grid-template-columns: 1fr 1fr;
+     gap: 14px 16px;
+     align-items:start;
+   }
+   
+   .page-backtest .bt-field{
+     display:flex;
+     flex-direction:column;
+     gap:8px;
+   }
+   
+   .page-backtest .bt-label{
+     font-size: 13px;
+     font-weight: 800;
+     color: rgba(220,228,242,0.88);
+   }
+   html[data-theme="light"] .page-backtest .bt-label{
+     color: rgba(20,24,30,0.75);
+   }
+   
+   .page-backtest .bt-input{
+     border-radius: 12px;
+     padding: 12px 14px;
+     background: rgba(255,255,255,0.06);
+     border: 1px solid rgba(255,255,255,0.08);
+     box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+   }
+   
+   .page-backtest #tickersSelect.bt-input{
+     height: 110px;
+   }
+   
+   .page-backtest .bt-meta{
+     grid-column: 1 / -1;
+     margin-top: 2px;
+   }
+   
+   .page-backtest .bt-meta-row{
+     display:flex;
+     justify-content: space-between;
+     align-items:center;
+     gap:12px;
+     margin-bottom: 10px;
+   }
+   
+   .page-backtest .bt-tickers{
+     border-top: 1px solid var(--line);
+     padding-top: 12px;
+   }
+   
+   .page-backtest .bt-ticker-actions{
+     display:flex;
+     gap:10px;
+     flex-wrap:wrap;
+     margin-top: 10px;
+   }
+   
+   .page-backtest .bt-bottom{
+     display:grid;
+     grid-template-columns: 1fr 1fr;
+     gap: 14px;
+     align-items:start;
+   }
+   
+   @media (max-width: 980px){
+     .page-backtest .bt-grid{ grid-template-columns: 1fr; }
+     .page-backtest .bt-bottom{ grid-template-columns: 1fr; }
+   }
+   
+   /* Summary card: metrics left + chart right (like the reference) */
+   .page-backtest .bt-summary-body{
+     display:grid;
+     grid-template-columns: 1.1fr 0.9fr;
+     gap: 14px;
+     margin-top: 12px;
+     align-items: stretch;
+   }
+   
+   @media (max-width: 980px){
+     .page-backtest .bt-summary-body{ grid-template-columns: 1fr; }
+   }
+   
+   .page-backtest .bt-mini-chart{
+     border-radius: 14px;
+     border: 1px solid var(--line);
+     background: rgba(255,255,255,0.04);
+     padding: 10px;
+     min-height: 210px;
+     display:flex;
+     align-items: center;
+   }
+   .page-backtest #equityCanvas{
+     width:100%;
+     height:190px;
+     display:block;
+   }
+   
+   /* Trades: clean table, sticky header inside card */
+   .page-backtest .bt-trades-wrap{
+     margin-top: 12px;
+     max-height: 320px;
+     overflow: auto;
+     border-radius: 14px;
+     border: 1px solid var(--line);
+     background: rgba(255,255,255,0.03);
+   }
+   
+   .page-backtest .bt-table thead th{
+     position: sticky;
+     top: 0;
+     z-index: 2;
+     background: rgba(15,20,28,0.92);
+     backdrop-filter: blur(10px);
+   }
+   html[data-theme="light"] .page-backtest .bt-table thead th{
+     background: rgba(245,247,252,0.92);
+   }
+   
+   /* Sort dropdown: keep it subtle (photo doesn't emphasize it) */
+   .page-backtest .bt-sort{
+     padding: 10px 12px;
+     border-radius: 999px;
+     min-width: 160px;
+   }
+
+   /* =========================================================
+   BACKTEST PAGE — premium SaaS layout (UI only)
+   Safe: adds styles without changing IDs or JS hooks
+   ========================================================= */
+
+.page-backtest { max-width: 1120px; }
+
+/* Card alignment + subtle premium elevation */
+.page-backtest .bt-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 18px 50px rgba(0,0,0,0.38);
+}
+
+.page-backtest .bt-card:hover {
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.07),
+    0 20px 60px rgba(0,0,0,0.42);
+}
+
+/* Card head spacing/hierarchy */
+.page-backtest .bt-card-head {
+  padding-bottom: 14px;
+}
+.page-backtest .bt-card .card-title { letter-spacing: 0.2px; }
+
+/* =========================
+   CONFIG CARD
+   ========================= */
+.page-backtest .bt-config-body {
+  padding-top: 4px;
+}
+
+/* Configuration grid per spec (2 columns, 3 rows) */
+.page-backtest .bt-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 22px;              /* 16–24px spec */
+  margin-top: 10px;
+}
+
+/* Field formatting */
+.page-backtest .bt-field {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-#metricsGrid .metricLabel{
-  font-size: 12px;
-  color: var(--muted);
+.page-backtest .bt-label {
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.1px;
+  color: rgba(255,255,255,0.70);
 }
 
-#metricsGrid .metricValue{
-  font-size: 18px;
-  font-weight: 900;
-  color: var(--text);
-  line-height: 1.1;
+/* Inputs: no bright white, consistent height */
+.page-backtest .bt-input {
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-height: 44px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-/* Make sure the metrics grid stays 4-up like before */
-#metricsGrid{
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+.page-backtest .bt-input:focus {
+  outline: none;
+  border-color: rgba(255,255,255,0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 0 3px rgba(110,231,183,0.12); /* subtle green focus halo */
 }
 
-/* Equity canvas: ensure it actually shows and has pixel backing */
-.equity-canvas{
+/* Run button: primary but not oversized */
+.page-backtest .bt-runBtn {
   width: 100%;
-  height: 220px;
+  min-height: 44px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.80);
+  border: 1px solid rgba(255,255,255,0.65);
+  color: rgba(12,16,22,0.92);
+}
+html[data-theme="light"] .page-backtest .bt-runBtn {
+  background: rgba(20,24,30,0.92);
+  border-color: rgba(20,24,30,0.75);
+  color: #fff;
+}
+
+/* Reset button stays secondary */
+.page-backtest .bt-config-actions .btn {
+  border-radius: 999px;
+  padding: 10px 14px;
+}
+
+/* Extras: status + tickers are present but not clumped */
+.page-backtest .bt-config-extras {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.page-backtest .bt-statusRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.page-backtest .bt-tickersBlock .bt-label { margin-bottom: 8px; }
+
+.page-backtest #tickersSelect.bt-input {
+  height: 110px;
+}
+
+.page-backtest .bt-tickerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.page-backtest .bt-tickerActions .btn {
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+}
+
+/* =========================
+   LOWER GRID (Summary + Trades)
+   ========================= */
+.page-backtest .bt-lowerGrid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr; /* slightly heavier left like mockup */
+  gap: 16px;
+  align-items: start;
+}
+
+.bt-lowerGrid {
+  align-items: stretch;
+}
+
+.bt-lowerGrid > .bt-card {
+  height: 100%;
+}
+
+/* Summary internal layout: metrics 60% + chart 40% */
+.page-backtest .bt-summary-body {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 16px;
+  margin-top: 12px;
+  align-items: stretch;
+}
+
+/* Metrics: compact stacked rows (no bulky boxes) */
+.page-backtest .bt-metrics {
+  display: grid;
+  row-gap: 14px; /* spec */
+}
+
+/* We don't know the exact markup inside metricsGrid.
+   These rules safely style common patterns without breaking rendering. */
+.page-backtest .bt-metrics > * {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.page-backtest .bt-metrics :where(.label, .k, .name, .metric-label) {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.55);
+}
+
+.page-backtest .bt-metrics :where(.value, .v, .num, .metric-value) {
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chart container: subtle, no heavy fill */
+.page-backtest .bt-chartCard {
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  min-height: 210px;
+}
+.page-backtest #equityCanvas {
+  width: 100%;
+  height: 190px;
   display: block;
 }
 
-/* Trade log: allow the little sub-line to be smaller like before */
-.table-wrap .sub{
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 2px;
+/* =========================
+   TRADE LOG
+   ========================= */
+.page-backtest .bt-tradesWrap {
+  margin-top: 12px;
+  max-height: 340px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
 }
 
-/* Keep the trade table header readable, consistent with your theme */
-table thead th{
-  background: #f9fafb;
+/* Clean header with subtle separator + sticky */
+.page-backtest .bt-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgba(14,18,26,0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.70);
+}
+
+/* Rows: soft dividers + hover */
+.page-backtest .bt-table tbody td {
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-variant-numeric: tabular-nums;
+}
+.page-backtest .bt-table tbody tr:hover td {
+  background: rgba(255,255,255,0.04);
+}
+
+/* Responsive behavior */
+@media (max-width: 980px) {
+  .page-backtest .bt-lowerGrid { grid-template-columns: 1fr; }
+  .page-backtest .bt-summary-body { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .page-backtest .bt-config-grid { grid-template-columns: 1fr; }
+  .page-backtest .bt-runBtn { width: 100%; }
+}
+
+/* =========================================================
+   BACKTEST PAGE — authoritative layout (scoped)
+   Matches professional mock; UI only
+   ========================================================= */
+
+   .page-backtest{
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+  
+  /* Card baseline matches rest of app, but tighter + premium */
+  .page-backtest .bt-card{
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.06),
+      0 18px 50px rgba(0,0,0,0.38);
+  }
+  
+  .page-backtest .bt-card:hover{
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.07),
+      0 20px 60px rgba(0,0,0,0.42);
+  }
+  
+  .page-backtest .bt-card-head{
+    padding-bottom: 14px;
+  }
+  
+  .page-backtest .bt-card .card-title{
+    letter-spacing: 0.2px;
+  }
+  
+  /* =========================
+     CONFIG CARD (top)
+     ========================= */
+  
+  .page-backtest .bt-config{
+    padding: 0; /* keep outer padding controlled by .card base if applicable */
+  }
+  
+  .page-backtest .bt-config-body{
+    padding-top: 6px;
+  }
+  
+  /* NEW layout: left inputs + right status/tickers */
+  .page-backtest .bt-config-layout{
+    display: grid;
+    grid-template-columns: 1.25fr 0.75fr;
+    gap: 18px;
+    align-items: start;
+  }
+  
+  /* Left: existing grid remains 2 columns */
+  .page-backtest .bt-config-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 22px;
+    margin-top: 10px;
+  }
+  
+  /* Field formatting */
+  .page-backtest .bt-field{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .page-backtest .bt-label{
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.70);
+  }
+  
+  /* Inputs: dark SaaS, consistent height */
+  .page-backtest .bt-input{
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 44px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+    color: var(--text);
+  }
+  
+  .page-backtest .bt-input:focus{
+    outline: none;
+    border-color: rgba(255,255,255,0.16);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 0 0 3px rgba(110,231,183,0.12);
+  }
+  
+  /* Run button: primary but not oversized */
+  .page-backtest #runBtn.bt-runBtn{
+    min-height: 44px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    width: 100%;
+  }
+  
+  /* Right: “sub-card” treatment to avoid dead space */
+  .page-backtest .bt-config-extras{
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+    padding: 14px 16px;
+  }
+  
+  /* Status row */
+  .page-backtest .bt-statusRow{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  
+  .page-backtest #runMeta{
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 58%;
+  }
+  
+  /* Tickers block */
+  .page-backtest .bt-tickersBlock .bt-label{
+    margin-bottom: 8px;
+  }
+  
+  /* Cap tickers select height (no big empty expanse) */
+  .page-backtest #tickersSelect.bt-input{
+    height: 150px;
+    overflow: auto;
+  }
+  
+  /* Preset buttons */
+  .page-backtest .bt-tickerActions{
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  
+  .page-backtest .bt-tickerActions .btn{
+    border-radius: 999px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: var(--text);
+  }
+  
+  /* =========================
+     LOWER GRID (summary + trades)
+     ========================= */
+  
+  .page-backtest .bt-lowerGrid{
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 16px;
+    margin-top: 16px;
+    align-items: start;
+  }
+  
+  /* Summary internal: metrics left + chart right */
+  .page-backtest .bt-summary-body{
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 16px;
+    margin-top: 12px;
+    align-items: stretch;
+  }
+  
+  /* Metrics styling: compact rows (no white boxes) */
+  .page-backtest .bt-metrics > *{
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 14px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+  
+  .page-backtest .bt-metrics :where(.label, .k, .name, .metric-label){
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.55);
+  }
+  
+  .page-backtest .bt-metrics :where(.value, .v, .num, .metric-value){
+    font-size: 1.15rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  
+  /* Chart container: subtle */
+  .page-backtest .bt-chartCard{
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    min-height: 210px;
+  }
+  
+  .page-backtest #equityCanvas{
+    width: 100%;
+    height: 190px;
+    display: block;
+  }
+  
+  /* Trade log: premium sticky header + soft rows */
+  .page-backtest .bt-tradesWrap{
+    margin-top: 12px;
+    max-height: 340px;
+    overflow: auto;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+  
+  .page-backtest .bt-table thead th{
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(14,18,26,0.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.70);
+  }
+  
+  .page-backtest .bt-table tbody td{
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-variant-numeric: tabular-nums;
+  }
+  
+  .page-backtest .bt-table tbody tr:hover td{
+    background: rgba(255,255,255,0.04);
+  }
+  
+  /* Sort dropdown subtle */
+  .page-backtest .bt-sort{
+    min-height: 44px;
+    border-radius: 999px;
+    padding: 10px 12px;
+    min-width: 160px;
+  }
+  
+  /* =========================
+     RESPONSIVE
+     ========================= */
+  
+  @media (max-width: 980px){
+    .page-backtest .bt-lowerGrid{ grid-template-columns: 1fr; }
+    .page-backtest .bt-summary-body{ grid-template-columns: 1fr; }
+  }
+  
+  @media (max-width: 760px){
+    .page-backtest .bt-config-layout{ grid-template-columns: 1fr; }
+    .page-backtest .bt-config-grid{ grid-template-columns: 1fr; }
+    .page-backtest #runBtn.bt-runBtn{ width: 100%; }
+  }
+
+  .page-backtest #metricsGrid{
+    padding: 0 8px 0 12px; /* top right bottom left */
+  }
+
+  /* Force sticky header to become solid once scrolling */
+.topbar.is-solid{
+  background: rgba(14,18,26,0.96) !important;
+  border-color: rgba(255,255,255,0.14) !important;
+  backdrop-filter: blur(14px) !important;
 }

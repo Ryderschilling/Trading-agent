@@ -4,7 +4,7 @@
     // ---------- DOM helpers ----------
     const $ = (id) => document.getElementById(id);
   
-    const tickerSelect = $("tickersSelect");   // matches backtest.html
+    const tickerSelect = $("tickersSelect");
     const strategySelect = $("strategySelect");
     const timeframeSelect = $("timeframeSelect");
     const startDateInput = $("startDate");
@@ -21,8 +21,11 @@
     const tradeTableBody = $("tradesBody");
     const sortSelect = $("sortSelect");
   
-    // Optional (only used if present; will not affect layout if missing)
-    const startEquityInput = $("startEquity"); // you may add later; safe if absent
+    const presetMag7Btn = $("presetMag7Btn");
+    const presetClearBtn = $("presetClearBtn");
+  
+    // Optional
+    const startEquityInput = $("startEquity");
   
     // ---------- state ----------
     let activeRunId = null;
@@ -30,7 +33,7 @@
     let lastTrades = [];
     let lastEquity = [];
   
-    let equityPlot = null; // cached plot geometry for hover: { pts, xForIdx, yForVal, w, h }
+    let equityPlot = null;
   
     // ---------- utilities ----------
     function setPill(text, cls) {
@@ -52,7 +55,7 @@
         month: "2-digit",
         day: "2-digit"
       });
-      return fmt.format(new Date()); // YYYY-MM-DD
+      return fmt.format(new Date());
     }
   
     function ymdOneYearAgoNY() {
@@ -72,7 +75,7 @@
       if (!Number.isFinite(x)) return "—";
       return x.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
     }
-    
+  
     function num(n, digits = 2) {
       const x = Number(n);
       if (!Number.isFinite(x)) return "—";
@@ -167,7 +170,6 @@
         if (tickerSelect.options.length === 0) {
           setRunMeta("Watchlist loaded but returned 0 tickers.");
         }
-  
       } catch (e) {
         console.error("[backtest] watchlist load failed", e);
         setRunMeta(`Watchlist load failed: ${String(e?.message || e)}`);
@@ -178,6 +180,19 @@
       if (!tickerSelect) return [];
       const selected = Array.from(tickerSelect.selectedOptions || []).map((o) => String(o.value || "").toUpperCase());
       return selected.filter(Boolean);
+    }
+  
+    function selectTickers(list) {
+      if (!tickerSelect) return;
+      const want = new Set((list || []).map((s) => String(s || "").toUpperCase()).filter(Boolean));
+      for (const opt of Array.from(tickerSelect.options || [])) {
+        opt.selected = want.has(String(opt.value || "").toUpperCase());
+      }
+    }
+  
+    function clearSelectedTickers() {
+      if (!tickerSelect) return;
+      for (const opt of Array.from(tickerSelect.options || [])) opt.selected = false;
     }
   
     // ---------- rulesets/strategies ----------
@@ -201,11 +216,11 @@
           const v = Number(r?.version);
           if (!Number.isFinite(v)) continue;
           const name = String(r?.name || `Ruleset v${v}`);
-          const active = Boolean(r?.active);
+          const enabled = Boolean(r?.active);
   
           const opt = document.createElement("option");
           opt.value = String(v);
-          opt.textContent = active ? `${name} (ACTIVE)` : name;
+          opt.textContent = enabled ? `${name} (ENABLED)` : name;
           strategySelect.appendChild(opt);
         }
   
@@ -226,7 +241,7 @@
         const txt = await res.text().catch(() => "");
         throw new Error(`Create run failed (${res.status}) ${txt}`);
       }
-      return res.json(); // {ok, runId, reused}
+      return res.json();
     }
   
     async function fetchRun(runId) {
@@ -254,14 +269,30 @@
   
       const pairs = [
         ["Total Trades", metrics?.totalTrades],
-        ["Win Rate", metrics?.winRatePct != null ? `${num(metrics.winRatePct, 1)}%` : metrics?.winRate],
-        ["Avg R", metrics?.avgR],
-        ["Expectancy", metrics?.expectancy],
-        ["Profit Factor", metrics?.profitFactor],
-        ["Max Drawdown (R)", metrics?.maxDrawdownR],
-        ["Win Streak", metrics?.winStreak],
-        ["Loss Streak", metrics?.lossStreak],
-        ["Avg Hold (bars)", metrics?.avgHoldBars]
+      
+        ["Win Rate",
+            (metrics?.winRatePct ?? metrics?.winRate) != null
+              ? `${Number(((metrics?.winRatePct ?? metrics?.winRate) * 100).toFixed(2)).toString().replace(/\.00$/, "")}%`
+              : null
+          ],
+      
+        ["Avg R", metrics?.avgR != null ? num(metrics.avgR, 3) : null],
+      
+        ["Expectancy", metrics?.expectancy != null ? num(metrics.expectancy, 3) : null],
+      
+        ["Profit Factor", metrics?.profitFactor != null ? num(metrics.profitFactor, 3) : null],
+      
+        ["Max Drawdown (R)",
+          (metrics?.maxDrawdownR ?? metrics?.maxDrawdown) != null
+            ? num(metrics?.maxDrawdownR ?? metrics?.maxDrawdown, 3)
+            : null
+        ],
+      
+        ["Win Streak", metrics?.winStreak ?? metrics?.longestWinStreak],
+      
+        ["Loss Streak", metrics?.lossStreak ?? metrics?.longestLossStreak],
+      
+        ["Avg Hold (bars)", metrics?.avgHoldBars != null ? num(metrics.avgHoldBars, 3) : null]
       ];
   
       for (const [label, value] of pairs) {
@@ -334,7 +365,7 @@
       };
   
       ctx.lineWidth = 2;
-      ctx.strokeStyle = "rgba(0,0,0,0.70)";
+      ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#fff");
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
         const x = xForIdx(i);
@@ -498,6 +529,22 @@
       clearUI();
     }
   
+    // ---------- presets ----------
+    function applyMag7Preset() {
+      const MAG7 = ["AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA"];
+      const INDEX = ["SPY","QQQ","IWM","DIA"];
+      const want = [...MAG7, ...INDEX];
+  
+      // only select tickers that exist in the current list
+      const exists = new Set(Array.from(tickerSelect?.options || []).map((o) => String(o.value || "").toUpperCase()));
+      const filtered = want.filter((t) => exists.has(t));
+      selectTickers(filtered);
+  
+      if (!filtered.length) {
+        setRunMeta("Preset tickers not found in Watchlist. Add MAG7/Indexes to Watchlist to use preset.");
+      }
+    }
+  
     // ---------- init ----------
     async function init() {
       if (startDateInput && !startDateInput.value) startDateInput.value = ymdOneYearAgoNY();
@@ -509,12 +556,11 @@
       if (runBtn) runBtn.addEventListener("click", onRunClick);
       if (refreshBtn) refreshBtn.addEventListener("click", onResetClick);
   
+      if (presetMag7Btn) presetMag7Btn.addEventListener("click", applyMag7Preset);
+      if (presetClearBtn) presetClearBtn.addEventListener("click", () => clearSelectedTickers());
+  
       if (sortSelect) {
         sortSelect.addEventListener("change", () => renderTrades(lastTrades));
-      }
-  
-      if (startEquityInput) {
-        startEquityInput.addEventListener("change", () => {});
       }
   
       if (equityCanvas) {
@@ -540,8 +586,7 @@
             statsEl.innerHTML =
               `P/L <b>${money(pnl)}</b> &nbsp;•&nbsp; ` +
               `<b>${num(pct, 2)}%</b> &nbsp;•&nbsp; ` +
-              `Account <b>${money(acct)}</b> &nbsp;•&nbsp; ` +
-              `<b>${fmtTs(p.ts)}</b>`;
+              `Account <b>${money(acct)}</b>`;
           }
   
           drawEquity(lastEquity, idx);

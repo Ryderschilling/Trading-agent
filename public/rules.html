@@ -4,16 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Rules • Trading Agent</title>
+
     <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="/ui.js" defer></script>
   </head>
 
   <body>
-    <div class="appShell">
-      <header class="topbar">
+    <!-- IMPORTANT: bg-wash must be a sibling overlay, not a wrapper -->
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
         <div class="brand">
-          <span class="dot"></span>
-          <span>Trading Agent</span>
+          <div class="brand-dot"></div>
+          <div class="brand-text">Trading Agent</div>
         </div>
+
         <nav class="tabs">
           <a class="tab" href="/">Workspace</a>
           <a class="tab" href="/outcomes">Outcomes</a>
@@ -21,18 +27,26 @@
           <a class="tab active" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
         </nav>
-        <div class="right">
-          <span class="pill pill-live">Realtime</span>
-        </div>
-      </header>
+      </div>
 
-      <main class="content">
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+
+        <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
         <!-- Strategies -->
         <section class="card">
           <div class="card-head">
             <div>
               <div class="card-title">Strategies</div>
-              <div class="small muted">Strategies are saved rule versions. One strategy is ACTIVE at a time (safe mode).</div>
+              <div class="small muted">Strategies are saved rule versions. You can enable multiple strategies at once.</div>
             </div>
             <div class="card-actions">
               <input id="adminToken" class="input" placeholder="Admin token (optional)" style="width: 240px;" />
@@ -84,8 +98,7 @@
               Session
               <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
                 <option value="RTH">RTH (Regular hours)</option>
-                <option value="PREMARKET">Premarket</option>
-                <option value="ALL">All sessions</option>
+                <option value="ALL">Anytime (All sessions)</option>
               </select>
             </label>
 
@@ -100,8 +113,8 @@
             <label class="small">
               Premarket enabled (engine uses this)
               <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
-                <option value="true">True</option>
                 <option value="false">False</option>
+                <option value="true">True</option>
               </select>
             </label>
 
@@ -143,17 +156,52 @@
               Trigger type (stored)
               <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
                 <option value="BREAK_RETEST">Break & Retest</option>
+                <option value="ORB">Opening Range Breakout</option>
               </select>
             </label>
 
+            <!-- ORB fields -->
+            <div id="orbFields" style="grid-column: 1 / -1; display:none; padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px;">
+              <div class="small muted" style="margin-bottom:8px;">
+                ORB: defines the opening range, then triggers on breakout + retest.
+              </div>
+              <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
+                <label class="small">
+                  ORB range minutes
+                  <select id="orbRangeMin" class="input" style="width:100%; margin-top:6px;">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15" selected>15</option>
+                    <option value="30">30</option>
+                  </select>
+                </label>
+
+                <label class="small">
+                  ORB entry mode
+                  <select id="orbEntryMode" class="input" style="width:100%; margin-top:6px;">
+                    <option value="BREAK_RETEST" selected>Break & Retest</option>
+                    <option value="BREAK">Break only</option>
+                    <option value="RETEST">Retest only</option>
+                  </select>
+                </label>
+
+                <label class="small">
+                  ORB retest tolerance %
+                  <input id="orbTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
+                </label>
+              </div>
+            </div>
+
             <label class="small">
-              Long min bias score (engine uses this)
+              Long min bias score (0–100)
               <input id="longMinBiasScore" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
+              <div class="card-hint" style="margin-top:6px;">Recommended scale: 50 neutral, 60+ bullish, 40- bearish.</div>
             </label>
 
             <label class="small">
-              Short max bias score (engine uses this)
+              Short max bias score (0–100)
               <input id="shortMaxBiasScore" class="input" placeholder="40" style="width:100%; margin-top:6px;" />
+              <div class="card-hint" style="margin-top:6px;">If bias score ≤ this, shorts allowed.</div>
             </label>
 
             <div style="grid-column: 1 / -1;">
@@ -182,13 +230,42 @@
               <input id="maxHoldBars" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
             </label>
 
-            <label class="small">
-              Trail stop (stored)
-              <select id="trailStop" class="input" style="width:100%; margin-top:6px;">
-                <option value="OFF">Off</option>
-                <option value="MOVE_BE_1R">Move to BE @1R</option>
-                <option value="TRAIL_AFTER_1R">Trail after 1R</option>
-              </select>
+            <label class="small" style="grid-column: 1 / -1;">
+              Trailing stop (stored)
+              <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+                <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
+                  <input id="moveBeEnabled" type="checkbox" />
+                  Move stop to breakeven
+                </label>
+
+                <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
+                  <input id="trailEnabled" type="checkbox" />
+                  Trailing stop loss
+                </label>
+              </div>
+
+              <div id="moveBeFields" style="display:none; margin-top:10px;">
+                <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
+                  <label class="small">
+                    Move to BE when profit reaches (R)
+                    <input id="moveBeAtR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                  </label>
+                </div>
+              </div>
+
+              <div id="trailFields" style="display:none; margin-top:10px;">
+                <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
+                  <label class="small">
+                    Start trailing when profit reaches (R)
+                    <input id="trailStartR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                  </label>
+
+                  <label class="small">
+                    Trail stop by (R)
+                    <input id="trailByR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                  </label>
+                </div>
+              </div>
             </label>
 
             <label class="small">
@@ -200,9 +277,8 @@
             </label>
           </div>
         </section>
-
-      </main>
-    </div>
+      </section>
+    </main>
 
     <script src="/rules.js"></script>
   </body>
