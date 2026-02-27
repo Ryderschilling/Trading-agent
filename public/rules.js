@@ -1,5 +1,7 @@
 /* global fetch */
 
+let modalVersion = null;
+
 (() => {
   const $ = (id) => document.getElementById(id);
 
@@ -108,7 +110,29 @@
 
   // ---------- helpers ----------
   function setStatus(msg) {
-    if (bootStatus) bootStatus.textContent = msg || "";
+    if (!bootStatus) return;
+  
+    const s = String(msg || "").trim();
+  
+    // Hide routine messages completely
+    if (!s) {
+      bootStatus.style.display = "none";
+      bootStatus.textContent = "";
+      return;
+    }
+  
+    // Only show errors/warnings
+    const lower = s.toLowerCase();
+    const isBad = lower.includes("failed") || lower.includes("warning") || lower.includes("error");
+  
+    if (!isBad) {
+      bootStatus.style.display = "none";
+      bootStatus.textContent = "";
+      return;
+    }
+  
+    bootStatus.style.display = "block";
+    bootStatus.textContent = s;
   }
 
   function getAdminHeaders() {
@@ -313,42 +337,145 @@
     wrap.style.justifyContent = "center";
     wrap.style.zIndex = "9999";
     wrap.innerHTML = `
-      <div class="card" style="width:min(860px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow:auto;">
-        <div class="card-head">
-          <div style="min-width:0;">
-            <div class="card-title" id="rsModalTitle">Strategy</div>
-            <div class="small muted" id="rsModalSub"></div>
-          </div>
-          <div class="card-actions">
-            <button class="btn" id="rsModalClose">Close</button>
-          </div>
+    <div class="card rs-modal-card" style="width:min(980px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow:auto;">
+      <div class="card-head">
+        <div style="min-width:0;">
+          <div class="card-title" id="rsModalTitle">Strategy</div>
+          <div class="small muted" id="rsModalSub"></div>
         </div>
-        <div style="padding:14px;">
-          <div class="small muted" style="margin-bottom:6px;">Summary</div>
-          <div id="rsModalSummary" class="small" style="margin-bottom:14px;"></div>
-
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
-            <button class="btn" id="rsModalEdit">Edit (Load into form)</button>
-            <button class="btn" id="rsModalToggle">Enable</button>
-          </div>
-
-          <div class="small muted" style="margin-bottom:6px;">Recent backtests</div>
-          <div id="rsModalBacktests" class="small"></div>
+        <div class="card-actions">
+          <button class="btn" id="rsModalClose">Close</button>
         </div>
       </div>
-    `;
+  
+      <div class="rs-modal-body" id="rsModalView">
+        <div class="small muted" style="margin-bottom:8px;">Overview</div>
+        <div id="rsModalOverview" class="rs-kv"></div>
+  
+        <div class="rs-divider"></div>
+  
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <button class="btn btn-primary" id="rsModalEdit">Edit</button>
+          <button class="btn" id="rsModalToggle">Enable</button>
+        </div>
+  
+        <div class="small muted" style="margin-bottom:8px;">Recent backtests</div>
+        <div id="rsModalBacktests" class="small"></div>
+      </div>
+  
+      <div class="rs-modal-body" id="rsModalEditView" style="display:none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+          <div class="small muted">Editing in popup</div>
+<div style="display:flex; gap:10px; align-items:center;">
+  <button class="btn" id="rsModalDelete">Delete</button>
+  <button class="btn" id="rsModalDone">Done</button>
+</div>
+        </div>
+        <div id="rsModalEditMount" class="rs-edit-mount"></div>
+      </div>
+    </div>
+  `;
     document.body.appendChild(wrap);
+
+    const doneBtn = document.getElementById("rsModalDone");
+const delBtn = document.getElementById("rsModalDelete");
+
+doneBtn.addEventListener("click", async () => {
+  try {
+    if (!modalVersion) return;
+
+    // Because you moved the real editor into the modal, just reuse the same form reader
+    const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
+    const config = readForm();
+
+    await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
+
+    restoreEditorFromModal();
+    showModalView("view");
+    wrap.style.display = "none";
+    await boot();
+    setStatus(""); // keep it clean
+  } catch (e) {
+    setStatus(`Save failed: ${String(e?.message || e)}`);
+  }
+});
+
+delBtn.addEventListener("click", async () => {
+  try {
+    if (!modalVersion) return;
+    const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
+    if (!ok) return;
+
+    // DELETE endpoint you already have in http.ts
+    const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
+
+    restoreEditorFromModal();
+    showModalView("view");
+    wrap.style.display = "none";
+    await boot();
+    setStatus("");
+  } catch (e) {
+    setStatus(`Delete failed: ${String(e?.message || e)}`);
+  }
+});
 
     const closeBtn = document.getElementById("rsModalClose");
     closeBtn.addEventListener("click", () => {
+      restoreEditorFromModal();
+      showModalView("view");
       wrap.style.display = "none";
     });
 
     wrap.addEventListener("click", (ev) => {
-      if (ev.target === wrap) wrap.style.display = "none";
+      if (ev.target === wrap) {
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+      }
     });
 
     return wrap;
+  }
+
+  function buildOverviewKVs(cfg) {
+    const c = cfg || {};
+    const inds = c.indicators || {};
+    const post = c.post || {};
+    const orb = c.orb || {};
+  
+    const enabledInds = [];
+    if (inds.vwap) enabledInds.push("VWAP");
+    if (inds.movingAverages) enabledInds.push("MAs");
+    if (inds.relativeStrength) enabledInds.push("RS");
+    if (inds.volume) enabledInds.push("Volume");
+  
+    const kv = [
+      ["Trigger", c.triggerType ?? "—"],
+      ["Timeframe", c.timeframeMin != null ? `${c.timeframeMin}m` : "—"],
+      ["Session", c.scanSession ?? "—"],
+      ["Universe", c.scanUniverse ?? "—"],
+      ["Retest tol", c.retestTolerancePct != null ? `${c.retestTolerancePct}%` : "—"],
+      ["Indicators", enabledInds.length ? enabledInds.join(", ") : "None"],
+      ["Long bias min", c.longMinBiasScore != null ? String(c.longMinBiasScore) : "—"],
+      ["Short bias max", c.shortMaxBiasScore != null ? String(c.shortMaxBiasScore) : "—"],
+      ["Target (R)", post.targetR != null ? String(post.targetR) : "—"],
+      ["Stop (R)", post.stopR != null ? String(post.stopR) : "—"],
+      ["Max hold (bars)", post.maxHoldBars != null ? String(post.maxHoldBars) : "—"],
+      ["Exit on bias flip", post.exitOnBiasFlip ? "Yes" : "No"]
+    ];
+  
+    if (String(c.triggerType) === "ORB") {
+      kv.push(["ORB range", orb.rangeMin != null ? `${orb.rangeMin}m` : "—"]);
+      kv.push(["ORB entry", orb.entryMode ?? "—"]);
+      kv.push(["ORB tol", orb.tolerancePct != null ? `${orb.tolerancePct}%` : "—"]);
+    }
+  
+    if (post.moveBeEnabled) kv.push(["Move BE @", post.moveBeAtR != null ? `${post.moveBeAtR}R` : "—"]);
+    if (post.trailEnabled) kv.push(["Trail", `start ${post.trailStartR ?? "—"}R by ${post.trailByR ?? "—"}R`]);
+  
+    return kv;
   }
 
   function summarizeConfig(cfg) {
@@ -397,37 +524,102 @@
     return runs;
   }
 
-  async function openViewModal(rsRow) {
-    const version = Number(rsRow?.version);
-    if (!Number.isFinite(version)) throw new Error("bad version");
+  let editorHome = null;
+
+function moveEditorIntoModal() {
+  const editor = document.getElementById("rulesEditor");
+  const mount = document.getElementById("rsModalEditMount");
+  if (!editor || !mount) return false;
+
+  if (!editorHome) {
+    editorHome = {
+      editor,
+      parent: editor.parentNode,
+      next: editor.nextSibling
+    };
+  }
+
+  mount.appendChild(editor);
+  return true;
+}
+
+function restoreEditorFromModal() {
+  if (!editorHome) return;
+  const { editor, parent, next } = editorHome;
+
+  try {
+    if (parent) parent.insertBefore(editor, next || null);
+  } finally {
+    editorHome = null;
+  }
+}
+
+function showModalView(mode) {
+  const view = document.getElementById("rsModalView");
+  const edit = document.getElementById("rsModalEditView");
+  if (!view || !edit) return;
+
+  if (mode === "edit") {
+    view.style.display = "none";
+    edit.style.display = "block";
+  } else {
+    edit.style.display = "none";
+    view.style.display = "block";
+  }
+}
+
+async function openViewModal(rsRow) {
+  const version = Number(rsRow?.version);
+  if (!Number.isFinite(version)) throw new Error("bad version");
+  modalVersion = version;
 
     const wrap = ensureModal();
     wrap.style.display = "flex";
 
     const titleEl = document.getElementById("rsModalTitle");
-    const subEl = document.getElementById("rsModalSub");
-    const summaryEl = document.getElementById("rsModalSummary");
-    const btEl = document.getElementById("rsModalBacktests");
-    const editBtn = document.getElementById("rsModalEdit");
-    const toggleBtn = document.getElementById("rsModalToggle");
-
+const subEl = document.getElementById("rsModalSub");
+const ovEl = document.getElementById("rsModalOverview");
+const btEl = document.getElementById("rsModalBacktests");
+const editBtn = document.getElementById("rsModalEdit");
+const toggleBtn = document.getElementById("rsModalToggle");
     titleEl.textContent = rsRow?.name ? String(rsRow.name) : `Strategy v${version}`;
     subEl.textContent = `v${version}${rsRow?.created_ts ? ` • ${new Date(Number(rsRow.created_ts)).toLocaleString()}` : ""}`;
+
 
     // fetch full ruleset config
     let ruleset = null;
     try {
       ruleset = await fetchRulesetByVersion(version);
     } catch (e) {
-      summaryEl.innerHTML = `<span class="small muted">View requires backend endpoint: GET /api/rulesets/:version</span>`;
-      btEl.innerHTML = `<span class="small muted">Backtest snapshot requires: GET /api/backtests?strategyVersion=…</span>`;
-      editBtn.disabled = true;
-      toggleBtn.disabled = true;
+      if (ovEl) ovEl.innerHTML = `<span class="small muted">Couldn’t load this strategy (missing endpoint or server error).</span>`;
+      if (btEl) btEl.innerHTML = `<span class="small muted">Backtests unavailable.</span>`;
+      if (editBtn) editBtn.disabled = true;
+      if (toggleBtn) toggleBtn.disabled = true;
       return;
     }
 
-    const cfg = ruleset?.config || ruleset?.config_json || ruleset?.configJson || null;
-    summaryEl.innerHTML = summarizeConfig(cfg);
+    let cfg =
+    ruleset?.config ??
+    ruleset?.config_json ??
+    ruleset?.configJson ??
+    ruleset?.configJsonStr ??
+    null;
+  
+  if (typeof cfg === "string") {
+    try { cfg = JSON.parse(cfg); } catch { cfg = null; }
+  }
+  
+  const cfgObj = (cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES;
+  
+  if (ovEl) {
+    const kv = buildOverviewKVs(cfgObj);
+    ovEl.innerHTML = kv.map(([k, v]) => `
+      <div>
+        <div class="rs-k">${escapeHtml(k)}</div>
+        <div class="rs-v">${escapeHtml(String(v))}</div>
+      </div>
+    `).join("");
+  }
 
     // recent backtests
     btEl.innerHTML = `<span class="small muted">Loading…</span>`;
@@ -442,23 +634,28 @@
       } else {
         btEl.innerHTML = done
           .map((r) => {
-            const m = r?.metrics?.meta ? r.metrics : r?.metrics; // tolerate different shapes
-            const total = m?.totalTrades ?? m?.metrics?.totalTrades ?? "—";
-            const winRate = m?.winRate ?? m?.metrics?.winRate ?? null;
-            const avgR = m?.avgR ?? m?.metrics?.avgR ?? null;
-            const pf = m?.profitFactor ?? m?.metrics?.profitFactor ?? null;
+            const m = r?.metrics?.meta ? r.metrics : r?.metrics;
+const meta = m?.meta || r?.meta || {};
+const ticker =
+  meta?.ticker || meta?.symbol || r?.ticker || r?.symbol || r?.request?.ticker || r?.request?.symbol || "—";
 
-            const wr = winRate != null ? `${(Number(winRate) * 100).toFixed(1)}%` : "—";
-            const aR = avgR != null ? Number(avgR).toFixed(2) : "—";
-            const pF = pf != null ? (Number.isFinite(Number(pf)) ? Number(pf).toFixed(2) : String(pf)) : "—";
+const winRate = m?.winRate ?? m?.metrics?.winRate ?? null;
 
-            return `
-              <div style="padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px; margin-bottom:8px;">
-                <div><b>Run</b> ${escapeHtml(String(r?.id || ""))}</div>
-                <div class="small muted">Finished: ${escapeHtml(fmtTs(r?.finishedTs))}</div>
-                <div class="small">Trades: <b>${escapeHtml(String(total))}</b> • Win: <b>${escapeHtml(wr)}</b> • AvgR: <b>${escapeHtml(aR)}</b> • PF: <b>${escapeHtml(pF)}</b></div>
-              </div>
-            `;
+// "avg win" can be stored a lot of ways; try common ones:
+const avgWin =
+  m?.avgWin ?? m?.avgWinningTrade ?? m?.avgWinner ?? m?.avgWinR ?? m?.metrics?.avgWin ?? m?.metrics?.avgWinningTrade ?? null;
+
+const wr = winRate != null ? `${(Number(winRate) * 100).toFixed(1)}%` : "—";
+const aw = avgWin != null ? (Number.isFinite(Number(avgWin)) ? Number(avgWin).toFixed(2) : String(avgWin)) : "—";
+
+return `
+  <div style="padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px; margin-bottom:8px;">
+    <div class="small">
+      Ticker: <b>${escapeHtml(String(ticker))}</b> • Win: <b>${escapeHtml(wr)}</b> • Avg win: <b>${escapeHtml(aw)}</b>
+    </div>
+    <div class="small muted" style="margin-top:4px;">Finished: ${escapeHtml(fmtTs(r?.finishedTs))}</div>
+  </div>
+`;
           })
           .join("");
       }
@@ -466,34 +663,56 @@
       btEl.innerHTML = `<span class="small muted">Backtest listing endpoint missing or failed.</span>`;
     }
 
-    // edit = load into form
     editBtn.disabled = false;
     editBtn.onclick = () => {
       try {
-        const cfgObj = cfg && typeof cfg === "object" ? cfg : DEFAULT_RULES;
         fill(cfgObj);
-        strategyName.value = String(ruleset?.name || rsRow?.name || `Ruleset v${version}`);
+    
+        // Set name into existing editor bar
+        if (strategyName) {
+          strategyName.value = String(ruleset?.name || rsRow?.name || `Ruleset v${version}`);
+        }
+    
         lastLoadedVersion = version;
-        setStatus(`Loaded v${version} into editor. Make changes and click Save Rules to create a new version.`);
-        wrap.style.display = "none";
+        setStatus(""); // no noisy message
+    
+        // Move the real editor into the modal so all IDs/hooks still work
+        const ok = moveEditorIntoModal();
+        if (ok) {
+          showModalView("edit");
+        } else {
+          // fallback: if mount missing, at least close modal
+          wrap.style.display = "none";
+        }
       } catch (e) {
-        setStatus(`Load failed: ${String(e?.message || e)}`);
+        setStatus(`Edit failed: ${String(e?.message || e)}`);
       }
     };
 
-    // toggle active
-    const isActive = Boolean(rsRow?.active) || Boolean(ruleset?.active);
-    toggleBtn.disabled = false;
-    toggleBtn.textContent = isActive ? "Disable" : "Enable";
-    toggleBtn.onclick = async () => {
-      try {
-        await toggleRuleset(version, !isActive);
-        wrap.style.display = "none";
-        await boot();
-      } catch (e) {
-        setStatus(String(e?.message || e));
-      }
-    };
+// toggle active
+const isActive = Boolean(rsRow?.active) || Boolean(ruleset?.active);
+
+toggleBtn.disabled = false;
+
+// ensure base class exists
+toggleBtn.classList.add("strategy-enable-btn");
+
+// apply enabled styling class
+if (isActive) toggleBtn.classList.add("is-enabled");
+else toggleBtn.classList.remove("is-enabled");
+
+// text
+toggleBtn.textContent = isActive ? "Disable" : "Enable";
+
+toggleBtn.onclick = async () => {
+  try {
+    await toggleRuleset(version, !isActive);
+    wrap.style.display = "none";
+    await boot();
+  } catch (e) {
+    setStatus(String(e?.message || e));
+  }
+};
   }
 
   // ---------- strategies UI ----------
@@ -503,7 +722,7 @@
 
     const arr = Array.isArray(list) ? list : [];
     if (!arr.length) {
-      strategiesList.innerHTML = `<div class="small">No saved strategies yet.</div>`;
+      strategiesList.innerHTML = `<div class="small muted">No strategies yet.</div>`;
       return;
     }
 
@@ -511,29 +730,28 @@
       const isActive = Boolean(rs.active);
 
       const row = document.createElement("div");
-      row.style.display = "flex";
-      row.style.alignItems = "center";
-      row.style.justifyContent = "space-between";
-      row.style.gap = "10px";
-      row.style.padding = "8px 0";
-      row.style.borderBottom = "1px solid rgba(0,0,0,0.08)";
+      // styling handled by CSS
 
       const created = rs.created_ts ? new Date(Number(rs.created_ts)).toLocaleString() : "";
 
+      row.className = "strategy-row";
+
       row.innerHTML = `
-        <div style="min-width:0;">
-          <div style="font-weight:700;">${escapeHtml(rs.name || "Ruleset")}</div>
-          <div class="small" style="opacity:0.8;">v${escapeHtml(rs.version)}${created ? ` • ${escapeHtml(created)}` : ""}</div>
-        </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          ${isActive ? '<span class="pill pill-good">ENABLED</span>' : ""}
-          <button class="btn" data-act="view" data-version="${escapeHtml(rs.version)}">View</button>
-          <button class="btn" data-act="load" data-version="${escapeHtml(rs.version)}">Load</button>
-          <button class="btn" data-act="toggle" data-version="${escapeHtml(rs.version)}" data-active="${isActive ? "1" : "0"}">
-            ${isActive ? "Disable" : "Enable"}
-          </button>
-        </div>
-      `;
+      <div class="strategy-left" style="min-width:0;">
+        <div class="strategy-title" data-role="strategy-name">${escapeHtml(rs.name || "Ruleset")}</div>
+      </div>
+    
+      <div class="strategy-actions">
+        <button class="btn btn-caret" data-act="view" data-version="${escapeHtml(rs.version)}">View</button>
+    
+<button class="btn btn-caret strategy-enable-btn ${isActive ? "is-enabled" : ""}"
+        data-act="toggle"
+        data-version="${escapeHtml(rs.version)}"
+        data-active="${isActive ? "1" : "0"}">
+  ${isActive ? "Enabled" : "Enable"}
+</button>
+      </div>
+    `;
 
       strategiesList.appendChild(row);
     }
@@ -581,10 +799,10 @@
   }
 
   async function onNewStrategy() {
-    strategyName.value = "";
+    if (strategyName) strategyName.value = "";
     lastLoadedVersion = null;
     fill(DEFAULT_RULES);
-    setStatus("New strategy draft loaded. Set a name, then Save Rules.");
+    setStatus("");
   }
 
   // ---------- boot ----------
@@ -637,9 +855,13 @@
         try {
           if (act === "view") {
             // pass row data for modal; version fetch fills details
-            return await openViewModal({ version: Number(version), name: btn.closest("div")?.querySelector("div div")?.textContent || "", active });
+            const rowEl = btn.closest(".strategy-row");
+            const nameEl = rowEl?.querySelector('[data-role="strategy-name"]');
+            const name = nameEl ? nameEl.textContent : "";
+            await openViewModal({ version: Number(version), name, active });
+            return;
           }
-          if (act === "load") return await loadRulesetIntoEditor(version);
+        
           if (act === "toggle") {
             await toggleRuleset(version, !active);
             await boot();

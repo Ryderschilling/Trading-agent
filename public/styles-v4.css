@@ -100,21 +100,28 @@ body{
 }
 .status-dot.on{background:#000000;}
 
-/* Buttons */
+/* Buttons (unified matte bar style) */
 .btn{
-  border:1px solid var(--line);
-  background:#fff;
-  color:var(--text);
-  padding:10px 12px;
-  border-radius:999px;
-  font-size:13px;
-  font-weight:800;
-  cursor:pointer;
-  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
 }
-.btn:hover{transform: translateY(-1px); box-shadow: 0 10px 18px rgba(0,0,0,0.10);}
-.btn:active{transform: translateY(0);}
-.btn-ghost{background:#fff; color:var(--muted);}
+
+.btn:hover{
+  background: rgba(255,255,255,0.09);
+  box-shadow: none;
+  transform: none;
+}
+
+.btn:active{
+  transform: none;
+}
 
 /* Cards */
 /* Cards */
@@ -235,15 +242,47 @@ body{
   gap:10px;
   padding: 14px 16px 10px 16px;
 }
-.input{
-  flex:1;
-  border:1px solid var(--line);
-  border-radius:999px;
-  padding:10px 12px;
-  outline:none;
-  font-size:13px;
+/* Unified field style (matches the dark button blocks) */
+.input,
+select,
+textarea{
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+
+  transition: background .15s ease, border-color .15s ease;
 }
-.input:focus{border-color: rgba(0,0,0,0.25);}
+
+.input:focus,
+select:focus,
+textarea:focus{
+  border-color: rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.09);
+  box-shadow: none; /* kills the shiny halo */
+}
+
+/* Dropdown caret so selects match the same UI language */
+select{
+  padding-right: 34px;
+
+  background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='20' viewBox='0 0 20 20' width='20' xmlns='http://www.w3.org/2000/svg'><path d='M5 7l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+}
+
+
 .btn-small{
   padding:10px 14px;
   border-radius:999px;
@@ -557,16 +596,29 @@ tbody td{
     box-shadow: var(--shadow);
   }
 
-  /* Topbar becomes solid once you scroll (prevents “see-through” jumble) */
+/* Topbar becomes solid once you scroll (prevents “see-through” jumble) */
 .topbar{
-  transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease, backdrop-filter 180ms ease;
 }
 
-.topbar.is-solid{
+/* SOLID on scroll: remove blur so it can't “see through” */
+html[data-theme="dark"] .topbar.is-solid{
+  background: #0e121a !important;          /* fully opaque */
+  border-color: rgba(255,255,255,0.14) !important;
+  backdrop-filter: none !important;        /* KEY CHANGE */
+}
 
 html[data-theme="light"] .topbar.is-solid{
-  background: rgba(255, 255, 255, 0.94); /* solid light */
-}}
+  background: #ffffff !important;          /* fully opaque */
+  border-color: rgba(16,24,39,0.12) !important;
+  backdrop-filter: none !important;
+}
+
+/* Light theme version */
+html[data-theme="light"] .topbar.is-solid{
+  background: rgba(255,255,255,0.94) !important;
+  border-color: rgba(16,24,39,0.12) !important;
+}
   
   /* Make tabs match “pill segmented” feel */
   .tabs{
@@ -615,10 +667,12 @@ html[data-theme="light"] .topbar.is-solid{
   }
   
   .btn:focus-visible,
-  .input:focus{
+  .input:focus,
+  select:focus,
+  textarea:focus{
     outline: none;
-    box-shadow: 0 0 0 3px rgba(93,169,255,0.35);
-    border-color: rgba(93,169,255,0.35);
+    box-shadow: none;
+    border-color: rgba(255,255,255,0.16);
   }
   
   /* Theme toggle button (small icon pill) */
@@ -710,7 +764,7 @@ html[data-theme="dark"] select option{
 }
 
 /* Pills used across the app */
-.pill{
+.btn{
   display:inline-flex;
   align-items:center;
   justify-content:center;
@@ -1441,9 +1495,219 @@ html[data-theme="light"] .page-backtest .bt-runBtn {
     padding: 0 8px 0 12px; /* top right bottom left */
   }
 
-  /* Force sticky header to become solid once scrolling */
+
+  /* Adds the right-side dropdown indicator on buttons when desired */
+.btn-caret{
+  position: relative;
+  padding-right: 34px;
+}
+
+.btn-caret::after{
+  content: "▾";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.75;
+  font-weight: 900;
+}
+
+/* Rules page layout:
+   - Strategies card is full width
+   - Editor below has 2-column grid (same as before) */
+   .rules-layout{
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .rules-editor{
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 12px;
+  }
+  
+  @media (max-width: 900px){
+    .rules-editor{
+      grid-template-columns: 1fr;
+    }
+  }
+
+/* Strategies: Bible-style rows */
+.strategy-list{
+  padding: 10px 0 2px 0;
+}
+
+.strategy-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+}
+
+.strategy-title{
+  font-weight: 800;
+}
+
+.strategy-actions{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Rules top bar (strategy name bar + save) */
+.rules-topbar{
+  padding: 14px 16px 0 16px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.bar-field{
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.input-bar{
+  width: 100%;
+  border-radius: 14px;
+  padding-right: 34px;
+}
+
+.bar-caret{
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.75;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+/* Rules page: make Strategies span full width */
+.rules-layout .strategies-card{
+  grid-column: 1 / -1;
+}
+
+/* =========================
+   Rules modal (solid + organized)
+   ========================= */
+   #rsModalWrap{
+    background: rgba(0,0,0,0.65) !important;
+    backdrop-filter: blur(6px);
+  }
+  
+  #rsModalWrap .rs-modal-card{
+    background: #0e121a !important; /* solid */
+    border: 1px solid rgba(255,255,255,0.14) !important;
+  }
+  
+  html[data-theme="light"] #rsModalWrap .rs-modal-card{
+    background: #ffffff !important;
+    border: 1px solid rgba(16,24,39,0.12) !important;
+  }
+  
+  #rsModalWrap .rs-modal-body{
+    padding: 14px;
+  }
+  
+  #rsModalWrap .rs-kv{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+  
+  @media (max-width: 860px){
+    #rsModalWrap .rs-kv{ grid-template-columns: 1fr; }
+  }
+  
+  #rsModalWrap .rs-kv .rs-k{
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  
+  #rsModalWrap .rs-kv .rs-v{
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text);
+  }
+  
+  #rsModalWrap .rs-divider{
+    height: 1px;
+    background: var(--line);
+    margin: 12px 0;
+  }
+  
+  #rsModalWrap .rs-edit-mount{
+    margin-top: 10px;
+  }
+  
+  #rsModalWrap .rs-edit-mount .rules-editor{
+    grid-template-columns: 1fr 1.4fr; /* keep same */
+  }
+
+  /* Sticky topbar: becomes solid once scrolling */
+.topbar{
+  transition: background 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
 .topbar.is-solid{
   background: rgba(14,18,26,0.96) !important;
   border-color: rgba(255,255,255,0.14) !important;
   backdrop-filter: blur(14px) !important;
+}
+
+/* Light theme version */
+html[data-theme="light"] .topbar.is-solid{
+  background: rgba(255,255,255,0.94) !important;
+  border-color: rgba(16,24,39,0.12) !important;
+}
+
+/* ---------------------------------- */
+/* Strategy Enable Button States      */
+/* ---------------------------------- */
+
+.strategy-enable-btn {
+  transition: all 0.2s ease;
+}
+
+/* ENABLED = silver watery look */
+.strategy-enable-btn.is-enabled {
+  background: linear-gradient(
+    145deg,
+    rgba(255,255,255,0.65),
+    rgba(220,220,220,0.35)
+  );
+  color: #111;
+  border: 1px solid rgba(255,255,255,0.6);
+  box-shadow:
+    inset 0 1px 2px rgba(255,255,255,0.6),
+    0 0 12px rgba(255,255,255,0.15);
+  backdrop-filter: blur(6px);
+}
+
+/* Remove the divider line under the Strategies card title only */
+.strategies-card .card-head{
+  border-bottom: none !important;
+}
+
+/* Strategies header: make title more “header-like” */
+.strategies-card .card-head .card-title{
+  font-size: 18px;      /* bump from default */
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+/* Optional: tighten the header spacing so it feels intentional */
+.strategies-card .card-head{
+  padding-top: 20px;
+  padding-bottom: 14px;
 }

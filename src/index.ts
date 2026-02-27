@@ -5,17 +5,16 @@ import path from "path";
 import { BacktestQueue } from "./sim/backtestQueue";
 
 import {
-  // ...
-  setRulesetActive,
-} from "./db/db";
-
-import {
   openDb,
   loadActiveRuleset,
   insertRuleset,
   setActiveRuleset,
+  setRulesetActive,
   loadBrokerConfig,
-  saveBrokerConfig
+  saveBrokerConfig,
+  getRulesetByVersion,
+  deleteRuleset,
+  updateRuleset  // <-- add
 } from "./db/db";
 
 import { resolveSectorEtf } from "./market/sectorResolver";
@@ -162,9 +161,7 @@ function getRules() {
 }
 
 function listRulesets() {
-  return db
-    .prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`)
-    .all();
+  return db.prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`).all();
 }
 
 function saveRules(name: string, config: any, changedBy?: string) {
@@ -213,6 +210,40 @@ function activateRuleset(version: number) {
 function setRulesetActiveFn(version: number, active: boolean) {
   setRulesetActive(db, Number(version), Boolean(active));
   return { ok: true, version: Number(version), active: Boolean(active) };
+}
+
+function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
+  const out = updateRuleset(db, Number(version), name, config, changedBy);
+  activeRules = loadActiveRuleset(db);
+  loadRulesetNames();
+
+  const maybeUpdate = (engine as any).updateConfig;
+  if (typeof maybeUpdate === "function") {
+    maybeUpdate.call(engine, {
+      timeframeMin: activeRules.config.timeframeMin,
+      retestTolerancePct: activeRules.config.retestTolerancePct,
+      rsWindowBars5m: activeRules.config.rsWindowBars5m
+    });
+  }
+
+  return out;
+}
+
+function deleteRulesetFn(version: number, _changedBy?: string) {
+  const out = deleteRuleset(db, Number(version));
+  activeRules = loadActiveRuleset(db);
+  loadRulesetNames();
+
+  const maybeUpdate = (engine as any).updateConfig;
+  if (typeof maybeUpdate === "function") {
+    maybeUpdate.call(engine, {
+      timeframeMin: activeRules.config.timeframeMin,
+      retestTolerancePct: activeRules.config.retestTolerancePct,
+      rsWindowBars5m: activeRules.config.rsWindowBars5m
+    });
+  }
+
+  return out;
 }
 
 // -----------------------------
@@ -748,6 +779,22 @@ function setBrokerConfig(next: any, _changedBy?: string) {
 const app = createHttpApp({
   publicDir,
 
+// rules
+getRules,
+listRulesets,
+getRulesetByVersion: (version: number) => getRulesetByVersion(db, version),
+setRulesetActive: (version: number, active: boolean) => setRulesetActiveFn(version, active),
+saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
+deleteRuleset: (version: number, changedBy?: string) => deleteRulesetFn(version, changedBy),
+
+  // backtests
+  createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
+  getBacktestRun: (id: string) => backtestQueue.getRun(id),
+  getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
+  getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
+  listBacktestRuns: (opts: { limit: number; strategyVersion?: number }) => backtestQueue.listRuns(opts),
+
+  // data for UI
   getAlerts: () => alerts,
   getWatchlist: () => normalizedWatchlist(),
   getSignals: () => latestSignals,
@@ -762,20 +809,13 @@ const app = createHttpApp({
   // used by /api/broker/status (Alpaca calls)
   httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
 
+  // outcomes
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
 
-    // backtests
-    createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
-    getBacktestRun: (id: string) => backtestQueue.getRun(id),
-    getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
-    getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
-
-  getRules,
-  listRulesets,
-  saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
-  setRulesetActive: (v: number, active: boolean) => setRulesetActiveFn(v, active),
+  updateRuleset: (version: number, name: string, config: any, changedBy?: string) =>
+    updateRulesetFn(version, name, config, changedBy),
 
   addSymbol: async (s: string) => {
     const sym = String(s || "").trim().toUpperCase();

@@ -15,33 +15,28 @@
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand">
-          <div class="brand-dot"></div>
-          <div class="brand-text">Trading Agent</div>
+          <span class="brand-dot"></span>
+          <span class="brand-text">Trading Agent</span>
         </div>
-
+    
         <nav class="tabs">
-          <a class="tab active" href="/">Workspace</a>
-          <a class="tab" href="/outcomes">Outcomes</a>
-          <a class="tab" href="/watch">Watch</a>
-          <a class="tab" href="/rules">Rules</a>
-          <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab active" href="/index.html">Workspace</a>
+          <a class="tab" href="/outcomes.html">Outcomes</a>
+          <a class="tab" href="/watchlist.html">Watch</a>
+          <a class="tab" href="/rules.html">Rules</a>
+          <a class="tab" href="/backtest.html">Backtest</a>
         </nav>
       </div>
-
+    
       <div class="topbar-right">
         <div class="status">
-          <div class="status-dot" id="socketDot"></div>
-          <div class="status-text">Realtime</div>
+          <span id="socketDot" class="status-dot"></span>
+          <span id="socketText">Realtime</span>
         </div>
-      
-        <!-- NEW: Theme toggle -->
-        <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
-      </div><div class="topbar-right">
-  <div class="status">
-    <div class="status-dot" id="socketDot"></div>
-    <div class="status-text">Realtime</div>
-  </div>
-</header>
+    
+        <button id="themeToggle" class="btn btn-ghost" type="button">🌙</button>
+      </div>
+    </header>
 
     <main class="shell">
       <section class="stack">

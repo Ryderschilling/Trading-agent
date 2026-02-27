@@ -1,6 +1,9 @@
 import express from "express";
 import path from "path";
 
+console.log("[HTTP.TS] LOADED createHttpApp vRULESET");
+
+
 export function createHttpApp(args: {
   publicDir: string;
 
@@ -8,6 +11,8 @@ export function createHttpApp(args: {
   getWatchlist: () => string[];
   addSymbol: (s: string) => void | Promise<void>;
   removeSymbol: (s: string) => void | Promise<void>;
+
+  updateRuleset?: (version: number, name: string, config: any, changedBy?: string) => any;
 
   getSignals?: () => any;
   getOutcomes?: () => any[];
@@ -22,6 +27,9 @@ export function createHttpApp(args: {
   listRulesets?: () => any[];
   getRulesetByVersion?: (version: number) => any | null; // NEW
   saveRules?: (name: string, config: any, changedBy?: string) => any;
+
+  // NEW: delete a ruleset
+deleteRuleset?: (version: number, changedBy?: string) => any;
 
   // IMPORTANT: make this a TOGGLE (multi-active), not exclusive
   setRulesetActive?: (version: number, active: boolean) => any; // NEW
@@ -255,6 +263,7 @@ export function createHttpApp(args: {
 
   // NEW: fetch a single ruleset for “Load/Edit”
   app.get("/api/rulesets/:version", (req, res) => {
+    console.log("[HTTP.TS] /api/rulesets hit, hasGetter=", Boolean(args.getRulesetByVersion));
     try {
       if (!args.getRulesetByVersion) return res.status(400).json({ ok: false, error: "ruleset fetch not enabled" });
       const v = Number(req.params.version);
@@ -265,6 +274,21 @@ export function createHttpApp(args: {
       res.status(400).json({ ok: false, error: e?.message || "failed" });
     }
   });
+
+  // NEW: delete a ruleset (admin)
+app.delete("/api/rulesets/:version", (req, res) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    if (!args.deleteRuleset) return res.status(400).json({ ok: false, error: "ruleset delete not enabled" });
+
+    const v = Number(req.params.version);
+    const changedBy = String(req.header("x-changed-by") || req.body?.changedBy || "admin");
+    const out = args.deleteRuleset(v, changedBy);
+    res.json({ ok: true, result: out });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || "failed" });
+  }
+});
 
   app.post("/api/rules", (req, res) => {
     try {
@@ -296,6 +320,24 @@ export function createHttpApp(args: {
       res.status(400).json({ ok: false, error: e?.message || "failed" });
     }
   });
+
+  // Update ruleset (used by modal Done)
+app.post("/api/rulesets/:version/update", (req, res) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    if (!args.updateRuleset) return res.status(400).json({ ok: false, error: "ruleset update not enabled" });
+
+    const v = Number(req.params.version);
+    const name = String(req.body?.name || "").trim();
+    const config = req.body?.config ?? null;
+    const changedBy = String(req.body?.changedBy || "admin");
+
+    const out = args.updateRuleset(v, name, config, changedBy);
+    res.json({ ok: true, result: out });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || "failed" });
+  }
+});
 
   return app;
 }

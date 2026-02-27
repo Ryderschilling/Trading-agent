@@ -40,91 +40,93 @@
     </header>
 
     <main class="shell">
-      <section class="stack">
-        <!-- Strategies -->
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <div class="card-title">Strategies</div>
-              <div class="small muted">Strategies are saved rule versions. You can enable multiple strategies at once.</div>
-            </div>
-            <div class="card-actions">
-              <input id="adminToken" class="input" placeholder="Admin token (optional)" style="width: 240px;" />
-              <button id="newStrategyBtn" class="btn">New Strategy</button>
-            </div>
-          </div>
+      <section class="rules-layout">
 
-          <div id="bootStatus" class="small muted" style="padding: 8px 0;"></div>
-          <div id="strategiesList"></div>
-        </section>
+<!-- Strategies -->
+<section class="card strategies-card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Strategies</div>
+    </div>
+    <div class="card-actions">
+    </div>
+  </div>
 
-        <!-- Rules -->
-        <section class="card">
-          <div class="card-head">
-            <div>
-              <div class="card-title">Rules</div>
-              <div class="small muted">Tune scanning + filters + post-signal management. Fields that aren't used by the engine are safely stored for future upgrades.</div>
-            </div>
-            <div class="card-actions">
-              <button id="saveRulesBtn" class="btn btn-primary">Save Rules</button>
-            </div>
-          </div>
 
-          <div class="formGrid" style="margin-top: 10px;">
-            <label class="small" style="grid-column: 1 / -1;">
-              Strategy name
-              <input id="strategyName" class="input" placeholder="e.g., Break & Retest (1m NY AM)" style="width:100%; margin-top:6px;" />
-            </label>
 
-            <!-- Scan -->
-            <div class="sectionTitle" style="grid-column: 1 / -1;">Scan</div>
+  <!-- Bible-style list container -->
+  <div id="strategiesList" class="strategy-list"></div>
+</section>
 
-            <label class="small">
-              Candle size
-              <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
-                <option value="1">1 minute</option>
-                <option value="2">2 minute</option>
-                <option value="5">5 minute</option>
-                <option value="15">15 minute</option>
-                <option value="30">30 minute</option>
-                <option value="60">1 hour</option>
-                <option value="240">4 hour</option>
-                <option value="1440">1 day</option>
-                <option value="10080">1 week</option>
-              </select>
-            </label>
+<div id="rulesEditor" class="rules-editor">
+  <!-- New strategy editor bar (between Strategies and Scan) -->
+  <section class="card rules-editorbar" style="grid-column: 1 / -1;">
+    <div class="rules-topbar">
+      <div class="bar-field">
+        <input id="strategyName" class="input input-bar" placeholder="Strategy name (e.g. Break & Retest v3)" />
+        <span class="bar-caret">▾</span>
+      </div>
+      <button id="saveRulesBtn" class="btn btn-primary">Save Strategy</button>
+    </div>
+    <div class="small muted" style="padding: 10px 16px 14px 16px;">
+      Tip: Use <b>New Strategy</b> to load defaults, then edit the rules below and click <b>Save Strategy</b> to create a new version.
+    </div>
+  </section>
 
-            <label class="small">
-              Session
-              <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
-                <option value="RTH">RTH (Regular hours)</option>
-                <option value="ALL">Anytime (All sessions)</option>
-              </select>
-            </label>
+  <!-- Scan -->
+  <div class="sectionTitle" style="grid-column: 1 / -1;">Scan</div>
 
-            <label class="small">
-              Universe
-              <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
-                <option value="WATCHLIST">Watchlist</option>
-                <option value="MAG7+INDEX">Mag 7 + Index</option>
-              </select>
-            </label>
+  <label class="small">
+    Candle size
+    <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
+      <option value="1">1 minute</option>
+      <option value="2">2 minute</option>
+      <option value="5">5 minute</option>
+      <option value="15">15 minute</option>
+      <option value="30">30 minute</option>
+      <option value="60">1 hour</option>
+      <option value="240">4 hour</option>
+      <option value="1440">1 day</option>
+      <option value="10080">1 week</option>
+    </select>
+  </label>
 
-            <label class="small">
-              Premarket enabled (engine uses this)
-              <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
-                <option value="false">False</option>
-                <option value="true">True</option>
-              </select>
-            </label>
+  <label class="small">
+    Session
+    <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
+      <option value="RTH">RTH (Regular hours)</option>
+      <option value="ALL">Anytime (All sessions)</option>
+    </select>
+  </label>
 
-            <label class="small">
-              Market bias required
-              <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
-                <option value="true">True</option>
-                <option value="false">False</option>
-              </select>
-            </label>
+  <label class="small">
+    Universe
+    <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
+      <option value="WATCHLIST">Watchlist</option>
+      <option value="MAG7+INDEX">Mag 7 + Index</option>
+    </select>
+  </label>
+
+  <label class="small">
+    Premarket enabled (engine uses this)
+    <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
+      <option value="false">False</option>
+      <option value="true">True</option>
+    </select>
+  </label>
+
+  <label class="small">
+    Market bias required
+    <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
+      <option value="true">True</option>
+      <option value="false">False</option>
+    </select>
+  </label>
+
+  <!-- KEEP EVERYTHING ELSE EXACTLY AS-IS BELOW THIS POINT -->
+  <!-- Technical Filters ... (no changes, just stays inside #rulesEditor) -->
+  ...
+</div>
 
             <!-- Technical Filters -->
             <div class="sectionTitle" style="grid-column: 1 / -1;">Technical Filters</div>

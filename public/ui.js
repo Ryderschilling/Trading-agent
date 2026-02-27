@@ -104,3 +104,16 @@
       });
       
       })();
+
+      // Make sticky topbar solid after scrolling (prevents “see-through” jumble)
+(() => {
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) return;
+  
+    const onScroll = () => {
+      topbar.classList.toggle("is-solid", window.scrollY > 8);
+    };
+  
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll(); // set initial state
+  })();

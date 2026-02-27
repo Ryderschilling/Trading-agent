@@ -3,6 +3,7 @@ import fs from "fs";
 import Database from "better-sqlite3";
 
 export type RuleConfig = {
+  [key: string]: any; // allow UI to store additional fields safely
   timeframeMin: number;
   retestTolerancePct: number;
   structureWindow: number;
@@ -12,7 +13,7 @@ export type RuleConfig = {
   premarketEnabled: boolean;
 
   // bias gating thresholds (score = market + sector)
-  longMinBiasScore: number;  // e.g. +1
+  longMinBiasScore: number; // e.g. +1
   shortMaxBiasScore: number; // e.g. -1
 
   // sector alignment
@@ -107,7 +108,7 @@ function migrate(db: Database.Database) {
       diff_json TEXT
     );
 
-        -- Broker integration (single-tenant for now; multi-tenant later)
+    -- Broker integration (single-tenant for now; multi-tenant later)
     CREATE TABLE IF NOT EXISTS broker_config (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       broker_key TEXT NOT NULL,
@@ -115,7 +116,6 @@ function migrate(db: Database.Database) {
       config_json TEXT NOT NULL,
       updated_ts INTEGER NOT NULL
     );
-
 
     -- Canonical 1m candle store (rolling 365d retention enforced on ingest)
     CREATE TABLE IF NOT EXISTS candles_1m (
@@ -188,11 +188,7 @@ function migrate(db: Database.Database) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_backtest_equity_run ON backtest_equity(run_id, seq);
-
-
   `);
-
-
 
   // seed default ruleset if none exist
   const cnt = db.prepare(`SELECT COUNT(*) as c FROM rulesets`).get() as any;
@@ -211,16 +207,12 @@ function migrate(db: Database.Database) {
       sectorAlignmentEnabled: true
     };
 
-    db.prepare(
-      `INSERT INTO rulesets(created_ts,name,active,config_json) VALUES(?,?,1,?)`
-    ).run(Date.now(), "Default", JSON.stringify(defaultCfg));
+    db.prepare(`INSERT INTO rulesets(created_ts,name,active,config_json) VALUES(?,?,1,?)`).run(Date.now(), "Default", JSON.stringify(defaultCfg));
   }
 }
 
 export function loadActiveRuleset(db: Database.Database): ActiveRuleset {
-  const row = db
-    .prepare(`SELECT version, config_json FROM rulesets WHERE active=1 ORDER BY version DESC LIMIT 1`)
-    .get() as any;
+  const row = db.prepare(`SELECT version, config_json FROM rulesets WHERE active=1 ORDER BY version DESC LIMIT 1`).get() as any;
 
   const version = Number(row?.version ?? 1);
   const config = JSON.parse(String(row?.config_json ?? "{}"));
@@ -239,6 +231,29 @@ export function setRulesetActive(db: Database.Database, version: number, active:
   db.prepare(`UPDATE rulesets SET active=? WHERE version=?`).run(active ? 1 : 0, Number(version));
 }
 
+// Hard delete a ruleset (used by UI "Delete" button).
+// Note: backtests reference strategyVersion inside run.config JSON, so they remain intact.
+export function deleteRuleset(db: Database.Database, version: number) {
+  const v = Number(version);
+  if (!Number.isFinite(v) || v <= 0) throw new Error("bad version");
+
+  const row = db.prepare(`SELECT active FROM rulesets WHERE version=?`).get(v) as any;
+  if (!row) return { ok: true, deleted: false };
+
+  db.prepare(`DELETE FROM rulesets WHERE version=?`).run(v);
+
+  // If we deleted the active one, promote newest remaining ruleset to active.
+  if (Number(row.active) === 1) {
+    const newest = db.prepare(`SELECT version FROM rulesets ORDER BY version DESC LIMIT 1`).get() as any;
+    if (newest?.version != null) {
+      db.prepare(`UPDATE rulesets SET active=0`).run();
+      db.prepare(`UPDATE rulesets SET active=1 WHERE version=?`).run(Number(newest.version));
+    }
+  }
+
+  return { ok: true, deleted: true, version: v };
+}
+
 export function insertRuleset(db: Database.Database, name: string, cfg: RuleConfig, changedBy?: string) {
   const tx = db.transaction(() => {
     db.prepare(`UPDATE rulesets SET active=0 WHERE active=1`).run();
@@ -247,13 +262,46 @@ export function insertRuleset(db: Database.Database, name: string, cfg: RuleConf
       .run(Date.now(), name, JSON.stringify(cfg));
     const version = Number(info.lastInsertRowid);
 
-    db.prepare(`INSERT INTO rule_changes(ts,ruleset_version,changed_by,diff_json) VALUES(?,?,?,?)`)
-      .run(Date.now(), version, changedBy || null, null);
+    db.prepare(`INSERT INTO rule_changes(ts,ruleset_version,changed_by,diff_json) VALUES(?,?,?,?)`).run(Date.now(), version, changedBy || null, null);
 
     return version;
   });
   return tx();
 }
+
+export function updateRuleset(db: Database.Database, version: number, name: string, config: any, _changedBy?: string) {
+  const v = Number(version);
+  if (!Number.isFinite(v) || v < 1) throw new Error("bad version");
+  if (!config || typeof config !== "object") throw new Error("config required");
+
+  const nm = String(name || "").trim() || `v${v}`;
+
+  const info = db
+    .prepare(`UPDATE rulesets SET name=?, config_json=? WHERE version=?`)
+    .run(nm, JSON.stringify(config), v);
+
+  if (!info || info.changes !== 1) throw new Error("ruleset not found");
+  return { ok: true, version: v };
+}
+
+/**
+ * NEW: fetch a single ruleset by version (used by Rules modal "Overview")
+ */
+export function getRulesetByVersion(db: Database.Database, version: number) {
+  const row = db
+    .prepare(`SELECT version, name, active, config_json FROM rulesets WHERE version = ?`)
+    .get(Number(version)) as any;
+
+  if (!row) return null;
+
+  return {
+    version: Number(row.version),
+    name: String(row.name),
+    active: Boolean(row.active),
+    config: JSON.parse(String(row.config_json || "{}"))
+  };
+}
+
 export type BrokerMode = "paper" | "live";
 
 export type BrokerConfig = {
@@ -264,9 +312,7 @@ export type BrokerConfig = {
 };
 
 export function loadBrokerConfig(db: any): BrokerConfig | null {
-  const row = db
-    .prepare("SELECT broker_key, mode, config_json FROM broker_config WHERE id = 1")
-    .get() as any;
+  const row = db.prepare("SELECT broker_key, mode, config_json FROM broker_config WHERE id = 1").get() as any;
 
   if (!row) return null;
 

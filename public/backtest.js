@@ -232,6 +232,32 @@
   
     // ---------- API ----------
     async function createBacktestRun(payload) {
+        // Attach selected strategy so runs appear under Rules → View → Recent backtests.
+// (BacktestQueue persists strategyVersion/name inside run.config.)
+try {
+    const sel = String(strategySelect?.value || "");
+    if (sel === "active") {
+      const r = await fetch("/api/rules");
+      const j = await r.json().catch(() => null);
+      const rules = j?.rules || null;
+      const v = rules?.version != null ? Number(rules.version) : null;
+      if (v && Number.isFinite(v)) {
+        payload.strategyVersion = v;
+        payload.strategyName = String(rules?.name || `v${v}`);
+      }
+    } else {
+      const v = Number(sel);
+      if (Number.isFinite(v) && v > 0) {
+        payload.strategyVersion = v;
+        const opt = strategySelect?.querySelector(`option[value="${sel}"]`);
+        payload.strategyName = opt
+          ? String(opt.textContent || `v${v}`).replace(/\s*\(ENABLED\)\s*/g, "").trim()
+          : `v${v}`;
+      }
+    }
+  } catch {
+    // non-fatal
+  }
       const res = await fetch("/api/backtests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
