@@ -101,14 +101,21 @@ export type SimTrade = {
 
 export type BacktestMetrics = {
   totalTrades: number;
-  winRate: number;
-  avgR: number;
-  expectancy: number;
+  winRate: number;        // 0..1
+  avgR: number;           // avg R per trade
+  expectancy: number;     // expected R per trade (using win/loss components)
   profitFactor: number;
   maxDrawdown: number;
+
   longestWinStreak: number;
   longestLossStreak: number;
   avgHoldBars: number;
+
+  // NEW (safe additions for UI later)
+  avgWinR?: number;
+  avgLossR?: number;      // positive number (absolute loss size in R)
+  sharpe?: number;        // per-trade Sharpe-like (not annualized)
+  stdR?: number;
 };
 
 export type EquityPoint = { ts: number; equity: number; drawdown: number };
@@ -980,9 +987,11 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
   }
 
   let wins = 0;
+  let losses = 0;
+
   let sumR = 0;
   let grossWin = 0;
-  let grossLoss = 0;
+  let grossLoss = 0; // this is ABS loss sum (positive)
   let sumHold = 0;
 
   let winStreak = 0;
@@ -1001,6 +1010,7 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
       lossStreak = 0;
       longestWinStreak = Math.max(longestWinStreak, winStreak);
     } else if (r < 0) {
+      losses++;
       grossLoss += Math.abs(r);
       lossStreak++;
       winStreak = 0;
@@ -1013,8 +1023,28 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
 
   const winRate = wins / totalTrades;
   const avgR = sumR / totalTrades;
-  const expectancy = avgR;
-  const profitFactor = grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? Infinity : 0;
+
+  // --- NEW: avg win/loss + expectancy components (in R) ---
+  const avgWinR = wins > 0 ? grossWin / wins : 0;
+
+  // grossLoss is already ABS loss sum (positive)
+  const avgLossR = losses > 0 ? (grossLoss / losses) : 0;
+
+  // expectancy = P(win)*AvgWin - P(loss)*AvgLoss
+  const expectancy = winRate * avgWinR - (1 - winRate) * avgLossR;
+
+  // --- NEW: per-trade Sharpe-like using R-multiples ---
+  const rSeries = trades.map((t) => Number(t.rMult || 0)).filter(Number.isFinite);
+  const meanR = avgR;
+
+  let varR = 0;
+  for (const r of rSeries) varR += (r - meanR) * (r - meanR);
+  varR = rSeries.length > 1 ? varR / (rSeries.length - 1) : 0;
+
+  const stdR = Math.sqrt(Math.max(0, varR));
+  const sharpe = stdR > 0 ? (meanR / stdR) * Math.sqrt(rSeries.length) : 0;
+
+  const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : 0);
 
   const equity = generateEquityCurve(trades);
   let maxDrawdown = 0;
@@ -1029,7 +1059,13 @@ export function calculateMetrics(trades: SimTrade[]): BacktestMetrics {
     maxDrawdown,
     longestWinStreak,
     longestLossStreak,
-    avgHoldBars: sumHold / totalTrades
+    avgHoldBars: sumHold / totalTrades,
+  
+    // NEW
+    avgWinR,
+    avgLossR,
+    stdR,
+    sharpe
   };
 }
 
@@ -1045,5 +1081,34 @@ export function generateEquityCurve(trades: SimTrade[]): EquityPoint[] {
     const dd = equity - peak; // <= 0
     out.push({ ts: t.exitTs, equity, drawdown: dd });
   }
+  return out;
+}
+
+// Simple rolling-mean smoother for equity curve (UI can plot this later)
+export function smoothEquityCurve(points: EquityPoint[], window = 7): EquityPoint[] {
+  const w = Math.max(1, Math.floor(window));
+  if (!points.length || w === 1) return points.slice();
+
+  const eq = points.map((p) => p.equity);
+  const out: EquityPoint[] = [];
+
+  let peak = -Infinity;
+
+  for (let i = 0; i < points.length; i++) {
+    const start = Math.max(0, i - w + 1);
+    let sum = 0;
+    let n = 0;
+    for (let j = start; j <= i; j++) {
+      sum += eq[j];
+      n++;
+    }
+    const sm = sum / Math.max(1, n);
+
+    peak = Math.max(peak, sm);
+    const dd = sm - peak;
+
+    out.push({ ts: points[i].ts, equity: sm, drawdown: dd });
+  }
+
   return out;
 }

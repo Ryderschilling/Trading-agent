@@ -18,6 +18,8 @@
   
     const metricsGrid = $("metricsGrid");
     const equityCanvas = $("equityCanvas");
+const distCanvas = $("distCanvas");
+const distMeta = $("distMeta");
     const tradeTableBody = $("tradesBody");
     const sortSelect = $("sortSelect");
   
@@ -81,6 +83,12 @@
       if (!Number.isFinite(x)) return "—";
       return x.toFixed(digits);
     }
+
+    function pct(n, digits = 1) {
+      const x = Number(n);
+      if (!Number.isFinite(x)) return "—";
+      return (x * 100).toFixed(digits) + "%";
+    }
   
     function getStartEquityValue() {
       const v = Number(startEquityInput?.value);
@@ -125,9 +133,12 @@
   
       lastEquity = [];
       drawEquity([]);
+      drawHistogramFromTrades([]);
   
       lastTrades = [];
       if (tradeTableBody) tradeTableBody.innerHTML = "";
+
+      if (distMeta) distMeta.textContent = "";
   
       setRunMeta("");
       setPill("Idle", "pill-idle");
@@ -292,35 +303,24 @@ try {
     function renderMetrics(metrics) {
       if (!metricsGrid) return;
       metricsGrid.innerHTML = "";
-  
+    
+      const m = (metrics && typeof metrics === "object") ? metrics : {};
+    
+      const pct = (x) => (x == null ? "—" : `${(Number(x) * 100).toFixed(1)}%`);
+      const num = (x, d = 2) => (x == null ? "—" : Number(x).toFixed(d));
+    
       const pairs = [
-        ["Total Trades", metrics?.totalTrades],
-      
-        ["Win Rate",
-            (metrics?.winRatePct ?? metrics?.winRate) != null
-              ? `${Number(((metrics?.winRatePct ?? metrics?.winRate) * 100).toFixed(2)).toString().replace(/\.00$/, "")}%`
-              : null
-          ],
-      
-        ["Avg R", metrics?.avgR != null ? num(metrics.avgR, 3) : null],
-      
-        ["Expectancy", metrics?.expectancy != null ? num(metrics.expectancy, 3) : null],
-      
-        ["Profit Factor", metrics?.profitFactor != null ? num(metrics.profitFactor, 3) : null],
-      
-        ["Max Drawdown (R)",
-          (metrics?.maxDrawdownR ?? metrics?.maxDrawdown) != null
-            ? num(metrics?.maxDrawdownR ?? metrics?.maxDrawdown, 3)
-            : null
-        ],
-      
-        ["Win Streak", metrics?.winStreak ?? metrics?.longestWinStreak],
-      
-        ["Loss Streak", metrics?.lossStreak ?? metrics?.longestLossStreak],
-      
-        ["Avg Hold (bars)", metrics?.avgHoldBars != null ? num(metrics.avgHoldBars, 3) : null]
+        ["Trades", m.totalTrades],
+        ["Win rate", pct(m.winRate)],
+        ["Avg return", num(m.avgR, 2) + "R"],
+        ["Avg win",   num(m.avgWinR, 2) + "R"],
+        ["Avg loss",  num(m.avgLossR, 2) + "R"],
+        ["Profit factor", num(m.profitFactor)],
+        ["Expectancy", num(m.expectancy, 2) + "R"],
+        ["Sharpe",    num(m.sharpe, 2)],
       ];
-  
+      
+      
       for (const [label, value] of pairs) {
         const card = document.createElement("div");
         card.className = "metricCard";
@@ -420,6 +420,127 @@ try {
   
       equityPlot = { pts, xForIdx, yForVal, w, h };
     }
+
+    // ---------- histogram (trade distribution) ----------
+function computeHistogram(values, bins = 18) {
+  const xs = (values || []).map(Number).filter((v) => Number.isFinite(v));
+  if (!xs.length) return null;
+
+  // Robust range: clamp to avoid one outlier flattening everything
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const lo = Math.max(-5, Math.min(minX, -0.5));
+  const hi = Math.min( 5, Math.max(maxX,  0.5));
+
+  const span = Math.max(1e-6, hi - lo);
+  const step = span / bins;
+
+  const counts = new Array(bins).fill(0);
+  for (const v of xs) {
+    let i = Math.floor((v - lo) / step);
+    if (i < 0) i = 0;
+    if (i >= bins) i = bins - 1;
+    counts[i] += 1;
+  }
+
+  return {
+    lo, hi, step, counts,
+    n: xs.length,
+    min: minX,
+    max: maxX,
+    mean: xs.reduce((a,b)=>a+b,0)/xs.length
+  };
+}
+
+function drawHistogramFromTrades(trades) {
+  if (!distCanvas) return;
+  const ctx = distCanvas.getContext("2d");
+  if (!ctx) return;
+
+  const xs = Array.isArray(trades) ? trades.map((t) => Number(t?.rMult)) : [];
+  const hist = computeHistogram(xs, 18);
+
+  const cssW = Math.max(1, distCanvas.clientWidth || 1);
+  const cssH = Math.max(1, distCanvas.clientHeight || 220);
+  const dpr = window.devicePixelRatio || 1;
+
+  const targetW = Math.floor(cssW * dpr);
+  const targetH = Math.floor(cssH * dpr);
+  if (distCanvas.width !== targetW || distCanvas.height !== targetH) {
+    distCanvas.width = targetW;
+    distCanvas.height = targetH;
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = cssW;
+  const h = cssH;
+  ctx.clearRect(0, 0, w, h);
+
+  // frame
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+  if (!hist) {
+    if (distMeta) distMeta.textContent = "No trades yet.";
+    return;
+  }
+
+  const { counts, n, lo, hi, step, min, max, mean } = hist;
+  const maxC = Math.max(...counts) || 1;
+
+  const padL = 34;
+  const padR = 10;
+  const padT = 10;
+  const padB = 26;
+  const plotW = Math.max(1, w - padL - padR);
+  const plotH = Math.max(1, h - padT - padB);
+
+  // axis line
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + plotH);
+  ctx.lineTo(padL + plotW, padT + plotH);
+  ctx.stroke();
+
+  // bars
+  const barW = plotW / counts.length;
+  for (let i = 0; i < counts.length; i++) {
+    const c = counts[i];
+    const bh = (c / maxC) * plotH;
+    const x = padL + i * barW + 1;
+    const y = padT + plotH - bh;
+    const bw = Math.max(1, barW - 2);
+
+    ctx.fillStyle = "rgba(93,169,255,0.35)";
+    ctx.fillRect(x, y, bw, bh);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
+  }
+
+  // labels (min / 0 / max)
+  ctx.fillStyle = "rgba(231,237,246,0.65)";
+  ctx.font = "12px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  const xMin = padL;
+  const xMax = padL + plotW;
+  const xZero = padL + ((0 - lo) / (hi - lo)) * plotW;
+  const yLbl = padT + plotH + 6;
+
+  const fmtR = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}R` : "—");
+  ctx.fillText(fmtR(lo), xMin, yLbl);
+  if (xZero > padL + 18 && xZero < padL + plotW - 18) ctx.fillText("0R", xZero, yLbl);
+  ctx.fillText(fmtR(hi), xMax, yLbl);
+
+  if (distMeta) {
+    distMeta.textContent =
+      `n=${n} • min ${min.toFixed(2)}R • max ${max.toFixed(2)}R • mean ${mean.toFixed(2)}R • bin ${step.toFixed(2)}R`;
+  }
+}
   
     function renderTrades(trades) {
       if (!tradeTableBody) return;
@@ -508,6 +629,7 @@ try {
             renderMetrics(run?.metrics || {});
             drawEquity(lastEquity);
             renderTrades(lastTrades);
+            drawHistogramFromTrades(lastTrades);
           }
   
           if (status === "FAILED") {

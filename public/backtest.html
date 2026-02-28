@@ -190,7 +190,7 @@
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand">
-          <div class="brand-dot"></div>
+          <img src="/logo.PNG" class="brand-logo" alt="Logo" />
           <div class="brand-text">Trading Agent</div>
         </div>
 
@@ -208,8 +208,6 @@
           <div class="status-dot" id="socketDot"></div>
           <div class="status-text">Realtime</div>
         </div>
-
-        <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
       </div>
     </header>
 
@@ -313,7 +311,7 @@
             <div class="card-head bt-card-head">
               <div>
                 <div class="card-title">Performance Summary</div>
-              </div>
+              </div>    
 
               <!-- keep for JS, hide -->
               <div class="card-actions">
@@ -363,11 +361,26 @@
           </section>
         </div>
 
+        <!-- TRADE DISTRIBUTION (standalone card under Summary + Trade Log) -->
+<section class="card bt-card bt-histCard" style="margin-top: 16px;">
+  <div class="card-head bt-card-head">
+    <div>
+      <div class="card-title">Trade Distribution</div>
+      <div class="card-hint">Histogram of R-multiples (per-trade)</div>
+    </div>
+  </div>
+
+  <div class="bt-histBody">
+    <canvas id="distCanvas"></canvas>
+    <div id="distMeta" class="small"></div>
+  </div>
+</section>
+
       </section>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/backtest.js"></script>
+    <script src="/backtest.js?v=1"></script>
 
     <!-- UI-only glue: chips synced to #tickersSelect -->
     <script>
