@@ -283,9 +283,7 @@ let modalVersion = null;
     orbRange = Math.max(1, Math.floor(orbRange));
   
     // If ORB, force orb.rangeMin == timeframeMin so live/backtest can’t drift
-    if (trig === "ORB") {
-      orbRange = tf;
-    }
+    if (trig === "ORB") orbRange = tf;
   
     return {
       timeframeMin: tf,

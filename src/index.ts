@@ -8,13 +8,12 @@ import {
   openDb,
   loadActiveRuleset,
   insertRuleset,
-  setActiveRuleset,
   setRulesetActive,
   loadBrokerConfig,
   saveBrokerConfig,
   getRulesetByVersion,
   deleteRuleset,
-  updateRuleset  // <-- add
+  updateRuleset
 } from "./db/db";
 
 import { resolveSectorEtf } from "./market/sectorResolver";
@@ -114,11 +113,9 @@ const BROKERS: BrokerDescriptor[] = [
 const FEED = (process.env.ALPACA_FEED || "iex") as "iex" | "sip" | "delayed_sip";
 
 const DEFAULT_TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
-
 const RETEST_TOL = Number(process.env.RETEST_TOLERANCE_PCT || 0.001);
 const STRUCTURE_WINDOW = Number(process.env.STRUCTURE_WINDOW || 3);
 const RS_WINDOW_BARS = Number(process.env.RS_WINDOW_BARS_5M || 3);
-
 const TRACK_WINDOW_MIN = Number(process.env.TRACK_WINDOW_MINUTES || 60);
 
 const KEY = process.env.APCA_API_KEY_ID || "";
@@ -135,13 +132,13 @@ console.log("[ENV CHECK]", {
 // DB + Rules
 // -----------------------------
 const db = openDb();
+
+// NOTE: loadActiveRuleset() returns the highest version with active=1 (per your db.ts query).
+// With multi-enabled strategies, "activeRules" is "the latest enabled ruleset" and is used for:
+// - /api/rules (editor default)
+// - fallback UI naming
 let activeRules = loadActiveRuleset(db);
 
-
-// Single source of truth for aggregation/eval timeframe in LIVE mode.
-// Tracks active ruleset timeframeMin.
-let AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 const backtestQueue = new BacktestQueue(db);
 
 // ------------------------------------------------------------------
@@ -171,9 +168,130 @@ function listRulesets() {
   return db.prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`).all();
 }
 
-AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+// -----------------------------
+// OPTION 2: Multi-enabled strategies (per-strategy live runner)
+// Shared: levelsMap + VWAP + lastPrice
+// Per strategy: engine + aggregation + bar history + outcome tracker
+// -----------------------------
+type Agg = { bucketStart: number; o: number; h: number; l: number; c: number; lastMinTs: number };
 
+type StrategyRunner = {
+  version: number;
+  name: string;
+  cfg: any; // ruleset config JSON
+  timeframeMin: number;
+
+  engine: SignalEngine;
+  outcomeTracker: OutcomeTracker;
+
+  aggMap: Map<string, Agg>;
+  barsMap: Map<string, Bar5[]>;
+};
+
+const runners = new Map<number, StrategyRunner>();
+
+function getBars(r: StrategyRunner, symbol: string) {
+  if (!r.barsMap.has(symbol)) r.barsMap.set(symbol, []);
+  return r.barsMap.get(symbol)!;
+}
+
+function pushBar(r: StrategyRunner, symbol: string, bar: Bar5) {
+  const arr = getBars(r, symbol);
+  arr.push(bar);
+  if (arr.length > 800) arr.shift();
+  r.engine.ensureSymbol(symbol, getLevels(symbol));
+  r.engine.pushBar5(symbol, bar);
+}
+
+function floorBucket(ms: number, minutes: number): number {
+  const size = Math.max(1, Math.floor(minutes)) * 60_000;
+  return Math.floor(ms / size) * size;
+}
+
+function listEnabledRulesets(): Array<{ version: number; name: string; active: boolean; config: any }> {
+  const rows = db
+    .prepare(`SELECT version, name, active, config_json FROM rulesets WHERE active=1 ORDER BY version DESC`)
+    .all() as any[];
+
+  return rows
+    .map((r) => {
+      let cfg: any = {};
+      try {
+        cfg = JSON.parse(String(r.config_json || "{}"));
+      } catch {
+        cfg = {};
+      }
+      return {
+        version: Number(r.version),
+        name: String(r.name || `v${r.version}`),
+        active: Boolean(r.active),
+        config: cfg
+      };
+    })
+    .filter((x) => Number.isFinite(x.version) && x.version > 0);
+}
+
+function buildRunner(rs: { version: number; name: string; config: any }): StrategyRunner {
+  const tfMinRaw = Number(rs.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+  const timeframeMin = Number.isFinite(tfMinRaw) && tfMinRaw >= 1 ? Math.floor(tfMinRaw) : DEFAULT_TIMEFRAME_MIN;
+
+  const retestTolRaw = Number(rs.config?.retestTolerancePct ?? RETEST_TOL);
+  const rsWinRaw = Number(rs.config?.rsWindowBars5m ?? RS_WINDOW_BARS);
+
+  const retestTolerancePct = Number.isFinite(retestTolRaw) && retestTolRaw >= 0 ? retestTolRaw : RETEST_TOL;
+  const rsWindowBars5m = Number.isFinite(rsWinRaw) && rsWinRaw >= 1 ? Math.floor(rsWinRaw) : RS_WINDOW_BARS;
+
+  return {
+    version: rs.version,
+    name: rs.name,
+    cfg: rs.config,
+    timeframeMin,
+
+    engine: new SignalEngine({
+      timeframeMin,
+      retestTolerancePct,
+      rsWindowBars5m
+    }),
+
+    outcomeTracker: new OutcomeTracker({
+      trackWindowMin: TRACK_WINDOW_MIN,
+      checkpointsMin: [1, 3, 5, 10, 15, 30, 60]
+    }),
+
+    aggMap: new Map(),
+    barsMap: new Map()
+  };
+}
+
+function refreshRunners() {
+  const enabled = listEnabledRulesets();
+  const want = new Set(enabled.map((x) => x.version));
+
+  // remove disabled runners
+  for (const v of Array.from(runners.keys())) {
+    if (!want.has(v)) runners.delete(v);
+  }
+
+  // add missing runners
+  for (const rs of enabled) {
+    if (!runners.has(rs.version)) {
+      runners.set(rs.version, buildRunner({ version: rs.version, name: rs.name, config: rs.config }));
+    }
+  }
+
+  // activeRules = highest enabled version (for /api/rules editor default)
+  activeRules = loadActiveRuleset(db);
+  loadRulesetNames();
+
+  console.log(`[live] runners enabled: ${Array.from(runners.keys()).join(", ") || "none"}`);
+}
+
+// call once at boot
+refreshRunners();
+
+// -----------------------------
+// Rules mutations (save / toggle / update / delete)
+// -----------------------------
 function saveRules(name: string, config: any, changedBy?: string) {
   if (!config || typeof config !== "object") throw new Error("config required");
   if (!Number.isFinite(config.timeframeMin) || config.timeframeMin < 1) throw new Error("bad timeframeMin");
@@ -185,109 +303,35 @@ function saveRules(name: string, config: any, changedBy?: string) {
   const r = insertRuleset(db, name, config, changedBy) as any;
   const version = Number(r?.version ?? r);
 
-  activeRules = loadActiveRuleset(db);
-  loadRulesetNames();
-
-  const maybeUpdate = (engine as any).updateConfig;
-  if (typeof maybeUpdate === "function") {
-
-    AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-    if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
-
-    maybeUpdate.call(engine, {
-      timeframeMin: activeRules.config.timeframeMin,
-      retestTolerancePct: activeRules.config.retestTolerancePct,
-      rsWindowBars5m: activeRules.config.rsWindowBars5m
-    });
-  }
-
-  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-resetLiveTimeframeState();
-
-  return { version };
-}
-
-AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
-function activateRuleset(version: number) {
-  setActiveRuleset(db, version);
-  activeRules = loadActiveRuleset(db);
-  loadRulesetNames();
-
-  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
-  const maybeUpdate = (engine as any).updateConfig;
-  if (typeof maybeUpdate === "function") {
-    maybeUpdate.call(engine, {
-      timeframeMin: activeRules.config.timeframeMin,
-      retestTolerancePct: activeRules.config.retestTolerancePct,
-      rsWindowBars5m: activeRules.config.rsWindowBars5m
-    });
-  }
-
-  resetLiveTimeframeState();
+  // insertRuleset() sets active=1 for the new ruleset; refresh runners
+  refreshRunners();
 
   return { version };
 }
 
 function setRulesetActiveFn(version: number, active: boolean) {
   setRulesetActive(db, Number(version), Boolean(active));
+  refreshRunners();
   return { ok: true, version: Number(version), active: Boolean(active) };
 }
 
-AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
 function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
   const out = updateRuleset(db, Number(version), name, config, changedBy);
-  activeRules = loadActiveRuleset(db);
-  loadRulesetNames();
+  refreshRunners();
 
-  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
-  const maybeUpdate = (engine as any).updateConfig;
-  if (typeof maybeUpdate === "function") {
-    maybeUpdate.call(engine, {
-      timeframeMin: activeRules.config.timeframeMin,
-      retestTolerancePct: activeRules.config.retestTolerancePct,
-      rsWindowBars5m: activeRules.config.rsWindowBars5m
-    });
+  // Rebuild the specific runner to ensure new cfg takes effect immediately
+  const v = Number(version);
+  const rs = getRulesetByVersion(db, v);
+  if (rs && runners.has(v)) {
+    runners.set(v, buildRunner({ version: v, name: String(rs.name || `v${v}`), config: rs.config }));
   }
-  
-  resetLiveTimeframeState();
-
-
 
   return out;
 }
 
-AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
 function deleteRulesetFn(version: number, _changedBy?: string) {
   const out = deleteRuleset(db, Number(version));
-  activeRules = loadActiveRuleset(db);
-  loadRulesetNames();
-
-  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
-
-  const maybeUpdate = (engine as any).updateConfig;
-  if (typeof maybeUpdate === "function") {
-    maybeUpdate.call(engine, {
-      timeframeMin: activeRules.config.timeframeMin,
-      retestTolerancePct: activeRules.config.retestTolerancePct,
-      rsWindowBars5m: activeRules.config.rsWindowBars5m
-    });
-  }
-    resetLiveTimeframeState();
-  
-
+  refreshRunners();
   return out;
 }
 
@@ -532,7 +576,17 @@ function streamSymbols(): string[] {
 }
 
 // -----------------------------
-// VWAP + last price
+// Levels (shared across strategies)
+// -----------------------------
+const levelsMap = new Map<string, ReturnType<typeof initLevels>>();
+
+function getLevels(symbol: string) {
+  if (!levelsMap.has(symbol)) levelsMap.set(symbol, initLevels(Date.now()));
+  return levelsMap.get(symbol)!;
+}
+
+// -----------------------------
+// VWAP + last price (shared)
 // -----------------------------
 type VwapState = { dayKey: string; pv: number; v: number; vwap: number | null };
 const vwapMap = new Map<string, VwapState>();
@@ -563,7 +617,9 @@ function getVwap(symbol: string): number | null {
 }
 
 // -----------------------------
-// Signals snapshot
+// Signals snapshot (single UI snapshot)
+// NOTE: Market Snapshot can only display one set of columns;
+// we build it from a “representative” runner + aggregate forming.
 // -----------------------------
 type SignalsSnapshot = {
   ts: number;
@@ -582,6 +638,11 @@ type SignalsSnapshot = {
     score: number;
     rs: "STRONG" | "WEAK" | "NONE";
     market: "BULLISH" | "BEARISH" | "NEUTRAL";
+
+    // optional tagging (safe additions)
+    strategyVersion?: number;
+    strategyName?: string;
+    timeframeMin?: number;
   }>;
 };
 
@@ -654,62 +715,8 @@ function getEffectiveMarketDir(): MarketDirection {
 let lastSignalsBroadcast = 0;
 
 // -----------------------------
-// Engine + tracker
+// Helpers: market hours + time parsing
 // -----------------------------
-const engine = new SignalEngine({
-  timeframeMin: activeRules.config.timeframeMin ?? DEFAULT_TIMEFRAME_MIN,
-  retestTolerancePct: activeRules.config.retestTolerancePct ?? RETEST_TOL,
-  rsWindowBars5m: activeRules.config.rsWindowBars5m ?? RS_WINDOW_BARS
-});
-
-const outcomeTracker = new OutcomeTracker({
-  trackWindowMin: TRACK_WINDOW_MIN,
-  checkpointsMin: [1, 3, 5, 10, 15, 30, 60]
-});
-
-// -----------------------------
-// 5m aggregation
-// -----------------------------
-type Agg = { bucketStart: number; o: number; h: number; l: number; c: number; lastMinTs: number };
-const aggMap = new Map<string, Agg>();
-
-const levelsMap = new Map<string, ReturnType<typeof initLevels>>();
-const bars5Map = new Map<string, Bar5[]>();
-
-function resetLiveTimeframeState() {
-  // Clears partial aggregation + aggregated bar history
-  aggMap.clear();
-  bars5Map.clear();
-
-  // If levels are timeframe-dependent in your strategy, consider clearing:
-  // levelsMap.clear();
-
-  console.log(`[live] reset timeframe state. agg=${AGG_TIMEFRAME_MIN}m`);
-}
-
-function getLevels(symbol: string) {
-  if (!levelsMap.has(symbol)) levelsMap.set(symbol, initLevels(Date.now()));
-  return levelsMap.get(symbol)!;
-}
-
-function getBars5(symbol: string) {
-  if (!bars5Map.has(symbol)) bars5Map.set(symbol, []);
-  return bars5Map.get(symbol)!;
-}
-
-function pushBar5(symbol: string, bar: Bar5) {
-  const arr = getBars5(symbol);
-  arr.push(bar);
-  if (arr.length > 500) arr.shift();
-  engine.ensureSymbol(symbol, getLevels(symbol));
-  engine.pushBar5(symbol, bar);
-}
-
-function floorBucket(ms: number, minutes: number): number {
-  const size = minutes * 60_000;
-  return Math.floor(ms / size) * size;
-}
-
 function isoToMsSafe(iso: string): number | null {
   const ms = new Date(iso).getTime();
   return Number.isFinite(ms) ? ms : null;
@@ -759,7 +766,9 @@ function getDbRows() {
       const r = (k: string) => (o?.returnsPct ? (o.returnsPct as any)[k] : null);
 
       const strategyVersion =
-        (a as any)?.meta?.rulesetVersion != null ? Number((a as any).meta.rulesetVersion) : Number(activeRules?.version ?? 0);
+        (a as any)?.meta?.rulesetVersion != null
+          ? Number((a as any).meta.rulesetVersion)
+          : Number(activeRules?.version ?? 0);
 
       const strategyName =
         strategyVersion && rulesetNameMap[strategyVersion]
@@ -832,98 +841,348 @@ function setBrokerConfig(next: any, _changedBy?: string) {
   return saveBrokerConfig(db, { brokerKey, mode, config, tradingEnabled });
 }
 
-const app = createHttpApp({
-  publicDir,
+// -----------------------------
+// Signals recompute + broadcast
+// -----------------------------
+function recomputeSignalsAndBroadcast() {
+  const now = Date.now();
+  if (now - lastSignalsBroadcast < 1500) return;
+  lastSignalsBroadcast = now;
 
-// rules
-getRules,
-listRulesets,
-getRulesetByVersion: (version: number) => getRulesetByVersion(db, version),
-setRulesetActive: (version: number, active: boolean) => setRulesetActiveFn(version, active),
-saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
-deleteRuleset: (version: number, changedBy?: string) => deleteRulesetFn(version, changedBy),
+  const symbols = normalizedWatchlist();
 
-  // backtests
-  createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
-  getBacktestRun: (id: string) => backtestQueue.getRun(id),
-  getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
-  getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
-  listBacktestRuns: (opts: { limit: number; strategyVersion?: number }) => backtestQueue.listRuns(opts),
+  const spy = computeIndexSide("SPY");
+  const qqq = computeIndexSide("QQQ");
 
-  // data for UI
-  getAlerts: () => alerts,
-  getWatchlist: () => normalizedWatchlist(),
-  getSignals: () => latestSignals,
-  getStreamStats: () => snapshotStreamStats(),
-  replay: (symbols, minutes, emitAlerts) => replayBars(symbols, minutes, emitAlerts),
+  const indexAlignedBull = spy.side === "ABOVE" && qqq.side === "ABOVE";
+  const indexAlignedBear = spy.side === "BELOW" && qqq.side === "BELOW";
 
-  // broker integration endpoints (http.ts must call these)
-  getBrokers,
-  getBrokerConfig,
-  saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
+  const marketBias = computeMarketBiasFromVwap(symbols);
+  const marketDirForRS = biasToMarketDir(marketBias);
 
-  // used by /api/broker/status (Alpaca calls)
-  httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
+  // Choose one runner as representative for RS columns.
+  const firstRunner = runners.values().next().value as StrategyRunner | undefined;
+  const spyBars = firstRunner ? getBars(firstRunner, "SPY") : [];
+  const qqqBars = firstRunner ? getBars(firstRunner, "QQQ") : [];
 
-  // outcomes
-  getOutcomes: () => outcomes,
-  getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
-  getDbRows,
+  const strong: SignalsSnapshot["strong"] = [];
+  const weak: SignalsSnapshot["weak"] = [];
 
-  updateRuleset: (version: number, name: string, config: any, changedBy?: string) =>
-    updateRulesetFn(version, name, config, changedBy),
-
-  addSymbol: async (s: string) => {
-    const sym = String(s || "").trim().toUpperCase();
-    if (!sym) return;
-    if (!isValidSymbol(sym)) return;
-    if (sym === "SPY" || sym === "QQQ") return;
-
-    if (!watch.includes(sym)) {
-      watch.push(sym);
-      const etf = await resolveSectorEtf(sym);
-      db.prepare(`INSERT OR REPLACE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`).run(sym, etf, Date.now());
-    }
-
-    refreshSubscriptions();
-    realtime?.broadcastWatchlist(normalizedWatchlist());
-  },
-
-  removeSymbol: async (s: string) => {
-    const sym = String(s || "").trim().toUpperCase();
-    if (!sym) return;
-
-    watch = watch.filter((x) => x !== sym);
-    db.prepare(`DELETE FROM watchlist WHERE symbol=?`).run(sym);
-
-    refreshSubscriptions();
-    realtime?.broadcastWatchlist(normalizedWatchlist());
-  }
-});
-
-const server = http.createServer(app);
-
-realtime = attachRealtime(server, {
-  getAlerts: () => alerts,
-  getWatchlist: () => normalizedWatchlist(),
-  getSignals: () => latestSignals
-});
-
-server.listen(PORT, () => {
-  console.log(`Dashboard: http://localhost:${PORT}`);
-
-  if (!HAS_KEYS) {
-    console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");
+  if (!streamStats.lastBarTs || Date.now() - streamStats.lastBarTs > 15 * 60_000) {
+    latestSignals = { ...latestSignals, ts: Date.now(), strong: [], weak: [], forming: [], marketBias: "NEUTRAL" };
+    realtime?.broadcastSignals(latestSignals);
     return;
   }
 
-  runStartupBackfill().catch((e) => console.log("[backfill] error", e));
-});
+  // Include SPY/QQQ themselves in Strong/Weak columns (based on representative runner bars)
+  if (spyBars.length >= RS_WINDOW_BARS + 1 && qqqBars.length >= RS_WINDOW_BARS + 1) {
+    const spySide = computeIndexSide("SPY");
+    const qqqSide = computeIndexSide("QQQ");
+
+    const rsSpy = computeRS({
+      marketDir: marketDirForRS,
+      symBars5: spyBars,
+      spyBars5: qqqBars,
+      windowBars: RS_WINDOW_BARS
+    });
+
+    const rsQqq = computeRS({
+      marketDir: marketDirForRS,
+      symBars5: qqqBars,
+      spyBars5: spyBars,
+      windowBars: RS_WINDOW_BARS
+    });
+
+    if (marketBias === "BULLISH" && indexAlignedBull) {
+      if (spySide.price != null && spySide.vwap != null && spySide.price >= spySide.vwap && rsSpy === "STRONG") {
+        strong.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
+      }
+      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price >= qqqSide.vwap && rsQqq === "STRONG") {
+        strong.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
+      }
+    }
+
+    if (marketBias === "BEARISH" && indexAlignedBear) {
+      if (spySide.price != null && spySide.vwap != null && spySide.price <= spySide.vwap && rsSpy === "WEAK") {
+        weak.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
+      }
+      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price <= qqqSide.vwap && rsQqq === "WEAK") {
+        weak.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
+      }
+    }
+  }
+
+  // Normal watchlist symbols (based on representative runner bars)
+  if (spyBars.length >= RS_WINDOW_BARS + 1) {
+    for (const s of symbols) {
+      const price = lastPriceMap.get(s);
+      const vwap = getVwap(s);
+      if (price == null || vwap == null) continue;
+
+      const symBars = firstRunner ? getBars(firstRunner, s) : [];
+      if (symBars.length < RS_WINDOW_BARS + 1) continue;
+
+      const rs = computeRS({
+        marketDir: marketDirForRS,
+        symBars5: symBars,
+        spyBars5: spyBars,
+        windowBars: RS_WINDOW_BARS
+      });
+
+      if (marketBias === "BULLISH" && indexAlignedBull && price >= vwap && rs === "STRONG") {
+        strong.push({ symbol: s, price, vwap, rs });
+      }
+
+      if (marketBias === "BEARISH" && indexAlignedBear && price <= vwap && rs === "WEAK") {
+        weak.push({ symbol: s, price, vwap, rs });
+      }
+    }
+  }
+
+  // Forming: aggregate across ALL enabled strategies
+  const rawForming: any[] = [];
+  for (const r of runners.values()) {
+    const fc = r.engine.getFormingCandidates({
+      lastPrice: (sym) => lastPriceMap.get(sym) ?? null
+    });
+
+    for (const f of fc) {
+      rawForming.push({
+        ...f,
+        strategyVersion: r.version,
+        strategyName: r.name,
+        timeframeMin: r.timeframeMin
+      });
+    }
+  }
+
+  const eff = getEffectiveMarketDir();
+  const filtered = eff === "NEUTRAL" ? rawForming : rawForming.filter((f) => f.market === eff);
+
+  const priorityRank = (sym: string) => (sym === "SPY" ? 0 : sym === "QQQ" ? 1 : 2);
+
+  const forming = filtered
+    .slice()
+    .sort((a, b) => {
+      const pa = priorityRank(a.symbol);
+      const pb = priorityRank(b.symbol);
+      if (pa !== pb) return pa - pb;
+      return (b.score ?? 0) - (a.score ?? 0);
+    })
+    .slice(0, 12)
+    .map((f) => ({
+      symbol: f.symbol,
+      dir: f.dir,
+      level: f.levelType,
+      levelPrice: f.levelPrice,
+      lastPrice: f.lastPrice,
+      distancePct: f.distancePct,
+      score: f.score,
+      rs: f.rs,
+      market: f.market,
+      strategyVersion: f.strategyVersion,
+      strategyName: f.strategyName,
+      timeframeMin: f.timeframeMin
+    }));
+
+  latestSignals = {
+    ts: Date.now(),
+    marketBias,
+    spy,
+    qqq,
+    strong: strong.slice(0, 12),
+    weak: weak.slice(0, 12),
+    forming
+  };
+
+  realtime?.broadcastSignals(latestSignals);
+}
+
+// -----------------------------
+// Per-strategy evaluation on bar close
+// -----------------------------
+function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number) {
+  // Require enough bars for structure window
+  const spyBars = getBars(r, "SPY");
+  const qqqBars = getBars(r, "QQQ");
+  if (spyBars.length < STRUCTURE_WINDOW || qqqBars.length < STRUCTURE_WINDOW) return;
+
+  if (!isRegularMarketHours(ts)) return;
+
+  const symBars = getBars(r, symbol);
+  if (!symBars.length) return;
+
+  r.engine.ensureSymbol(symbol, getLevels(symbol));
+
+  const benchBars = symbol === "SPY" ? qqqBars : spyBars;
+
+  const effDir = getEffectiveMarketDir();
+  if (effDir === "NEUTRAL") return;
+
+  const alert = r.engine.evaluateSymbol({
+    symbol,
+    marketDir: effDir,
+    spyBars5: benchBars,
+    symBars5: symBars,
+    symLevels: getLevels(symbol)
+  });
+
+  if (alert) {
+    (alert as any).meta = { rulesetVersion: r.version };
+
+    alerts.push(alert);
+    if (alerts.length > 2000) alerts = alerts.slice(-2000);
+    dbInsertAlert(alert);
+    realtime?.broadcastAlert(alert);
+  }
+}
+
+// -----------------------------
+// Ingest minute bar (LIVE + BACKFILL)
+// Shared: VWAP + levels + candle persistence
+// Per strategy: minute updates + aggregation + entries + stop/close
+// -----------------------------
+function ingestMinuteBar(
+  symbol: string,
+  ts: number,
+  o: number,
+  h: number,
+  l: number,
+  c: number,
+  v: number,
+  warmup: boolean
+) {
+  if (!symbol || !isValidSymbol(symbol)) return;
+  if (!Number.isFinite(ts)) return;
+  if (![o, h, l, c].every(Number.isFinite)) return;
+
+  updateVwap(symbol, ts, h, l, c, v);
+  onBarUpdateLevels(getLevels(symbol), ts, h, l);
+  persistCandle1m(symbol, ts, o, h, l, c, v);
+
+  const allowSignals = !warmup && isRegularMarketHours(ts);
+
+  // Per-strategy minute updates + possible 1m tap entries
+  if (!warmup && runners.size) {
+    for (const r of runners.values()) {
+      // 1) outcome minute updates
+      const doneFromMinute = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
+      for (const id of doneFromMinute) {
+        const out = r.outcomeTracker.finalize(id);
+        if (out) {
+          outcomes.push(out);
+          if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
+          dbInsertOutcome(out);
+        }
+      }
+
+      // 2) 1m tap entries (per strategy engine)
+      const effDir = getEffectiveMarketDir();
+      const entry =
+        !allowSignals || effDir === "NEUTRAL"
+          ? null
+          : r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
+
+      if (entry) {
+        const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
+        if (structureLevel != null && Number.isFinite(structureLevel)) {
+          const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
+          r.outcomeTracker.startSession({
+            alertId: entry.id,
+            symbol: entry.symbol,
+            dir: tradeDir,
+            structureLevel,
+            entryTs: entry.ts,
+            entryRefPrice: entry.close
+          });
+        }
+
+        // Tag entry with strategy version
+        (entry as any).meta = { rulesetVersion: r.version };
+
+        alerts.push(entry);
+        if (alerts.length > 2000) alerts = alerts.slice(-2000);
+        dbInsertAlert(entry);
+        realtime?.broadcastAlert(entry);
+      }
+    }
+  }
+
+  // Per-strategy aggregation + bar-close evaluation
+  if (runners.size) {
+    for (const r of runners.values()) {
+      const bucket = floorBucket(ts, r.timeframeMin);
+      const cur = r.aggMap.get(symbol);
+
+      if (!cur || cur.bucketStart !== bucket) {
+        if (cur) {
+          // finalize prior bar for this strategy
+          pushBar(r, symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
+
+          if (!warmup) {
+            const closeTs = cur.bucketStart + r.timeframeMin * 60_000;
+
+            // Stop/close is per-strategy timeframe (your requirement)
+            const doneFromBar = r.outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
+            for (const id of doneFromBar) {
+              const out = r.outcomeTracker.finalize(id);
+              if (out) {
+                outcomes.push(out);
+                if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
+                dbInsertOutcome(out);
+              }
+            }
+
+            if (allowSignals) evaluateIfNeededForRunner(r, symbol, closeTs);
+          }
+        }
+
+        r.aggMap.set(symbol, { bucketStart: bucket, o, h, l, c, lastMinTs: ts });
+      } else {
+        cur.h = Math.max(cur.h, h);
+        cur.l = Math.min(cur.l, l);
+        cur.c = c;
+        cur.lastMinTs = ts;
+      }
+    }
+  }
+
+  if (!warmup) recomputeSignalsAndBroadcast();
+}
 
 // -----------------------------
 // Alpaca stream
 // -----------------------------
 let stream: AlpacaStream | null = null;
+
+function onAlpacaBar(b: AlpacaBarMsg) {
+  try {
+    const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
+    if (!symbol || !isValidSymbol(symbol)) return;
+
+    const ts = isoToMsSafe((b as any).t);
+    if (ts == null) return;
+
+    streamStats.barsTotal++;
+    streamStats.lastBarTs = ts;
+    streamStats.barTimestamps.push(Date.now());
+    if (symbol === "SPY") streamStats.lastSpyTs = ts;
+    if (symbol === "QQQ") streamStats.lastQqqTs = ts;
+
+    ingestMinuteBar(
+      symbol,
+      ts,
+      Number((b as any).o),
+      Number((b as any).h),
+      Number((b as any).l),
+      Number((b as any).c),
+      Number((b as any).v),
+      false
+    );
+  } catch (e) {
+    console.log("[alpaca] onBar error", e);
+  }
+}
 
 if (HAS_KEYS) {
   stream = new AlpacaStream(
@@ -934,6 +1193,7 @@ if (HAS_KEYS) {
         console.log(`[alpaca] ${s}`);
         const msg = String(s).toLowerCase();
 
+        // resubscribe on reconnect/auth
         if (msg.includes("connected")) currentSubs = [];
         if (msg.includes("authenticated")) {
           currentSubs = [];
@@ -964,301 +1224,7 @@ function refreshSubscriptions() {
 setTimeout(() => refreshSubscriptions(), 5000);
 
 // -----------------------------
-// Signals recompute + broadcast
-// -----------------------------
-function recomputeSignalsAndBroadcast() {
-  const now = Date.now();
-  if (now - lastSignalsBroadcast < 1500) return;
-  lastSignalsBroadcast = now;
-
-  const symbols = normalizedWatchlist();
-
-  const spy = computeIndexSide("SPY");
-  const qqq = computeIndexSide("QQQ");
-
-  const indexAlignedBull = spy.side === "ABOVE" && qqq.side === "ABOVE";
-  const indexAlignedBear = spy.side === "BELOW" && qqq.side === "BELOW";
-
-  const marketBias = computeMarketBiasFromVwap(symbols);
-  const marketDirForRS = biasToMarketDir(marketBias);
-
-  const spyBars5 = getBars5("SPY");
-  const qqqBars5 = getBars5("QQQ");
-
-  const strong: SignalsSnapshot["strong"] = [];
-  const weak: SignalsSnapshot["weak"] = [];
-
-  if (!streamStats.lastBarTs || Date.now() - streamStats.lastBarTs > 15 * 60_000) {
-    latestSignals = { ...latestSignals, ts: Date.now(), strong: [], weak: [], forming: [], marketBias: "NEUTRAL" };
-    realtime.broadcastSignals(latestSignals);
-    return;
-  }
-
-  // Include SPY/QQQ themselves in Strong/Weak columns
-  if (spyBars5.length >= RS_WINDOW_BARS + 1 && qqqBars5.length >= RS_WINDOW_BARS + 1) {
-    const spySide = computeIndexSide("SPY");
-    const qqqSide = computeIndexSide("QQQ");
-
-    const rsSpy = computeRS({
-      marketDir: marketDirForRS,
-      symBars5: spyBars5,
-      spyBars5: qqqBars5,
-      windowBars: RS_WINDOW_BARS
-    });
-
-    const rsQqq = computeRS({
-      marketDir: marketDirForRS,
-      symBars5: qqqBars5,
-      spyBars5: spyBars5,
-      windowBars: RS_WINDOW_BARS
-    });
-
-    if (marketBias === "BULLISH" && indexAlignedBull) {
-      if (spySide.price != null && spySide.vwap != null && spySide.price >= spySide.vwap && rsSpy === "STRONG") {
-        strong.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
-      }
-      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price >= qqqSide.vwap && rsQqq === "STRONG") {
-        strong.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
-      }
-    }
-
-    if (marketBias === "BEARISH" && indexAlignedBear) {
-      if (spySide.price != null && spySide.vwap != null && spySide.price <= spySide.vwap && rsSpy === "WEAK") {
-        weak.push({ symbol: "SPY", price: spySide.price, vwap: spySide.vwap, rs: rsSpy });
-      }
-      if (qqqSide.price != null && qqqSide.vwap != null && qqqSide.price <= qqqSide.vwap && rsQqq === "WEAK") {
-        weak.push({ symbol: "QQQ", price: qqqSide.price, vwap: qqqSide.vwap, rs: rsQqq });
-      }
-    }
-  }
-
-  // Normal watchlist symbols
-  if (spyBars5.length >= RS_WINDOW_BARS + 1) {
-    for (const s of symbols) {
-      const price = lastPriceMap.get(s);
-      const vwap = getVwap(s);
-      if (price == null || vwap == null) continue;
-
-      const symBars5 = getBars5(s);
-      if (symBars5.length < RS_WINDOW_BARS + 1) continue;
-
-      const rs = computeRS({
-        marketDir: marketDirForRS,
-        symBars5,
-        spyBars5,
-        windowBars: RS_WINDOW_BARS
-      });
-
-      if (marketBias === "BULLISH" && indexAlignedBull && price >= vwap && rs === "STRONG") {
-        strong.push({ symbol: s, price, vwap, rs });
-      }
-
-      if (marketBias === "BEARISH" && indexAlignedBear && price <= vwap && rs === "WEAK") {
-        weak.push({ symbol: s, price, vwap, rs });
-      }
-    }
-  }
-
-  const eff = getEffectiveMarketDir();
-
-  const rawForming = engine.getFormingCandidates({
-    lastPrice: (sym) => lastPriceMap.get(sym) ?? null
-  });
-
-  const filtered = eff === "NEUTRAL" ? rawForming : rawForming.filter((f) => f.market === eff);
-
-  const priorityRank = (sym: string) => (sym === "SPY" ? 0 : sym === "QQQ" ? 1 : 2);
-
-  const forming = filtered
-    .slice()
-    .sort((a, b) => {
-      const pa = priorityRank(a.symbol);
-      const pb = priorityRank(b.symbol);
-      if (pa !== pb) return pa - pb;
-      return (b.score ?? 0) - (a.score ?? 0);
-    })
-    .slice(0, 12)
-    .map((f) => ({
-      symbol: f.symbol,
-      dir: f.dir,
-      level: f.levelType,
-      levelPrice: f.levelPrice,
-      lastPrice: f.lastPrice,
-      distancePct: f.distancePct,
-      score: f.score,
-      rs: f.rs,
-      market: f.market
-    }));
-
-  latestSignals = {
-    ts: Date.now(),
-    marketBias,
-    spy,
-    qqq,
-    strong: strong.slice(0, 12),
-    weak: weak.slice(0, 12),
-    forming
-  };
-
-  realtime.broadcastSignals(latestSignals);
-}
-
-// -----------------------------
-// Bar handler (LIVE)
-// -----------------------------
-function onAlpacaBar(b: AlpacaBarMsg) {
-  try {
-    const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
-    if (!symbol || !isValidSymbol(symbol)) return;
-
-    const ts = isoToMsSafe((b as any).t);
-    if (ts == null) return;
-
-    streamStats.barsTotal++;
-    streamStats.lastBarTs = ts;
-    streamStats.barTimestamps.push(Date.now());
-    if (symbol === "SPY") streamStats.lastSpyTs = ts;
-    if (symbol === "QQQ") streamStats.lastQqqTs = ts;
-
-    ingestMinuteBar(symbol, ts, Number((b as any).o), Number((b as any).h), Number((b as any).l), Number((b as any).c), Number((b as any).v), false);
-  } catch (e) {
-    console.log("[alpaca] onBar error", e);
-  }
-}
-
-// -----------------------------
-// Ingest minute bar (LIVE + BACKFILL)
-// -----------------------------
-function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: number, c: number, v: number, warmup: boolean) {
-  // Hardening: ignore broken payloads
-  if (!symbol || !isValidSymbol(symbol)) return;
-  if (!Number.isFinite(ts)) return;
-  if (![o, h, l, c].every(Number.isFinite)) return;
-
-  updateVwap(symbol, ts, h, l, c, v);
-  onBarUpdateLevels(getLevels(symbol), ts, h, l);
-  persistCandle1m(symbol, ts, o, h, l, c, v);
-
-  // ✅ FIX: single source of truth, scoped for full function
-  const allowSignals = !warmup && isRegularMarketHours(ts);
-
-  if (!warmup) {
-    const doneFromMinute = outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
-
-    for (const id of doneFromMinute) {
-      const out = outcomeTracker.finalize(id);
-      if (out) {
-        outcomes.push(out);
-        if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
-        dbInsertOutcome(out);
-      }
-    }
-
-    const effDir = getEffectiveMarketDir();
-
-    const entry =
-      !allowSignals || effDir === "NEUTRAL"
-        ? null
-        : engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
-
-    if (entry) {
-      const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
-      if (structureLevel != null && Number.isFinite(structureLevel)) {
-        const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-        outcomeTracker.startSession({
-          alertId: entry.id,
-          symbol: entry.symbol,
-          dir: tradeDir,
-          structureLevel,
-          entryTs: entry.ts,
-          entryRefPrice: entry.close
-        });
-      }
-
-      // Tag entry with current ruleset version for strategy filtering
-      (entry as any).meta = { rulesetVersion: activeRules.version };
-
-      alerts.push(entry);
-      if (alerts.length > 2000) alerts = alerts.slice(-2000);
-      dbInsertAlert(entry);
-      realtime.broadcastAlert(entry);
-    }
-  }
-
-  const bucket = floorBucket(ts, AGG_TIMEFRAME_MIN);
-  const cur = aggMap.get(symbol);
-
-  if (!cur || cur.bucketStart !== bucket) {
-    if (cur) {
-      pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
-
-      if (!warmup) {
-        const closeTs = cur.bucketStart + AGG_TIMEFRAME_MIN * 60_000;
-        const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
-
-        for (const id of doneFromBar5) {
-          const out = outcomeTracker.finalize(id);
-          if (out) {
-            outcomes.push(out);
-            if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
-            dbInsertOutcome(out);
-          }
-        }
-
-        // ✅ allowSignals is in-scope and correct for this bar's timestamp
-        if (allowSignals) evaluateIfNeeded(symbol, closeTs);
-      }
-    }
-
-    aggMap.set(symbol, { bucketStart: bucket, o, h, l, c, lastMinTs: ts });
-  } else {
-    cur.h = Math.max(cur.h, h);
-    cur.l = Math.min(cur.l, l);
-    cur.c = c;
-    cur.lastMinTs = ts;
-  }
-
-  if (!warmup) recomputeSignalsAndBroadcast();
-}
-
-function evaluateIfNeeded(symbol: string, ts: number) {
-  const spyBars5 = getBars5("SPY");
-  const qqqBars5 = getBars5("QQQ");
-  if (spyBars5.length < STRUCTURE_WINDOW || qqqBars5.length < STRUCTURE_WINDOW) return;
-
-  // Use the bar timestamp (not Date.now) so backfill/replay stays sane
-  if (!isRegularMarketHours(ts)) return;
-
-  const symBars5 = getBars5(symbol);
-  if (!symBars5.length) return;
-
-  engine.ensureSymbol(symbol, getLevels(symbol));
-
-  const benchBars5 = symbol === "SPY" ? qqqBars5 : spyBars5;
-
-  const effDir = getEffectiveMarketDir();
-  if (effDir === "NEUTRAL") return;
-
-  const alert = engine.evaluateSymbol({
-    symbol,
-    marketDir: effDir,
-    spyBars5: benchBars5,
-    symBars5,
-    symLevels: getLevels(symbol)
-  });
-
-  if (alert) {
-    (alert as any).meta = { rulesetVersion: activeRules.version };
-
-    alerts.push(alert);
-    if (alerts.length > 2000) alerts = alerts.slice(-2000);
-    dbInsertAlert(alert);
-    realtime.broadcastAlert(alert);
-  }
-}
-
-// -----------------------------
-// REST backfill (warm-up)
+// REST backfill (warm-up) + replay
 // -----------------------------
 function httpGetJson(url: string, headers: Record<string, string>): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -1320,12 +1286,14 @@ async function replayBars(symbols: string[], minutes: number, emitAlerts: boolea
 
   recomputeSignalsAndBroadcast();
 
-  if (emitAlerts) {
-    for (const s of ordered) {
-      try {
-        // Use "now" for replay alert eval, but evaluateIfNeeded also checks RTH by ts
-        evaluateIfNeeded(s, Date.now());
-      } catch {}
+  // Optional (only if you want noisy replay alerts during current RTH)
+  if (emitAlerts && isRegularMarketHours(Date.now())) {
+    for (const r of runners.values()) {
+      for (const s of ordered) {
+        try {
+          evaluateIfNeededForRunner(r, s, Date.now());
+        } catch {}
+      }
     }
   }
 
@@ -1349,3 +1317,95 @@ async function runStartupBackfill() {
   recomputeSignalsAndBroadcast();
   console.log("[backfill] done");
 }
+
+// -----------------------------
+// HTTP app wiring
+// -----------------------------
+const app = createHttpApp({
+  publicDir,
+
+  // rules
+  getRules,
+  listRulesets,
+  getRulesetByVersion: (version: number) => getRulesetByVersion(db, version),
+  setRulesetActive: (version: number, active: boolean) => setRulesetActiveFn(version, active),
+  saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
+  deleteRuleset: (version: number, changedBy?: string) => deleteRulesetFn(version, changedBy),
+  updateRuleset: (version: number, name: string, config: any, changedBy?: string) => updateRulesetFn(version, name, config, changedBy),
+
+  // backtests
+  createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
+  getBacktestRun: (id: string) => backtestQueue.getRun(id),
+  getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
+  getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
+  listBacktestRuns: (opts: { limit: number; strategyVersion?: number }) => backtestQueue.listRuns(opts),
+
+  // data for UI
+  getAlerts: () => alerts,
+  getWatchlist: () => normalizedWatchlist(),
+  getSignals: () => latestSignals,
+  getStreamStats: () => snapshotStreamStats(),
+  replay: (symbols, minutes, emitAlerts) => replayBars(symbols, minutes, emitAlerts),
+
+  // broker integration endpoints
+  getBrokers,
+  getBrokerConfig,
+  saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
+
+  // used by /api/broker/status
+  httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
+
+  // outcomes
+  getOutcomes: () => outcomes,
+  getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
+  getDbRows,
+
+  addSymbol: async (s: string) => {
+    const sym = String(s || "").trim().toUpperCase();
+    if (!sym) return;
+    if (!isValidSymbol(sym)) return;
+    if (sym === "SPY" || sym === "QQQ") return;
+
+    if (!watch.includes(sym)) {
+      watch.push(sym);
+      const etf = await resolveSectorEtf(sym);
+      db.prepare(`INSERT OR REPLACE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`).run(sym, etf, Date.now());
+    }
+
+    refreshSubscriptions();
+    realtime?.broadcastWatchlist(normalizedWatchlist());
+  },
+
+  removeSymbol: async (s: string) => {
+    const sym = String(s || "").trim().toUpperCase();
+    if (!sym) return;
+
+    watch = watch.filter((x) => x !== sym);
+    db.prepare(`DELETE FROM watchlist WHERE symbol=?`).run(sym);
+
+    refreshSubscriptions();
+    realtime?.broadcastWatchlist(normalizedWatchlist());
+  }
+});
+
+// -----------------------------
+// Server + realtime
+// -----------------------------
+const server = http.createServer(app);
+
+realtime = attachRealtime(server, {
+  getAlerts: () => alerts,
+  getWatchlist: () => normalizedWatchlist(),
+  getSignals: () => latestSignals
+});
+
+server.listen(PORT, () => {
+  console.log(`Dashboard: http://localhost:${PORT}`);
+
+  if (!HAS_KEYS) {
+    console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");
+    return;
+  }
+
+  runStartupBackfill().catch((e) => console.log("[backfill] error", e));
+});

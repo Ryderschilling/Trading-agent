@@ -256,13 +256,20 @@ export function deleteRuleset(db: Database.Database, version: number) {
 
 export function insertRuleset(db: Database.Database, name: string, cfg: RuleConfig, changedBy?: string) {
   const tx = db.transaction(() => {
-    db.prepare(`UPDATE rulesets SET active=0 WHERE active=1`).run();
+    // OPTION 2: Do NOT disable other enabled strategies.
+    // "active" means "enabled".
     const info = db
       .prepare(`INSERT INTO rulesets(created_ts,name,active,config_json) VALUES(?,?,1,?)`)
       .run(Date.now(), name, JSON.stringify(cfg));
+
     const version = Number(info.lastInsertRowid);
 
-    db.prepare(`INSERT INTO rule_changes(ts,ruleset_version,changed_by,diff_json) VALUES(?,?,?,?)`).run(Date.now(), version, changedBy || null, null);
+    db.prepare(`INSERT INTO rule_changes(ts,ruleset_version,changed_by,diff_json) VALUES(?,?,?,?)`).run(
+      Date.now(),
+      version,
+      changedBy || null,
+      null
+    );
 
     return version;
   });

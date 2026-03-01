@@ -264,7 +264,7 @@ function row(a) {
     return el;
   };
 
-  // index.html header order:
+  // Columns must match index.html thead:
   // Time | Symbol | Market | RS | Dir | Message
   tr.appendChild(td(fmtTime(a.ts)));
   tr.appendChild(td(a.symbol || ""));
