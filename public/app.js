@@ -264,20 +264,19 @@ function row(a) {
     return el;
   };
 
+  // index.html header order:
+  // Time | Symbol | Market | RS | Dir | Message
   tr.appendChild(td(fmtTime(a.ts)));
   tr.appendChild(td(a.symbol || ""));
+  tr.appendChild(td(a.market || "—"));
+  tr.appendChild(td(a.rs || "—"));
+  tr.appendChild(td(a.dir || "—"));
   tr.appendChild(td(a.message || ""));
-  tr.appendChild(td(a.market || ""));
-  tr.appendChild(td(a.rs || ""));
-  tr.appendChild(td(a.dir || ""));
-  tr.appendChild(td(a.level || ""));
-  tr.appendChild(td(a.levelPrice != null ? String(a.levelPrice) : ""));
-  tr.appendChild(td(a.close != null ? String(a.close) : ""));
 
   tr.addEventListener("click", () => openModalForAlert(a));
   return tr;
 }
-
+  
 function renderFeed(alerts) {
   if (!feedBody) return;
   feedBody.innerHTML = "";
