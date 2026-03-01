@@ -1,12 +1,16 @@
 /* global fetch */
 
-(() => {
+(async () => {
     // ---------- DOM helpers ----------
     const $ = (id) => document.getElementById(id);
   
     const tickerSelect = $("tickersSelect");
     const strategySelect = $("strategySelect");
     const timeframeSelect = $("timeframeSelect");
+if (timeframeSelect) {
+  timeframeSelect.disabled = true;
+  timeframeSelect.setAttribute("aria-disabled", "true");
+}
     const startDateInput = $("startDate");
     const endDateInput = $("endDate");
   
@@ -204,6 +208,63 @@ const distMeta = $("distMeta");
     function clearSelectedTickers() {
       if (!tickerSelect) return;
       for (const opt of Array.from(tickerSelect.options || [])) opt.selected = false;
+    }
+
+    async function resolveTimeframeFromSelectedStrategy() {
+      const sel = String(strategySelect?.value || "active");
+    
+      // Active strategy -> /api/rules
+      if (sel === "active") {
+        const res = await fetch("/api/rules");
+        if (!res.ok) throw new Error("Failed to load active strategy");
+        const json = await res.json().catch(() => null);
+        const rules = json?.rules?.config || json?.rules || null;
+    
+        // Expecting timeframeMin in minutes (your rules system)
+        const tfMin = Number(rules?.timeframeMin);
+        if (!Number.isFinite(tfMin) || tfMin <= 0) return "1m";
+    
+        // map minutes to backtest timeframe string
+        if (tfMin === 1) return "1m";
+        if (tfMin === 2) return "2m";
+        if (tfMin === 5) return "5m";
+        if (tfMin === 15) return "15m";
+        if (tfMin === 30) return "30m";
+        if (tfMin === 60) return "1h";
+        if (tfMin === 240) return "4h";
+    
+        // fallback if user config has something odd
+        return "1m";
+      }
+    
+      // Specific ruleset version -> /api/rulesets/:version
+      const v = Number(sel);
+      if (!Number.isFinite(v) || v <= 0) return "1m";
+    
+      const res = await fetch(`/api/rulesets/${encodeURIComponent(String(v))}`);
+      if (!res.ok) throw new Error("Failed to load selected strategy");
+      const json = await res.json().catch(() => null);
+      const rs = json?.ruleset || null;
+    
+      // Depending on your DB shape, config may be at rs.config or rs.config_json parsed already
+      let cfg = rs?.config || rs?.config_json || rs?.configJson || rs || null;
+
+if (typeof cfg === "string") {
+  try { cfg = JSON.parse(cfg); } catch { cfg = null; }
+}
+    
+      const tfMin = Number(cfg?.timeframeMin);
+      if (!Number.isFinite(tfMin) || tfMin <= 0) return "1m";
+    
+      if (tfMin === 1) return "1m";
+      if (tfMin === 2) return "2m";
+      if (tfMin === 5) return "5m";
+      if (tfMin === 15) return "15m";
+      if (tfMin === 30) return "30m";
+      if (tfMin === 60) return "1h";
+      if (tfMin === 240) return "4h";
+    
+      return "1m";
     }
   
     // ---------- rulesets/strategies ----------
@@ -645,9 +706,7 @@ function drawHistogramFromTrades(trades) {
     // ---------- actions ----------
     async function onRunClick() {
       const tickers = getSelectedTickers();
-      const tfRaw = timeframeSelect ? String(timeframeSelect.value || "1m") : "1m";
-      const timeframe = (["1m","2m","5m","15m","30m","1h","4h","1d","1w"].includes(tfRaw) ? tfRaw : "1m");
-  
+      const timeframe = await resolveTimeframeFromSelectedStrategy();
       const startDate = startDateInput ? String(startDateInput.value || "") : "";
       const endDate = endDateInput ? String(endDateInput.value || "") : "";
   
@@ -700,6 +759,22 @@ function drawHistogramFromTrades(trades) {
   
       await loadWatchlistIntoSelect();
       await loadStrategiesIntoSelect();
+
+      // Keep timeframe UI synced to selected strategy (read-only display)
+async function syncTimeframeUI() {
+  try {
+    const tf = await resolveTimeframeFromSelectedStrategy();
+    if (timeframeSelect) timeframeSelect.value = tf;
+  } catch {
+    // ignore
+  }
+}
+
+if (strategySelect) {
+  strategySelect.addEventListener("change", syncTimeframeUI);
+}
+
+await syncTimeframeUI();
   
       if (runBtn) runBtn.addEventListener("click", onRunClick);
       if (refreshBtn) refreshBtn.addEventListener("click", onResetClick);

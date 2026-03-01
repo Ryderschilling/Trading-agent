@@ -275,46 +275,57 @@ let modalVersion = null;
 
   function readForm() {
     const trig = String(triggerType?.value || DEFAULT_RULES.triggerType);
-
+  
+    let tf = asNum(timeframeMin?.value, DEFAULT_RULES.timeframeMin);
+    tf = Math.max(1, Math.floor(tf));
+  
+    let orbRange = asNum(orbRangeMin?.value, DEFAULT_RULES.orb.rangeMin);
+    orbRange = Math.max(1, Math.floor(orbRange));
+  
+    // If ORB, force orb.rangeMin == timeframeMin so live/backtest can’t drift
+    if (trig === "ORB") {
+      orbRange = tf;
+    }
+  
     return {
-      timeframeMin: asNum(timeframeMin?.value, DEFAULT_RULES.timeframeMin),
+      timeframeMin: tf,
       scanSession: String(scanSession?.value || DEFAULT_RULES.scanSession),
       scanUniverse: String(scanUniverse?.value || DEFAULT_RULES.scanUniverse),
       premarketEnabled: asBool(premarketEnabled?.value ?? DEFAULT_RULES.premarketEnabled),
       marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
-
+  
       retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
       rsWindowBars5m: asNum(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
       structureWindow: asNum(structureWindow?.value, DEFAULT_RULES.structureWindow),
-
+  
       sectorAlignmentEnabled: asBool(sectorAlignmentEnabled?.value ?? DEFAULT_RULES.sectorAlignmentEnabled),
       triggerType: trig,
-
+  
       longMinBiasScore: clamp(asNum(longMinBiasScore?.value, DEFAULT_RULES.longMinBiasScore), 0, 100),
       shortMaxBiasScore: clamp(asNum(shortMaxBiasScore?.value, DEFAULT_RULES.shortMaxBiasScore), 0, 100),
-
+  
       indicators: {
         vwap: Boolean(indVwap?.checked),
         movingAverages: Boolean(indMa?.checked),
         relativeStrength: Boolean(indRs?.checked),
         volume: Boolean(indVol?.checked)
       },
-
+  
       orb: {
-        rangeMin: asNum(orbRangeMin?.value, DEFAULT_RULES.orb.rangeMin),
+        rangeMin: orbRange,
         entryMode: String(orbEntryMode?.value || DEFAULT_RULES.orb.entryMode),
         tolerancePct: asNum(orbTolerancePct?.value, DEFAULT_RULES.orb.tolerancePct)
       },
-
+  
       post: {
         targetR: asNum(targetR?.value, DEFAULT_RULES.post.targetR),
         stopR: asNum(stopR?.value, DEFAULT_RULES.post.stopR),
         maxHoldBars: asNum(maxHoldBars?.value, DEFAULT_RULES.post.maxHoldBars),
         exitOnBiasFlip: asBool(exitOnBiasFlip?.value ?? DEFAULT_RULES.post.exitOnBiasFlip),
-
+  
         moveBeEnabled: Boolean(moveBeEnabled?.checked),
         moveBeAtR: asNum(moveBeAtR?.value, DEFAULT_RULES.post.moveBeAtR),
-
+  
         trailEnabled: Boolean(trailEnabled?.checked),
         trailStartR: asNum(trailStartR?.value, DEFAULT_RULES.post.trailStartR),
         trailByR: asNum(trailByR?.value, DEFAULT_RULES.post.trailByR)

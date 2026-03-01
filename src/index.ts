@@ -113,7 +113,8 @@ const BROKERS: BrokerDescriptor[] = [
 
 const FEED = (process.env.ALPACA_FEED || "iex") as "iex" | "sip" | "delayed_sip";
 
-const TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
+const DEFAULT_TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
+
 const RETEST_TOL = Number(process.env.RETEST_TOLERANCE_PCT || 0.001);
 const STRUCTURE_WINDOW = Number(process.env.STRUCTURE_WINDOW || 3);
 const RS_WINDOW_BARS = Number(process.env.RS_WINDOW_BARS_5M || 3);
@@ -135,6 +136,12 @@ console.log("[ENV CHECK]", {
 // -----------------------------
 const db = openDb();
 let activeRules = loadActiveRuleset(db);
+
+
+// Single source of truth for aggregation/eval timeframe in LIVE mode.
+// Tracks active ruleset timeframeMin.
+let AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 const backtestQueue = new BacktestQueue(db);
 
 // ------------------------------------------------------------------
@@ -164,6 +171,9 @@ function listRulesets() {
   return db.prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`).all();
 }
 
+AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+
 function saveRules(name: string, config: any, changedBy?: string) {
   if (!config || typeof config !== "object") throw new Error("config required");
   if (!Number.isFinite(config.timeframeMin) || config.timeframeMin < 1) throw new Error("bad timeframeMin");
@@ -180,6 +190,11 @@ function saveRules(name: string, config: any, changedBy?: string) {
 
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
+
+    AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+    if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+
+
     maybeUpdate.call(engine, {
       timeframeMin: activeRules.config.timeframeMin,
       retestTolerancePct: activeRules.config.retestTolerancePct,
@@ -187,13 +202,23 @@ function saveRules(name: string, config: any, changedBy?: string) {
     });
   }
 
+  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+resetLiveTimeframeState();
+
   return { version };
 }
+
+AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 
 function activateRuleset(version: number) {
   setActiveRuleset(db, version);
   activeRules = loadActiveRuleset(db);
   loadRulesetNames();
+
+  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
@@ -203,6 +228,8 @@ function activateRuleset(version: number) {
       rsWindowBars5m: activeRules.config.rsWindowBars5m
     });
   }
+
+  resetLiveTimeframeState();
 
   return { version };
 }
@@ -212,10 +239,16 @@ function setRulesetActiveFn(version: number, active: boolean) {
   return { ok: true, version: Number(version), active: Boolean(active) };
 }
 
+AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+
 function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
   const out = updateRuleset(db, Number(version), name, config, changedBy);
   activeRules = loadActiveRuleset(db);
   loadRulesetNames();
+
+  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
@@ -225,15 +258,25 @@ function updateRulesetFn(version: number, name: string, config: any, changedBy?:
       rsWindowBars5m: activeRules.config.rsWindowBars5m
     });
   }
+  
+  resetLiveTimeframeState();
+
+
 
   return out;
 }
+
+AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
 
 function deleteRulesetFn(version: number, _changedBy?: string) {
   const out = deleteRuleset(db, Number(version));
   activeRules = loadActiveRuleset(db);
   loadRulesetNames();
 
+  AGG_TIMEFRAME_MIN = Number(activeRules?.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
+if (!Number.isFinite(AGG_TIMEFRAME_MIN) || AGG_TIMEFRAME_MIN < 1) AGG_TIMEFRAME_MIN = DEFAULT_TIMEFRAME_MIN;
+
   const maybeUpdate = (engine as any).updateConfig;
   if (typeof maybeUpdate === "function") {
     maybeUpdate.call(engine, {
@@ -242,6 +285,8 @@ function deleteRulesetFn(version: number, _changedBy?: string) {
       rsWindowBars5m: activeRules.config.rsWindowBars5m
     });
   }
+    resetLiveTimeframeState();
+  
 
   return out;
 }
@@ -612,7 +657,7 @@ let lastSignalsBroadcast = 0;
 // Engine + tracker
 // -----------------------------
 const engine = new SignalEngine({
-  timeframeMin: activeRules.config.timeframeMin ?? TIMEFRAME_MIN,
+  timeframeMin: activeRules.config.timeframeMin ?? DEFAULT_TIMEFRAME_MIN,
   retestTolerancePct: activeRules.config.retestTolerancePct ?? RETEST_TOL,
   rsWindowBars5m: activeRules.config.rsWindowBars5m ?? RS_WINDOW_BARS
 });
@@ -630,6 +675,17 @@ const aggMap = new Map<string, Agg>();
 
 const levelsMap = new Map<string, ReturnType<typeof initLevels>>();
 const bars5Map = new Map<string, Bar5[]>();
+
+function resetLiveTimeframeState() {
+  // Clears partial aggregation + aggregated bar history
+  aggMap.clear();
+  bars5Map.clear();
+
+  // If levels are timeframe-dependent in your strategy, consider clearing:
+  // levelsMap.clear();
+
+  console.log(`[live] reset timeframe state. agg=${AGG_TIMEFRAME_MIN}m`);
+}
 
 function getLevels(symbol: string) {
   if (!levelsMap.has(symbol)) levelsMap.set(symbol, initLevels(Date.now()));
@@ -1129,7 +1185,7 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
     }
   }
 
-  const bucket = floorBucket(ts, TIMEFRAME_MIN);
+  const bucket = floorBucket(ts, AGG_TIMEFRAME_MIN);
   const cur = aggMap.get(symbol);
 
   if (!cur || cur.bucketStart !== bucket) {
@@ -1137,7 +1193,7 @@ function ingestMinuteBar(symbol: string, ts: number, o: number, h: number, l: nu
       pushBar5(symbol, { t: cur.bucketStart, o: cur.o, h: cur.h, l: cur.l, c: cur.c });
 
       if (!warmup) {
-        const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
+        const closeTs = cur.bucketStart + AGG_TIMEFRAME_MIN * 60_000;
         const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
 
         for (const id of doneFromBar5) {

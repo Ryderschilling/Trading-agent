@@ -177,7 +177,9 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
       if (!args.createBacktestRun) return res.status(400).json({ ok: false, error: "backtests not enabled" });
 
       const tickers = Array.isArray(req.body?.tickers) ? req.body.tickers : [];
-      const timeframe = String(req.body?.timeframe || "1m");
+      // Client timeframe is ignored. BacktestQueue will derive timeframe from strategyVersion ruleset.
+// If strategyVersion is missing, queue will fall back to normalized default.
+const timeframe = "1m";
       const startDate = String(req.body?.startDate || "");
       const endDate = String(req.body?.endDate || "");
 

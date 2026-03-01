@@ -118,6 +118,25 @@ function safeJson(s: any) {
   }
 }
 
+const ALLOWED_TFS = new Set(["1m","2m","5m","15m","30m","1h","4h","1d","1w"]);
+
+function normalizeTimeframe(tf: any): BacktestConfig["timeframe"] {
+  const s = String(tf || "1m").trim();
+  return (ALLOWED_TFS.has(s) ? (s as any) : "1m");
+}
+
+function tfFromMinutes(tfMin: number): BacktestConfig["timeframe"] {
+  const m = Number(tfMin);
+  if (m === 1) return "1m";
+  if (m === 2) return "2m";
+  if (m === 5) return "5m";
+  if (m === 15) return "15m";
+  if (m === 30) return "30m";
+  if (m === 60) return "1h";
+  if (m === 240) return "4h";
+  return "1m";
+}
+
 export class BacktestQueue {
     private q: Array<{ runId: string; config: any }> = [];
   private running = false;
@@ -159,8 +178,8 @@ export class BacktestQueue {
         .map((s: string) => String(s).toUpperCase())
         .filter(Boolean),
   
-      timeframe: config.timeframe === "5m" ? "5m" : "1m",
-      startDate: String(config.startDate || ""),
+        timeframe: normalizeTimeframe(config.timeframe),
+startDate: String(config.startDate || ""),
       endDate: String(config.endDate || ""),
   
       // Strategy tagging
@@ -168,10 +187,12 @@ export class BacktestQueue {
         ? Number(config.strategyVersion)
         : undefined,
   
-      strategyName:
+        strategyName:
         config.strategyName != null
           ? String(config.strategyName)
           : undefined,
+
+
   
       // -----------------------------
       // NEW ENGINE FIELDS (CRITICAL)
@@ -209,6 +230,23 @@ export class BacktestQueue {
             : 150
       }
     };
+
+    // --- AUTHORITATIVE TIMEFRAME FROM STRATEGY VERSION ---
+// If a strategyVersion is provided, read its ruleset config from DB
+// and force timeframe to match strategy timeframeMin.
+try {
+  const sv = Number(cfg.strategyVersion);
+  if (Number.isFinite(sv) && sv > 0) {
+    const row = this.db.prepare(`SELECT config_json FROM rulesets WHERE version=?`).get(sv) as any;
+    const parsed = row?.config_json ? safeJson(String(row.config_json)) : null;
+    const tfMin = Number(parsed?.timeframeMin);
+    if (Number.isFinite(tfMin) && tfMin > 0) {
+      cfg.timeframe = tfFromMinutes(tfMin);
+    }
+  }
+} catch {
+  // non-fatal; keep normalizedTimeframe fallback
+}
   
     if (!cfg.tickers.length) throw new Error("tickers required");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(cfg.startDate)) throw new Error("bad startDate");
