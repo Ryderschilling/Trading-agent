@@ -133,6 +133,11 @@ console.log("[ENV CHECK]", {
 // -----------------------------
 const db = openDb();
 
+try {
+  const cutoff = Date.now() - (14 * 24 * 60 * 60_000); // 14 days
+  db.prepare(`DELETE FROM alerts WHERE ts < ?`).run(cutoff);
+} catch {}
+
 // NOTE: loadActiveRuleset() returns the highest version with active=1 (per your db.ts query).
 // With multi-enabled strategies, "activeRules" is "the latest enabled ruleset" and is used for:
 // - /api/rules (editor default)
@@ -340,14 +345,23 @@ function deleteRulesetFn(version: number, _changedBy?: string) {
 // -----------------------------
 let watch: string[] = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`).all().map((r: any) => String(r.symbol));
 
+// Load only recent alerts so Workspace never shows “last week” stuff
+const ALERT_TTL_MS = 6 * 60 * 60_000; // 6 hours
+
+// (optional but recommended) prune old rows from DB so it stays small
+try {
+  db.prepare(`DELETE FROM alerts WHERE ts < ?`).run(Date.now() - ALERT_TTL_MS);
+} catch {}
+
 let alerts: Alert[] = db
   .prepare(
     `SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json
      FROM alerts
+     WHERE ts >= ?
      ORDER BY ts DESC
      LIMIT 2000`
   )
-  .all()
+  .all(Date.now() - ALERT_TTL_MS)
   .reverse()
   .map((r: any) => {
     let meta: any = undefined;
@@ -566,7 +580,6 @@ function normalizedWatchlist(): string[] {
     .map((s) => String(s ?? "").trim().toUpperCase())
     .filter(Boolean)
     .filter(isValidSymbol)
-    .filter((s) => s !== "SPY" && s !== "QQQ");
 
   return Array.from(new Set(cleaned)).slice(0, 50);
 }
@@ -1073,6 +1086,7 @@ function ingestMinuteBar(
           outcomes.push(out);
           if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
           dbInsertOutcome(out);
+          realtime?.broadcastOutcome(out);
         }
       }
 
@@ -1130,6 +1144,7 @@ function ingestMinuteBar(
                 outcomes.push(out);
                 if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
                 dbInsertOutcome(out);
+                realtime?.broadcastOutcome(out);
               }
             }
 
@@ -1364,7 +1379,6 @@ const app = createHttpApp({
     const sym = String(s || "").trim().toUpperCase();
     if (!sym) return;
     if (!isValidSymbol(sym)) return;
-    if (sym === "SPY" || sym === "QQQ") return;
 
     if (!watch.includes(sym)) {
       watch.push(sym);
