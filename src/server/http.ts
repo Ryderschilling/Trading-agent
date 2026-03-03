@@ -41,6 +41,14 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
 
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
 
+    // candles (1m) for chart snapshots
+    getCandles1m?: (
+      symbol: string,
+      startTs: number,
+      endTs: number,
+      limit: number
+    ) => Array<{ ts: number; o: number; h: number; l: number; c: number; v: number }>;
+
   // backtests
   createBacktestRun?: (cfg: any) => { runId: string; reused?: boolean };
   getBacktestRun?: (id: string) => any | null;
@@ -138,6 +146,24 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+    // Candles (for Outcomes detail chart)
+  // GET /api/candles?symbol=IWM&end=TIMESTAMP_MS&minutes=240
+  app.get("/api/candles", (req, res) => {
+    if (!args.getCandles1m) return res.status(404).json({ ok: false, error: "candles endpoint not enabled" });
+
+    const symbol = String(req.query.symbol || "").trim().toUpperCase();
+    const end = Number(req.query.end || Date.now());
+    const minutes = Math.max(30, Math.min(2000, Number(req.query.minutes || 240)));
+
+    if (!symbol) return res.status(400).json({ ok: false, error: "symbol required" });
+    if (!Number.isFinite(end)) return res.status(400).json({ ok: false, error: "bad end" });
+
+    const start = end - minutes * 60_000;
+    const bars = args.getCandles1m(symbol, start, end, minutes + 50); // small buffer
+
+    return res.json({ ok: true, symbol, start, end, bars });
+  });
 
   // -----------------------------
   // API: health

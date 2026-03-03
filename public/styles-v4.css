@@ -431,6 +431,9 @@ tbody td{
   white-space:nowrap;
 }
 
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: rgba(255,255,255,0.04); }
+
 /* New item animation (legacy) */
 @keyframes slideIn{
   from{opacity:0; transform: translateY(-10px);}
@@ -1719,6 +1722,42 @@ html[data-theme="light"] .topbar.is-solid{
 .strategies-card .card-head{
   padding-top: 20px;
   padding-bottom: 14px;
+}
+
+/* --------------------------------
+   Generic modal (Outcomes / Workspace)
+   Solid card like Rules "View"
+--------------------------------- */
+
+#modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+
+  /* darker overlay + blur so background doesn’t bleed */
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+
+  /* centered */
+  display: none;              /* JS will set to flex */
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+}
+
+#modal .card,
+#modal .rs-modal-card,
+#modal .outcome-modal-card {
+  width: min(980px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+
+  /* solid “Rules view” look */
+  background: #0e121a;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
 }
 
 /* =========================

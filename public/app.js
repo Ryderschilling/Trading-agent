@@ -47,6 +47,9 @@ let watchSymbols = [];
 let latestSignals = null;
 let dataIsLive = false;
 
+// Alerts that are no longer "open" (COMPLETED or STOPPED)
+let closedAlertIds = new Set();
+
 // Perf caps
 const FEED_MAX_ROWS = 200;
 const ALERTS_KEEP_MAX = 2000;
@@ -114,6 +117,12 @@ function escapeHtml(s) {
     '"': "&quot;",
     "'": "&#039;"
   }[m]));
+}
+
+function cleanMessage(msg) {
+  return String(msg || "")
+    .replace(/\s*\(1m\s*tap\)\s*/gi, "")
+    .trim();
 }
 
 function classifyAlert(a) {
@@ -242,7 +251,7 @@ async function openModalForAlert(a) {
         <div><b>Outcome</b> (${escapeHtml(o.status || "—")})</div>
         <div>MFE: <b>${fmt2(o.mfePct)}%</b> • MAE: <b>${fmt2(o.maePct)}%</b> • Time to MFE: ${o.timeToMfeSec != null ? escapeHtml(String(o.timeToMfeSec)) + "s" : "—"}</div>
         <div>Stopped out: ${o.stoppedOut ? "YES" : "NO"} ${o.stoppedOut ? `• Stop return: <b>${fmt2(o.stopReturnPct)}%</b> • 5m bars to stop: ${escapeHtml(String(o.barsToStop || "—"))}` : ""}</div>
-        <div style="margin-top:10px;"><b>Checkpoint returns</b></div>
+<div style="margin-top:6px;"><b>Message:</b> ${escapeHtml(cleanMessage(a.message))}</div>
         ${returnsHtml}
       </div>
     `;
@@ -271,7 +280,7 @@ function row(a) {
   tr.appendChild(td(a.market || "—"));
   tr.appendChild(td(a.rs || "—"));
   tr.appendChild(td(a.dir || "—"));
-  tr.appendChild(td(a.message || ""));
+  tr.appendChild(td(cleanMessage(a.message)));
 
   tr.addEventListener("click", () => openModalForAlert(a));
   return tr;
@@ -283,7 +292,7 @@ function renderFeed(alerts) {
 
   const ordered = (alerts || [])
     .slice()
-    .filter((a) => String(a.message || "").includes("A+ ENTRY"))
+    .filter((a) => String(a.message || "").includes("A+ ENTRY") && !closedAlertIds.has(String(a.id || "")))
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .slice(0, FEED_MAX_ROWS);
 
@@ -300,7 +309,8 @@ function renderAPlusPings(alerts) {
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .filter((a) => {
       const k = classifyAlert(a);
-      return k === "ENTRY";
+      if (k !== "ENTRY") return false;
+      return !closedAlertIds.has(String(a.id || ""));
     })
     .slice(0, 6);
 
@@ -321,8 +331,7 @@ function renderAPlusPings(alerts) {
     div.innerHTML = `
       <div>
         <div><b>${escapeHtml(a.symbol || "")}</b> — ${escapeHtml(kind)}</div>
-        <div class="small">${escapeHtml(a.message || "")} • ${escapeHtml(a.level || "—")} ${a.levelPrice != null ? fmt2(a.levelPrice) : ""}</div>
-      </div>
+<div class="small">${escapeHtml(cleanMessage(a.message || ""))} • ${escapeHtml(a.level || "—")} ${a.levelPrice != null ? fmt2(a.levelPrice) : ""}</div>      </div>
       <div class="badge ${badgeClass}">${escapeHtml(kind)}</div>
     `;
 
@@ -340,6 +349,26 @@ async function refreshWatchlistFromApi() {
     renderWatchlist(watchSymbols);
   } catch (err) {
     console.warn("[watchlist] refresh failed", err);
+  }
+}
+
+async function refreshClosedAlertIdsFromApi() {
+  try {
+    const res = await fetch("/api/dbrows", { cache: "no-store" });
+    if (!res.ok) return;
+    const j = await res.json().catch(() => null);
+    const rows = Array.isArray(j?.rows) ? j.rows : [];
+
+    const next = new Set();
+    for (const r of rows) {
+      const st = String(r?.status || "").toUpperCase();
+      const id = String(r?.alertId || "");
+      if (!id) continue;
+      if (st === "COMPLETED" || st === "STOPPED") next.add(id);
+    }
+    closedAlertIds = next;
+  } catch {
+    // ignore
   }
 }
 
@@ -572,6 +601,8 @@ if (socket) {
       const o = payload?.outcome || null;
       const id = String(o?.alertId || "");
       if (!id) return;
+
+      closedAlertIds.add(id);
   
       // Remove from local alerts so Activity Feed + A+ list can re-render cleanly
       allAlerts = (allAlerts || []).filter((a) => String(a?.id || "") !== id);
@@ -595,7 +626,14 @@ if (socket) {
 // -----------------------
 refreshWatchlistFromApi();
 refreshSignalsFromApi();
+refreshClosedAlertIdsFromApi();
+
 setInterval(() => {
   refreshWatchlistFromApi();
   refreshSignalsFromApi();
+  refreshClosedAlertIdsFromApi();
+
+  // after refreshing closed IDs, re-render so any finished trades disappear
+  renderFeed(allAlerts);
+  renderAPlusPings(allAlerts);
 }, 5000);

@@ -1361,6 +1361,32 @@ async function runStartupBackfill() {
   console.log("[backfill] done");
 }
 
+const selectCandles1m = db.prepare(
+  `SELECT ts,
+          open  AS o,
+          high  AS h,
+          low   AS l,
+          close AS c,
+          volume AS v
+   FROM candles_1m
+   WHERE ticker = ? AND ts >= ? AND ts <= ?
+   ORDER BY ts ASC
+   LIMIT ?`
+);
+
+function getCandles1m(symbol: string, startTs: number, endTs: number, limit: number) {
+  const lim = Math.max(10, Math.min(5000, Math.floor(Number(limit || 500))));
+  const rows = selectCandles1m.all(symbol, startTs, endTs, lim) as any[];
+  return rows.map((r) => ({
+    ts: Number(r.ts),
+    o: Number(r.o),
+    h: Number(r.h),
+    l: Number(r.l),
+    c: Number(r.c),
+    v: Number(r.v || 0)
+  }));
+}
+
 // -----------------------------
 // HTTP app wiring
 // -----------------------------
@@ -1402,6 +1428,7 @@ const app = createHttpApp({
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
+  getCandles1m,
 
   addSymbol: async (s: string) => {
     const sym = String(s || "").trim().toUpperCase();
