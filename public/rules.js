@@ -33,8 +33,9 @@ let modalVersion = null;
 
   const indVwap = $("indVwap");
   const indMa = $("indMa");
+  const emaBlock = $("emaBlock");
+  const emaTrigger = $("emaTrigger");
   const emaFields = $("emaFields");
-const emaPeriods = $("emaPeriods");
   const indRs = $("indRs");
   const indVol = $("indVol");
 
@@ -215,6 +216,9 @@ const emaPeriods = $("emaPeriods");
 
     if (orbFields) orbFields.style.display = trig === "ORB" ? "block" : "none";
 
+    // EMA block only when Moving Averages is enabled
+    if (emaBlock) emaBlock.style.display = Boolean(indMa?.checked) ? "block" : "none";
+
     const mbe = Boolean(moveBeEnabled?.checked);
     const trl = Boolean(trailEnabled?.checked);
     if (moveBeFields) moveBeFields.style.display = mbe ? "block" : "none";
@@ -258,6 +262,10 @@ const emaPeriods = $("emaPeriods");
     if (indRs) indRs.checked = Boolean(inds.relativeStrength);
     if (indVol) indVol.checked = Boolean(inds.volume);
 
+        // EMA settings (stored at top-level config)
+        if (emaPeriods) emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(", ") : "";
+        if (emaTrigger) emaTrigger.value = String(c.emaTrigger || "NONE");
+
     // ORB
     const orb = c.orb || DEFAULT_RULES.orb;
     if (orbRangeMin) orbRangeMin.value = String(asNum(orb.rangeMin, DEFAULT_RULES.orb.rangeMin));
@@ -297,6 +305,17 @@ const emaPeriods = $("emaPeriods");
   
     // If ORB, force orb.rangeMin == timeframeMin so live/backtest can’t drift
     if (trig === "ORB") orbRange = tf;
+
+    const emaPeriodsArr = Boolean(indMa?.checked)
+    ? String(emaPeriods?.value || "")
+        .split(",")
+        .map((x) => Math.floor(Number(x.trim())))
+        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500)
+        .filter((v, i, a) => a.indexOf(v) === i)
+        .slice(0, 50)
+    : undefined;
+
+  const emaTriggerVal = Boolean(indMa?.checked) ? String(emaTrigger?.value || "NONE") : "NONE";
   
     return {
       timeframeMin: tf,
@@ -304,6 +323,8 @@ const emaPeriods = $("emaPeriods");
       scanUniverse: String(scanUniverse?.value || DEFAULT_RULES.scanUniverse),
       premarketEnabled: asBool(premarketEnabled?.value ?? DEFAULT_RULES.premarketEnabled),
       marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
+      emaPeriods: emaPeriodsArr,
+      emaTrigger: emaTriggerVal,
   
       retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
       rsWindowBars5m: asNum(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),

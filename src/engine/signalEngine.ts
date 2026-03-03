@@ -185,7 +185,8 @@ export class SignalEngine {
     ctx.lastRS = rs;
 
     if (ctx.state.state === "COOLDOWN") {
-      if (Date.now() > ctx.state.untilBarTime) ctx.state = { state: "IDLE" };
+      // Use bar time, not wall clock, so replay/backfill can't spam signals
+      if (last.t > ctx.state.untilBarTime) ctx.state = { state: "IDLE" };
       else return null;
     }
 
@@ -311,7 +312,10 @@ export class SignalEngine {
     const alert = this.emit(symbol, marketDir, rs, dir, level, levelPrice, close, message);
     const ctx = this.ctx.get(symbol);
     if (ctx) {
-      ctx.state = { state: "COOLDOWN", untilBarTime: Date.now() + 2 * this.cfg.timeframeMin * 60_000 };
+      // Use wall-clock-independent cooldown
+      // untilBarTime is compared to bar timestamps in evaluateSymbol
+      const lastBarT = ctx.bars5.at(-1)?.t ?? Date.now();
+      ctx.state = { state: "COOLDOWN", untilBarTime: lastBarT + 2 * this.cfg.timeframeMin * 60_000 };
       ctx.tapState = undefined;
     }
     return alert;

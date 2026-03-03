@@ -216,6 +216,27 @@
             <label class="small" style="margin-right:14px;"><input id="indVol" type="checkbox" /> Volume</label>
           </div>
 
+          <!-- EMA Settings (shows only when Moving Averages is enabled) -->
+<div id="emaBlock" style="grid-column: 1 / -1; display:none; margin-top:10px;">
+  <div class="small muted" style="margin-bottom:6px;">EMA Settings</div>
+
+  <label class="small" style="display:block; margin-bottom:10px;">
+    EMA periods (comma-separated, 1–500, max 50)
+    <input id="emaPeriods" class="input" placeholder="9, 20, 50, 200" style="width:100%; margin-top:6px;" />
+  </label>
+
+  <label class="small" style="display:block;">
+    EMA trigger
+    <select id="emaTrigger" class="input" style="width:100%; margin-top:6px;">
+      <option value="NONE">None (display only)</option>
+      <option value="CROSS">Cross</option>
+      <option value="BREAK">Break</option>
+      <option value="RETEST">Retest</option>
+      <option value="BREAK_RETEST">Break + Retest</option>
+    </select>
+  </label>
+</div>
+
           <!-- EMA periods (only shown when Moving Averages is checked) -->
 <div id="emaFields" style="grid-column: 1 / -1; display:none; margin-top:10px;">
   <label class="small">

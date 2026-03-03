@@ -1129,35 +1129,7 @@ function ingestMinuteBar(
         }
       }
 
-      // 2) 1m tap entries (per strategy engine)
-      const effDir = getEffectiveMarketDir();
-      const entry =
-        !allowSignals || effDir === "NEUTRAL"
-          ? null
-          : r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
-      if (entry) {
-        const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
-        if (structureLevel != null && Number.isFinite(structureLevel)) {
-          const tradeDir: TradeDirection = entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-          r.outcomeTracker.startSession({
-            alertId: entry.id,
-            symbol: entry.symbol,
-            dir: tradeDir,
-            structureLevel,
-            entryTs: entry.ts,
-            entryRefPrice: entry.close
-          });
-        }
-
-        // Tag entry with strategy version
-        (entry as any).meta = { rulesetVersion: r.version };
-
-        alerts.push(entry);
-        if (alerts.length > 2000) alerts = alerts.slice(-2000);
-        dbInsertAlert(entry);
-        realtime?.broadcastAlert(entry);
-      }
     }
   }
 
