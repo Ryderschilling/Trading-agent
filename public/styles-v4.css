@@ -1801,3 +1801,107 @@ html[data-theme="light"] .topbar.is-solid{
 @media (max-width: 980px){
   .bt-analytics-grid{ grid-template-columns: 1fr; }
 }
+
+/* =========================
+   Rules page: top-to-bottom editor + accordions
+   ========================= */
+
+   .rules-editor{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .rules-editorbar{
+    position: sticky;
+    top: 78px; /* below topbar */
+    z-index: 20;
+  }
+  
+  .rules-tip{
+    padding: 10px 16px 14px 16px;
+  }
+  
+  .rules-acc{
+    padding: 0;
+    overflow: hidden;
+  }
+  
+  .rules-acc[open]{
+    border-color: rgba(255,255,255,0.16);
+  }
+  
+  .rules-acc-summary{
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  
+  .rules-acc-summary::-webkit-details-marker{
+    display: none;
+  }
+  
+  .rules-acc-left{
+    min-width: 0;
+  }
+  
+  .rules-acc-title{
+    font-weight: 900;
+    letter-spacing: 0.2px;
+  }
+  
+  .rules-acc-sub{
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .rules-acc-right{
+    opacity: 0.8;
+    white-space: nowrap;
+  }
+  
+  .rules-acc-body{
+    padding: 14px 16px 16px 16px;
+  }
+  
+  .rules-grid{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  
+  .rules-grid-3{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  
+  @media (max-width: 900px){
+    .rules-grid{ grid-template-columns: 1fr; }
+    .rules-grid-3{ grid-template-columns: 1fr; }
+  }
+  
+  .rules-toggle-row{
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  
+  .rules-subcard{
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+  }
+  
+  html[data-theme="light"] .rules-subcard{
+    border: 1px solid rgba(16,24,39,0.10);
+    background: rgba(16,24,39,0.03);
+  }

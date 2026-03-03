@@ -6,13 +6,10 @@ let modalVersion = null;
   const $ = (id) => document.getElementById(id);
 
   // Elements
-  const bootStatus = $("bootStatus");
   const strategiesList = $("strategiesList");
-  const adminTokenInput = $("adminToken");
 
   const strategyName = $("strategyName");
   const saveRulesBtn = $("saveRulesBtn");
-  const newStrategyBtn = $("newStrategyBtn");
 
   // Form fields
   const timeframeMin = $("timeframeMin");
@@ -24,7 +21,6 @@ let modalVersion = null;
   const retestTolerancePct = $("retestTolerancePct");
   const rsWindowBars5m = $("rsWindowBars5m");
   const structureWindow = $("structureWindow");
-  const emaPeriods = $("emaPeriods");
 
   const sectorAlignmentEnabled = $("sectorAlignmentEnabled");
   const triggerType = $("triggerType");
@@ -34,8 +30,8 @@ let modalVersion = null;
   const indVwap = $("indVwap");
   const indMa = $("indMa");
   const emaBlock = $("emaBlock");
+  const emaPeriods = $("emaPeriods");
   const emaTrigger = $("emaTrigger");
-  const emaFields = $("emaFields");
   const indRs = $("indRs");
   const indVol = $("indVol");
 
@@ -44,13 +40,13 @@ let modalVersion = null;
   const maxHoldBars = $("maxHoldBars");
   const exitOnBiasFlip = $("exitOnBiasFlip");
 
-  // NEW: ORB fields
+  // ORB fields
   const orbFields = $("orbFields");
   const orbRangeMin = $("orbRangeMin");
   const orbEntryMode = $("orbEntryMode");
   const orbTolerancePct = $("orbTolerancePct");
 
-  // NEW: trailing controls
+  // trailing controls
   const moveBeEnabled = $("moveBeEnabled");
   const trailEnabled = $("trailEnabled");
   const moveBeFields = $("moveBeFields");
@@ -59,9 +55,15 @@ let modalVersion = null;
   const trailStartR = $("trailStartR");
   const trailByR = $("trailByR");
 
+  // Section summaries
+  const sumScan = $("sumScan");
+  const sumTrigger = $("sumTrigger");
+  const sumFilters = $("sumFilters");
+  const sumIndicators = $("sumIndicators");
+  const sumMgmt = $("sumMgmt");
+
   // State
-  let activeRules = null;
-  let lastLoadedVersion = null; // for “you’re editing vX” context only
+  let lastLoadedVersion = null;
 
   // Defaults (safe)
   const DEFAULT_RULES = {
@@ -78,7 +80,6 @@ let modalVersion = null;
     sectorAlignmentEnabled: true,
     triggerType: "BREAK_RETEST",
 
-    // Bias scale (stored; can be used later)
     longMinBiasScore: 60,
     shortMaxBiasScore: 40,
 
@@ -88,6 +89,10 @@ let modalVersion = null;
       relativeStrength: true,
       volume: false
     },
+
+    // MA config (top-level)
+    emaPeriods: [],
+    emaTrigger: "NONE",
 
     // ORB stored config
     orb: {
@@ -102,7 +107,6 @@ let modalVersion = null;
       maxHoldBars: 60,
       exitOnBiasFlip: false,
 
-      // NEW: trailing controls
       moveBeEnabled: false,
       moveBeAtR: 1,
 
@@ -113,34 +117,60 @@ let modalVersion = null;
   };
 
   // ---------- helpers ----------
-  function setStatus(msg) {
-    if (!bootStatus) return;
-  
-    const s = String(msg || "").trim();
-  
-    // Hide routine messages completely
-    if (!s) {
-      bootStatus.style.display = "none";
-      bootStatus.textContent = "";
-      return;
-    }
-  
-    // Only show errors/warnings
-    const lower = s.toLowerCase();
-    const isBad = lower.includes("failed") || lower.includes("warning") || lower.includes("error");
-  
-    if (!isBad) {
-      bootStatus.style.display = "none";
-      bootStatus.textContent = "";
-      return;
-    }
-  
-    bootStatus.style.display = "block";
-    bootStatus.textContent = s;
+  function asBool(v) {
+    if (typeof v === "boolean") return v;
+    const s = String(v).toLowerCase();
+    return s === "true" || s === "1" || s === "yes" || s === "on";
   }
 
+  function asNum(v, fallback) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function clamp(n, lo, hi) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return lo;
+    return Math.max(lo, Math.min(hi, x));
+  }
+
+  function escapeHtml(s) {
+    return String(s || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function parseEmaPeriods(s) {
+    const out = String(s || "")
+      .split(",")
+      .map((x) => parseInt(x.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500);
+
+    return Array.from(new Set(out)).sort((a, b) => a - b).slice(0, 50);
+  }
+
+  function fmtTs(ms) {
+    const x = Number(ms);
+    if (!Number.isFinite(x) || x <= 0) return "—";
+    const d = new Date(x);
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }).format(d);
+  }
+
+  // ---------- admin headers (optional) ----------
+  // If you later re-add an admin token input, it will work automatically if present.
   function getAdminHeaders() {
-    const tok = String(adminTokenInput?.value || "").trim();
+    const tok = String(document.getElementById("adminToken")?.value || "").trim();
     return tok ? { "x-admin-token": tok } : {};
   }
 
@@ -169,64 +199,84 @@ let modalVersion = null;
     return res.json();
   }
 
-  function asBool(v) {
-    if (typeof v === "boolean") return v;
-    const s = String(v).toLowerCase();
-    return s === "true" || s === "1" || s === "yes" || s === "on";
-  }
-
-  function asNum(v, fallback) {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : fallback;
-  }
-
-  function clamp(n, lo, hi) {
-    const x = Number(n);
-    if (!Number.isFinite(x)) return lo;
-    return Math.max(lo, Math.min(hi, x));
-  }
-
-  function escapeHtml(s) {
-    return String(s || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
-  }
-
-  function fmtTs(ms) {
-    const x = Number(ms);
-    if (!Number.isFinite(x) || x <= 0) return "—";
-    const d = new Date(x);
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    }).format(d);
-  }
-
   // ---------- conditional UI ----------
   function applyConditionalUI() {
     const trig = String(triggerType?.value || DEFAULT_RULES.triggerType);
-
     if (orbFields) orbFields.style.display = trig === "ORB" ? "block" : "none";
 
-    // EMA block only when Moving Averages is enabled
-    if (emaBlock) emaBlock.style.display = Boolean(indMa?.checked) ? "block" : "none";
+    const maOn = Boolean(indMa?.checked);
+    if (emaBlock) emaBlock.style.display = maOn ? "block" : "none";
 
     const mbe = Boolean(moveBeEnabled?.checked);
     const trl = Boolean(trailEnabled?.checked);
     if (moveBeFields) moveBeFields.style.display = mbe ? "block" : "none";
     if (trailFields) trailFields.style.display = trl ? "block" : "none";
+  }
 
-      // EMA UI
-  const maOn = Boolean(indMa?.checked);
-  if (emaFields) emaFields.style.display = maOn ? "block" : "none";
+  // ---------- summaries ----------
+  function updateSummaries() {
+    const tf = String(timeframeMin?.value || "—");
+    const sess = String(scanSession?.value || "—");
+    const uni = String(scanUniverse?.value || "—");
+    const pm = String(premarketEnabled?.value || "false") === "true" ? "On" : "Off";
+    const biasReq = String(marketBiasRequired?.value || "false") === "true" ? "On" : "Off";
+
+    if (sumScan) {
+      sumScan.textContent = `${tf}m • ${sess} • ${uni} • Premarket: ${pm} • Bias required: ${biasReq}`;
+    }
+
+    const trig = String(triggerType?.value || "—");
+    if (sumTrigger) {
+      if (trig === "ORB") {
+        const r = String(orbRangeMin?.value || "—");
+        const m = String(orbEntryMode?.value || "—");
+        const t = String(orbTolerancePct?.value || "—");
+        sumTrigger.textContent = `ORB • Range ${r}m • Mode ${m} • Tol ${t}%`;
+      } else {
+        sumTrigger.textContent = `Break & Retest`;
+      }
+    }
+
+    const rt = String(retestTolerancePct?.value || "—");
+    const rs = String(rsWindowBars5m?.value || "—");
+    const sw = String(structureWindow?.value || "—");
+    const sec = String(sectorAlignmentEnabled?.value || "false") === "true" ? "On" : "Off";
+    const lb = String(longMinBiasScore?.value || "—");
+    const sb = String(shortMaxBiasScore?.value || "—");
+
+    if (sumFilters) {
+      sumFilters.textContent = `Retest ${rt}% • RS ${rs} • Structure ${sw} • Sector align: ${sec} • Bias L≥${lb} / S≤${sb}`;
+    }
+
+    const inds = [];
+    if (indVwap?.checked) inds.push("VWAP");
+    if (indMa?.checked) inds.push("MAs");
+    if (indRs?.checked) inds.push("RS");
+    if (indVol?.checked) inds.push("Volume");
+
+    if (sumIndicators) {
+      if (!inds.length) sumIndicators.textContent = "None";
+      else {
+        const maExtra = indMa?.checked
+          ? ` • EMA: ${String(emaPeriods?.value || "—")} • Trigger: ${String(emaTrigger?.value || "NONE")}`
+          : "";
+        sumIndicators.textContent = `${inds.join(", ")}${maExtra}`;
+      }
+    }
+
+    const tr = String(targetR?.value || "—");
+    const sr = String(stopR?.value || "—");
+    const mh = String(maxHoldBars?.value || "—");
+    const flip = String(exitOnBiasFlip?.value || "false") === "true" ? "On" : "Off";
+
+    const mbe = Boolean(moveBeEnabled?.checked);
+    const trl = Boolean(trailEnabled?.checked);
+
+    const parts = [`${tr}R target`, `${sr}R stop`, `Max hold ${mh}`, `Bias flip: ${flip}`];
+    if (mbe) parts.push(`Move BE @ ${String(moveBeAtR?.value || "—")}R`);
+    if (trl) parts.push(`Trail start ${String(trailStartR?.value || "—")}R by ${String(trailByR?.value || "—")}R`);
+
+    if (sumMgmt) sumMgmt.textContent = parts.join(" • ");
   }
 
   // ---------- form IO ----------
@@ -234,25 +284,21 @@ let modalVersion = null;
     const c = cfg || DEFAULT_RULES;
 
     if (timeframeMin) timeframeMin.value = String(c.timeframeMin ?? DEFAULT_RULES.timeframeMin);
-    if (scanSession) scanSession.value = String(c.scanSession ?? DEFAULT_RULES.scanSession);
-    if (scanUniverse) scanUniverse.value = String(c.scanUniverse ?? DEFAULT_RULES.scanUniverse);
 
-    // force sane default: if UI no longer offers PREMARKET, normalize
     const sess = String(c.scanSession ?? DEFAULT_RULES.scanSession);
-    if (scanSession && sess === "PREMARKET") scanSession.value = "ALL";
+    if (scanSession) scanSession.value = (sess === "PREMARKET") ? "ALL" : sess;
 
+    if (scanUniverse) scanUniverse.value = String(c.scanUniverse ?? DEFAULT_RULES.scanUniverse);
     if (premarketEnabled) premarketEnabled.value = String(Boolean(c.premarketEnabled ?? DEFAULT_RULES.premarketEnabled));
     if (marketBiasRequired) marketBiasRequired.value = String(Boolean(c.marketBiasRequired ?? DEFAULT_RULES.marketBiasRequired));
 
     if (retestTolerancePct) retestTolerancePct.value = String(c.retestTolerancePct ?? DEFAULT_RULES.retestTolerancePct);
     if (rsWindowBars5m) rsWindowBars5m.value = String(c.rsWindowBars5m ?? DEFAULT_RULES.rsWindowBars5m);
     if (structureWindow) structureWindow.value = String(c.structureWindow ?? DEFAULT_RULES.structureWindow);
-    if (emaPeriods) emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "";
 
     if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = String(Boolean(c.sectorAlignmentEnabled ?? DEFAULT_RULES.sectorAlignmentEnabled));
     if (triggerType) triggerType.value = String(c.triggerType ?? DEFAULT_RULES.triggerType);
 
-    // bias clamp
     if (longMinBiasScore) longMinBiasScore.value = String(clamp(c.longMinBiasScore ?? DEFAULT_RULES.longMinBiasScore, 0, 100));
     if (shortMaxBiasScore) shortMaxBiasScore.value = String(clamp(c.shortMaxBiasScore ?? DEFAULT_RULES.shortMaxBiasScore, 0, 100));
 
@@ -262,9 +308,12 @@ let modalVersion = null;
     if (indRs) indRs.checked = Boolean(inds.relativeStrength);
     if (indVol) indVol.checked = Boolean(inds.volume);
 
-        // EMA settings (stored at top-level config)
-        if (emaPeriods) emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(", ") : "";
-        if (emaTrigger) emaTrigger.value = String(c.emaTrigger || "NONE");
+    // MA settings only meaningful if MA enabled
+    if (emaPeriods) {
+      const arr = Array.isArray(c.emaPeriods) ? c.emaPeriods : [];
+      emaPeriods.value = arr.length ? arr.join(",") : "";
+    }
+    if (emaTrigger) emaTrigger.value = String(c.emaTrigger || "NONE");
 
     // ORB
     const orb = c.orb || DEFAULT_RULES.orb;
@@ -278,7 +327,6 @@ let modalVersion = null;
     if (maxHoldBars) maxHoldBars.value = String(post.maxHoldBars ?? DEFAULT_RULES.post.maxHoldBars);
     if (exitOnBiasFlip) exitOnBiasFlip.value = String(Boolean(post.exitOnBiasFlip ?? DEFAULT_RULES.post.exitOnBiasFlip));
 
-    // trailing controls
     if (moveBeEnabled) moveBeEnabled.checked = Boolean(post.moveBeEnabled);
     if (trailEnabled) trailEnabled.checked = Boolean(post.trailEnabled);
 
@@ -286,87 +334,86 @@ let modalVersion = null;
     if (trailStartR) trailStartR.value = String(asNum(post.trailStartR, DEFAULT_RULES.post.trailStartR));
     if (trailByR) trailByR.value = String(asNum(post.trailByR, DEFAULT_RULES.post.trailByR));
 
-      // EMA periods (stored)
-  if (emaPeriods) {
-    emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "";
-  }
-
     applyConditionalUI();
+    updateSummaries();
   }
 
   function readForm() {
     const trig = String(triggerType?.value || DEFAULT_RULES.triggerType);
-  
+
     let tf = asNum(timeframeMin?.value, DEFAULT_RULES.timeframeMin);
     tf = Math.max(1, Math.floor(tf));
-  
+
     let orbRange = asNum(orbRangeMin?.value, DEFAULT_RULES.orb.rangeMin);
     orbRange = Math.max(1, Math.floor(orbRange));
-  
+
     // If ORB, force orb.rangeMin == timeframeMin so live/backtest can’t drift
     if (trig === "ORB") orbRange = tf;
 
-    const emaPeriodsArr = Boolean(indMa?.checked)
-    ? String(emaPeriods?.value || "")
-        .split(",")
-        .map((x) => Math.floor(Number(x.trim())))
-        .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500)
-        .filter((v, i, a) => a.indexOf(v) === i)
-        .slice(0, 50)
-    : undefined;
+    const maOn = Boolean(indMa?.checked);
+    const emaArr = maOn ? parseEmaPeriods(emaPeriods?.value) : undefined;
+    const emaTrig = maOn ? String(emaTrigger?.value || "NONE") : "NONE";
 
-  const emaTriggerVal = Boolean(indMa?.checked) ? String(emaTrigger?.value || "NONE") : "NONE";
-  
-    return {
+    const config = {
       timeframeMin: tf,
       scanSession: String(scanSession?.value || DEFAULT_RULES.scanSession),
       scanUniverse: String(scanUniverse?.value || DEFAULT_RULES.scanUniverse),
       premarketEnabled: asBool(premarketEnabled?.value ?? DEFAULT_RULES.premarketEnabled),
       marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
-      emaPeriods: emaPeriodsArr,
-      emaTrigger: emaTriggerVal,
-  
+
       retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
       rsWindowBars5m: asNum(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
       structureWindow: asNum(structureWindow?.value, DEFAULT_RULES.structureWindow),
 
-      emaPeriods: parseEmaPeriods(emaPeriods?.value),
-  
       sectorAlignmentEnabled: asBool(sectorAlignmentEnabled?.value ?? DEFAULT_RULES.sectorAlignmentEnabled),
       triggerType: trig,
-  
+
       longMinBiasScore: clamp(asNum(longMinBiasScore?.value, DEFAULT_RULES.longMinBiasScore), 0, 100),
       shortMaxBiasScore: clamp(asNum(shortMaxBiasScore?.value, DEFAULT_RULES.shortMaxBiasScore), 0, 100),
-  
+
       indicators: {
         vwap: Boolean(indVwap?.checked),
-        movingAverages: Boolean(indMa?.checked),
+        movingAverages: maOn,
         relativeStrength: Boolean(indRs?.checked),
         volume: Boolean(indVol?.checked)
       },
 
-      ...(Boolean(indMa?.checked) ? { emaPeriods: parseEmaPeriods(emaPeriods?.value) } : {}),
-  
+      // ORB config always present (safe)
       orb: {
         rangeMin: orbRange,
         entryMode: String(orbEntryMode?.value || DEFAULT_RULES.orb.entryMode),
         tolerancePct: asNum(orbTolerancePct?.value, DEFAULT_RULES.orb.tolerancePct)
       },
-  
+
+      // post
       post: {
         targetR: asNum(targetR?.value, DEFAULT_RULES.post.targetR),
         stopR: asNum(stopR?.value, DEFAULT_RULES.post.stopR),
         maxHoldBars: asNum(maxHoldBars?.value, DEFAULT_RULES.post.maxHoldBars),
         exitOnBiasFlip: asBool(exitOnBiasFlip?.value ?? DEFAULT_RULES.post.exitOnBiasFlip),
-  
+
         moveBeEnabled: Boolean(moveBeEnabled?.checked),
         moveBeAtR: asNum(moveBeAtR?.value, DEFAULT_RULES.post.moveBeAtR),
-  
+
         trailEnabled: Boolean(trailEnabled?.checked),
         trailStartR: asNum(trailStartR?.value, DEFAULT_RULES.post.trailStartR),
         trailByR: asNum(trailByR?.value, DEFAULT_RULES.post.trailByR)
       }
     };
+
+// Only include emaPeriods/emaTrigger when MA is enabled.
+// Backend throws if emaPeriods exists but is empty.
+if (maOn) {
+  const arr = Array.isArray(emaArr) ? emaArr : [];
+  config.emaPeriods = arr.length ? arr : [9, 20, 50, 200]; // safe default to avoid "emaPeriods empty"
+  config.emaTrigger = emaTrig || "NONE";
+} else {
+  // omit entirely
+  delete config.emaPeriods;
+  delete config.emaTrigger;
+}
+
+    return config;
   }
 
   // ---------- strategies modal (View) ----------
@@ -394,29 +441,29 @@ let modalVersion = null;
           <button class="btn" id="rsModalClose">Close</button>
         </div>
       </div>
-  
+
       <div class="rs-modal-body" id="rsModalView">
         <div class="small muted" style="margin-bottom:8px;">Overview</div>
         <div id="rsModalOverview" class="rs-kv"></div>
-  
+
         <div class="rs-divider"></div>
-  
+
         <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
           <button class="btn btn-primary" id="rsModalEdit">Edit</button>
           <button class="btn" id="rsModalToggle">Enable</button>
         </div>
-  
+
         <div class="small muted" style="margin-bottom:8px;">Recent backtests</div>
         <div id="rsModalBacktests" class="small"></div>
       </div>
-  
+
       <div class="rs-modal-body" id="rsModalEditView" style="display:none;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
           <div class="small muted">Editing in popup</div>
-<div style="display:flex; gap:10px; align-items:center;">
-  <button class="btn" id="rsModalDelete">Delete</button>
-  <button class="btn" id="rsModalDone">Done</button>
-</div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn" id="rsModalDelete">Delete</button>
+            <button class="btn" id="rsModalDone">Done</button>
+          </div>
         </div>
         <div id="rsModalEditMount" class="rs-edit-mount"></div>
       </div>
@@ -425,48 +472,44 @@ let modalVersion = null;
     document.body.appendChild(wrap);
 
     const doneBtn = document.getElementById("rsModalDone");
-const delBtn = document.getElementById("rsModalDelete");
+    const delBtn = document.getElementById("rsModalDelete");
 
-doneBtn.addEventListener("click", async () => {
-  try {
-    if (!modalVersion) return;
+    doneBtn.addEventListener("click", async () => {
+      try {
+        if (!modalVersion) return;
 
-    // Because you moved the real editor into the modal, just reuse the same form reader
-    const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
-    const config = readForm();
+        const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
+        const config = readForm();
 
-    await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
+        await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
 
-    restoreEditorFromModal();
-    showModalView("view");
-    wrap.style.display = "none";
-    await boot();
-    setStatus(""); // keep it clean
-  } catch (e) {
-    setStatus(`Save failed: ${String(e?.message || e)}`);
-  }
-});
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+        await boot();
+      } catch (e) {
+        alert(`Save failed: ${String(e?.message || e)}`);
+      }
+    });
 
-delBtn.addEventListener("click", async () => {
-  try {
-    if (!modalVersion) return;
-    const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
-    if (!ok) return;
+    delBtn.addEventListener("click", async () => {
+      try {
+        if (!modalVersion) return;
+        const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
+        if (!ok) return;
 
-    // DELETE endpoint you already have in http.ts
-    const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
-    const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
+        const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
 
-    restoreEditorFromModal();
-    showModalView("view");
-    wrap.style.display = "none";
-    await boot();
-    setStatus("");
-  } catch (e) {
-    setStatus(`Delete failed: ${String(e?.message || e)}`);
-  }
-});
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+        await boot();
+      } catch (e) {
+        alert(`Delete failed: ${String(e?.message || e)}`);
+      }
+    });
 
     const closeBtn = document.getElementById("rsModalClose");
     closeBtn.addEventListener("click", () => {
@@ -491,13 +534,13 @@ delBtn.addEventListener("click", async () => {
     const inds = c.indicators || {};
     const post = c.post || {};
     const orb = c.orb || {};
-  
+
     const enabledInds = [];
     if (inds.vwap) enabledInds.push("VWAP");
     if (inds.movingAverages) enabledInds.push("MAs");
     if (inds.relativeStrength) enabledInds.push("RS");
     if (inds.volume) enabledInds.push("Volume");
-  
+
     const kv = [
       ["Trigger", c.triggerType ?? "—"],
       ["Timeframe", c.timeframeMin != null ? `${c.timeframeMin}m` : "—"],
@@ -512,69 +555,31 @@ delBtn.addEventListener("click", async () => {
       ["Max hold (bars)", post.maxHoldBars != null ? String(post.maxHoldBars) : "—"],
       ["Exit on bias flip", post.exitOnBiasFlip ? "Yes" : "No"]
     ];
-  
+
     if (String(c.triggerType) === "ORB") {
       kv.push(["ORB range", orb.rangeMin != null ? `${orb.rangeMin}m` : "—"]);
       kv.push(["ORB entry", orb.entryMode ?? "—"]);
       kv.push(["ORB tol", orb.tolerancePct != null ? `${orb.tolerancePct}%` : "—"]);
     }
-  
+
+    if (inds.movingAverages) {
+      kv.push(["EMA periods", Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "—"]);
+      kv.push(["EMA trigger", c.emaTrigger ?? "NONE"]);
+    }
+
     if (post.moveBeEnabled) kv.push(["Move BE @", post.moveBeAtR != null ? `${post.moveBeAtR}R` : "—"]);
     if (post.trailEnabled) kv.push(["Trail", `start ${post.trailStartR ?? "—"}R by ${post.trailByR ?? "—"}R`]);
-  
+
     return kv;
   }
 
-  function summarizeConfig(cfg) {
-    const c = cfg || {};
-    const trig = String(c.triggerType || "—");
-
-    const inds = c.indicators || {};
-    const enabledInds = [];
-    if (inds.vwap) enabledInds.push("VWAP");
-    if (inds.movingAverages) enabledInds.push("MAs");
-    if (inds.relativeStrength) enabledInds.push("RS");
-    if (inds.volume) enabledInds.push("Volume");
-
-    const parts = [];
-    parts.push(`Trigger: <b>${escapeHtml(trig)}</b>`);
-    parts.push(`Timeframe: <b>${escapeHtml(String(c.timeframeMin || "—"))}m</b>`);
-    parts.push(`Session: <b>${escapeHtml(String(c.scanSession || "—"))}</b>`);
-    parts.push(`Universe: <b>${escapeHtml(String(c.scanUniverse || "—"))}</b>`);
-    parts.push(`Retest tol: <b>${escapeHtml(String(c.retestTolerancePct ?? "—"))}%</b>`);
-    parts.push(`Indicators: <b>${escapeHtml(enabledInds.join(", ") || "None")}</b>`);
-
-    if (trig === "ORB") {
-      const orb = c.orb || {};
-      parts.push(`ORB range: <b>${escapeHtml(String(orb.rangeMin ?? "—"))}m</b>`);
-      parts.push(`ORB entry: <b>${escapeHtml(String(orb.entryMode || "—"))}</b>`);
-    }
-
-    const post = c.post || {};
-    if (post.moveBeEnabled) parts.push(`Move BE @ <b>${escapeHtml(String(post.moveBeAtR ?? "—"))}R</b>`);
-    if (post.trailEnabled) parts.push(`Trail start <b>${escapeHtml(String(post.trailStartR ?? "—"))}R</b> by <b>${escapeHtml(String(post.trailByR ?? "—"))}R</b>`);
-
-    return parts.join(" &nbsp;•&nbsp; ");
-  }
-
-  function parseEmaPeriods(s) {
-    const out = String(s || "")
-      .split(",")
-      .map((x) => parseInt(x.trim(), 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500);
-  
-    return Array.from(new Set(out)).sort((a,b) => a-b);
-  }
-
   async function fetchRulesetByVersion(version) {
-    // requires backend endpoint: GET /api/rulesets/:version
     const out = await jget(`/api/rulesets/${encodeURIComponent(version)}`);
     if (!out || !out.ok || !out.ruleset) throw new Error("ruleset fetch failed");
     return out.ruleset;
   }
 
   async function fetchRecentBacktests(strategyVersion, limit = 5) {
-    // requires backend endpoint: GET /api/backtests?limit=..&strategyVersion=..
     const res = await jget(`/api/backtests?limit=${encodeURIComponent(limit)}&strategyVersion=${encodeURIComponent(strategyVersion)}`);
     const runs = Array.isArray(res?.runs) ? res.runs : [];
     return runs;
@@ -582,72 +587,67 @@ delBtn.addEventListener("click", async () => {
 
   let editorHome = null;
 
-function moveEditorIntoModal() {
-  const editor = document.getElementById("rulesEditor");
-  const mount = document.getElementById("rsModalEditMount");
-  if (!editor || !mount) return false;
+  function moveEditorIntoModal() {
+    const editor = document.getElementById("rulesEditor");
+    const mount = document.getElementById("rsModalEditMount");
+    if (!editor || !mount) return false;
 
-  if (!editorHome) {
-    editorHome = {
-      editor,
-      parent: editor.parentNode,
-      next: editor.nextSibling
-    };
+    if (!editorHome) {
+      editorHome = { editor, parent: editor.parentNode, next: editor.nextSibling };
+    }
+
+    mount.appendChild(editor);
+    return true;
   }
 
-  mount.appendChild(editor);
-  return true;
-}
-
-function restoreEditorFromModal() {
-  if (!editorHome) return;
-  const { editor, parent, next } = editorHome;
-
-  try {
-    if (parent) parent.insertBefore(editor, next || null);
-  } finally {
-    editorHome = null;
+  function restoreEditorFromModal() {
+    if (!editorHome) return;
+    const { editor, parent, next } = editorHome;
+    try {
+      if (parent) parent.insertBefore(editor, next || null);
+    } finally {
+      editorHome = null;
+    }
   }
-}
 
-function showModalView(mode) {
-  const view = document.getElementById("rsModalView");
-  const edit = document.getElementById("rsModalEditView");
-  if (!view || !edit) return;
+  function showModalView(mode) {
+    const view = document.getElementById("rsModalView");
+    const edit = document.getElementById("rsModalEditView");
+    if (!view || !edit) return;
 
-  if (mode === "edit") {
-    view.style.display = "none";
-    edit.style.display = "block";
-  } else {
-    edit.style.display = "none";
-    view.style.display = "block";
+    if (mode === "edit") {
+      view.style.display = "none";
+      edit.style.display = "block";
+    } else {
+      edit.style.display = "none";
+      view.style.display = "block";
+    }
   }
-}
 
-async function openViewModal(rsRow) {
-  const version = Number(rsRow?.version);
-  if (!Number.isFinite(version)) throw new Error("bad version");
-  modalVersion = version;
+  async function openViewModal(rsRow) {
+    const version = Number(rsRow?.version);
+    if (!Number.isFinite(version)) throw new Error("bad version");
+    modalVersion = version;
 
     const wrap = ensureModal();
     wrap.style.display = "flex";
 
     const titleEl = document.getElementById("rsModalTitle");
-const subEl = document.getElementById("rsModalSub");
-const ovEl = document.getElementById("rsModalOverview");
-const btEl = document.getElementById("rsModalBacktests");
-const editBtn = document.getElementById("rsModalEdit");
-const toggleBtn = document.getElementById("rsModalToggle");
+    const subEl = document.getElementById("rsModalSub");
+    const ovEl = document.getElementById("rsModalOverview");
+    const btEl = document.getElementById("rsModalBacktests");
+    const editBtn = document.getElementById("rsModalEdit");
+    const toggleBtn = document.getElementById("rsModalToggle");
+
     titleEl.textContent = rsRow?.name ? String(rsRow.name) : `Strategy v${version}`;
     subEl.textContent = `v${version}${rsRow?.created_ts ? ` • ${new Date(Number(rsRow.created_ts)).toLocaleString()}` : ""}`;
-
 
     // fetch full ruleset config
     let ruleset = null;
     try {
       ruleset = await fetchRulesetByVersion(version);
-    } catch (e) {
-      if (ovEl) ovEl.innerHTML = `<span class="small muted">Couldn’t load this strategy (missing endpoint or server error).</span>`;
+    } catch {
+      if (ovEl) ovEl.innerHTML = `<span class="small muted">Couldn’t load this strategy.</span>`;
       if (btEl) btEl.innerHTML = `<span class="small muted">Backtests unavailable.</span>`;
       if (editBtn) editBtn.disabled = true;
       if (toggleBtn) toggleBtn.disabled = true;
@@ -655,27 +655,27 @@ const toggleBtn = document.getElementById("rsModalToggle");
     }
 
     let cfg =
-    ruleset?.config ??
-    ruleset?.config_json ??
-    ruleset?.configJson ??
-    ruleset?.configJsonStr ??
-    null;
-  
-  if (typeof cfg === "string") {
-    try { cfg = JSON.parse(cfg); } catch { cfg = null; }
-  }
-  
-  const cfgObj = (cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES;
-  
-  if (ovEl) {
-    const kv = buildOverviewKVs(cfgObj);
-    ovEl.innerHTML = kv.map(([k, v]) => `
-      <div>
-        <div class="rs-k">${escapeHtml(k)}</div>
-        <div class="rs-v">${escapeHtml(String(v))}</div>
-      </div>
-    `).join("");
-  }
+      ruleset?.config ??
+      ruleset?.config_json ??
+      ruleset?.configJson ??
+      ruleset?.configJsonStr ??
+      null;
+
+    if (typeof cfg === "string") {
+      try { cfg = JSON.parse(cfg); } catch { cfg = null; }
+    }
+
+    const cfgObj = (cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES;
+
+    if (ovEl) {
+      const kv = buildOverviewKVs(cfgObj);
+      ovEl.innerHTML = kv.map(([k, v]) => `
+        <div>
+          <div class="rs-k">${escapeHtml(k)}</div>
+          <div class="rs-v">${escapeHtml(String(v))}</div>
+        </div>
+      `).join("");
+    }
 
     // recent backtests
     btEl.innerHTML = `<span class="small muted">Loading…</span>`;
@@ -688,250 +688,204 @@ const toggleBtn = document.getElementById("rsModalToggle");
       if (!done.length) {
         btEl.innerHTML = `<span class="small muted">No completed runs found for this strategy.</span>`;
       } else {
-        btEl.innerHTML = done
-          .map((r) => {
-            const m = r?.metrics?.meta ? r.metrics : r?.metrics;
-const meta = m?.meta || r?.meta || {};
-const ticker =
-  meta?.ticker || meta?.symbol || r?.ticker || r?.symbol || r?.request?.ticker || r?.request?.symbol || "—";
+        btEl.innerHTML = done.map((r) => {
+          const m = r?.metrics?.meta ? r.metrics : r?.metrics;
+          const meta = m?.meta || r?.meta || {};
+          const ticker =
+            meta?.ticker || meta?.symbol || r?.ticker || r?.symbol || r?.request?.ticker || r?.request?.symbol || "—";
 
-const winRate = m?.winRate ?? m?.metrics?.winRate ?? null;
+          const winRate = m?.winRate ?? m?.metrics?.winRate ?? null;
+          const avgWin =
+            m?.avgWin ?? m?.avgWinningTrade ?? m?.avgWinner ?? m?.avgWinR ?? m?.metrics?.avgWin ?? m?.metrics?.avgWinningTrade ?? null;
 
-// "avg win" can be stored a lot of ways; try common ones:
-const avgWin =
-  m?.avgWin ?? m?.avgWinningTrade ?? m?.avgWinner ?? m?.avgWinR ?? m?.metrics?.avgWin ?? m?.metrics?.avgWinningTrade ?? null;
+          const wr = winRate != null ? `${(Number(winRate) * 100).toFixed(1)}%` : "—";
+          const aw = avgWin != null ? (Number.isFinite(Number(avgWin)) ? Number(avgWin).toFixed(2) : String(avgWin)) : "—";
 
-const wr = winRate != null ? `${(Number(winRate) * 100).toFixed(1)}%` : "—";
-const aw = avgWin != null ? (Number.isFinite(Number(avgWin)) ? Number(avgWin).toFixed(2) : String(avgWin)) : "—";
-
-return `
-  <div style="padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px; margin-bottom:8px;">
-    <div class="small">
-      Ticker: <b>${escapeHtml(String(ticker))}</b> • Win: <b>${escapeHtml(wr)}</b> • Avg win: <b>${escapeHtml(aw)}</b>
-    </div>
-    <div class="small muted" style="margin-top:4px;">Finished: ${escapeHtml(fmtTs(r?.finishedTs))}</div>
-  </div>
-`;
-          })
-          .join("");
+          return `
+            <div style="padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px; margin-bottom:8px;">
+              <div class="small">
+                Ticker: <b>${escapeHtml(String(ticker))}</b> • Win: <b>${escapeHtml(wr)}</b> • Avg win: <b>${escapeHtml(aw)}</b>
+              </div>
+              <div class="small muted" style="margin-top:4px;">Finished: ${escapeHtml(fmtTs(r?.finishedTs))}</div>
+            </div>
+          `;
+        }).join("");
       }
     } catch {
       btEl.innerHTML = `<span class="small muted">Backtest listing endpoint missing or failed.</span>`;
     }
 
+    // Edit button
     editBtn.disabled = false;
     editBtn.onclick = () => {
-      try {
-        fill(cfgObj);
-    
-        // Set name into existing editor bar
-        if (strategyName) {
-          strategyName.value = String(ruleset?.name || rsRow?.name || `Ruleset v${version}`);
-        }
-    
-        lastLoadedVersion = version;
-        setStatus(""); // no noisy message
-    
-        // Move the real editor into the modal so all IDs/hooks still work
-        const ok = moveEditorIntoModal();
-        if (ok) {
-          showModalView("edit");
-        } else {
-          // fallback: if mount missing, at least close modal
-          wrap.style.display = "none";
-        }
-      } catch (e) {
-        setStatus(`Edit failed: ${String(e?.message || e)}`);
-      }
+      // load config into editor, then move editor into modal for editing
+      fill(cfgObj);
+      moveEditorIntoModal();
+      showModalView("edit");
     };
 
-// toggle active
-const isActive = Boolean(rsRow?.active) || Boolean(ruleset?.active);
-
-toggleBtn.disabled = false;
-
-// ensure base class exists
-toggleBtn.classList.add("strategy-enable-btn");
-
-// apply enabled styling class
-if (isActive) toggleBtn.classList.add("is-enabled");
-else toggleBtn.classList.remove("is-enabled");
-
-// text
-toggleBtn.textContent = isActive ? "Disable" : "Enable";
-
-toggleBtn.onclick = async () => {
-  try {
-    await toggleRuleset(version, !isActive);
-    wrap.style.display = "none";
-    await boot();
-  } catch (e) {
-    setStatus(String(e?.message || e));
-  }
-};
+    // Enable/Disable button
+    toggleBtn.disabled = false;
+    toggleBtn.textContent = rsRow?.enabled ? "Disable" : "Enable";
+    toggleBtn.onclick = async () => {
+      try {
+        const to = !Boolean(rsRow?.active);
+await jpost(`/api/rules/toggle/${version}`, { active: to });
+        wrap.style.display = "none";
+        restoreEditorFromModal();
+        showModalView("view");
+        await boot();
+      } catch (e) {
+        alert(`Toggle failed: ${String(e?.message || e)}`);
+      }
+    };
   }
 
-  // ---------- strategies UI ----------
+  // ---------- strategies list rendering ----------
   function renderStrategies(list) {
     if (!strategiesList) return;
-    strategiesList.innerHTML = "";
+    const rows = Array.isArray(list) ? list : [];
 
-    const arr = Array.isArray(list) ? list : [];
-    if (!arr.length) {
-      strategiesList.innerHTML = `<div class="small muted">No strategies yet.</div>`;
-      return;
-    }
+    strategiesList.innerHTML = rows.map((r) => {
+      const name = r?.name ? escapeHtml(String(r.name)) : `v${escapeHtml(String(r?.version ?? "—"))}`;
+      const v = escapeHtml(String(r?.version ?? "—"));
+      const enabled = Boolean(r?.active);
 
-    for (const rs of arr) {
-      const isActive = Boolean(rs.active);
+      return `
+        <div class="strategy-row">
+          <div style="min-width:0;">
+            <div class="strategy-title">${name}</div>
+            <div class="small muted">v${v}${r?.created_ts ? ` • ${escapeHtml(new Date(Number(r.created_ts)).toLocaleString())}` : ""}</div>
+          </div>
+          <div class="strategy-actions">
+            <button class="btn" data-act="view" data-v="${v}">View</button>
+            <button class="btn strategy-enable-btn ${enabled ? "is-enabled" : ""}" data-act="toggle" data-v="${v}">
+              ${enabled ? "Enabled" : "Enable"}
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
 
-      const row = document.createElement("div");
-      // styling handled by CSS
+    strategiesList.querySelectorAll("button[data-act]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const act = btn.getAttribute("data-act");
+        const v = Number(btn.getAttribute("data-v"));
 
-      const created = rs.created_ts ? new Date(Number(rs.created_ts)).toLocaleString() : "";
+        const row = rows.find((x) => Number(x?.version) === v) || null;
 
-      row.className = "strategy-row";
+        if (act === "view") {
+          try { await openViewModal(row); } catch (e) { alert(String(e?.message || e)); }
+          return;
+        }
 
-      row.innerHTML = `
-      <div class="strategy-left" style="min-width:0;">
-        <div class="strategy-title" data-role="strategy-name">${escapeHtml(rs.name || "Ruleset")}</div>
-      </div>
-    
-      <div class="strategy-actions">
-        <button class="btn btn-caret" data-act="view" data-version="${escapeHtml(rs.version)}">View</button>
-    
-<button class="btn btn-caret strategy-enable-btn ${isActive ? "is-enabled" : ""}"
-        data-act="toggle"
-        data-version="${escapeHtml(rs.version)}"
-        data-active="${isActive ? "1" : "0"}">
-  ${isActive ? "Enabled" : "Enable"}
-</button>
-      </div>
-    `;
-
-      strategiesList.appendChild(row);
-    }
+        if (act === "toggle") {
+          try {
+            const to = !Boolean(row?.enabled);
+            await jpost(`/api/rules/toggle/${v}`, { active: to });
+            await boot();
+          } catch (e) {
+            alert(`Toggle failed: ${String(e?.message || e)}`);
+          }
+        }
+      });
+    });
   }
 
-  async function refreshStrategies() {
-    const rsRes = await jget("/api/rulesets");
-    const rulesets = Array.isArray(rsRes?.rulesets) ? rsRes.rulesets : (Array.isArray(rsRes) ? rsRes : []);
-    renderStrategies(rulesets);
+  // ---------- events ----------
+  function bindLiveSummaryListeners() {
+    const els = [
+      timeframeMin, scanSession, scanUniverse, premarketEnabled, marketBiasRequired,
+      triggerType, orbRangeMin, orbEntryMode, orbTolerancePct,
+      retestTolerancePct, rsWindowBars5m, structureWindow, sectorAlignmentEnabled, longMinBiasScore, shortMaxBiasScore,
+      indVwap, indMa, indRs, indVol, emaPeriods, emaTrigger,
+      targetR, stopR, maxHoldBars, exitOnBiasFlip,
+      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR
+    ].filter(Boolean);
+
+    els.forEach((el) => {
+      el.addEventListener("input", () => {
+        applyConditionalUI();
+        updateSummaries();
+      });
+      el.addEventListener("change", () => {
+        applyConditionalUI();
+        updateSummaries();
+      });
+    });
   }
 
-  async function loadRulesetIntoEditor(version) {
-    const v = Number(version);
-    if (!Number.isFinite(v)) throw new Error("bad version");
-
-    const ruleset = await fetchRulesetByVersion(v);
-    const cfg = ruleset?.config || null;
-
-    if (!cfg) throw new Error("ruleset has no config");
-
-    fill(cfg);
-    strategyName.value = String(ruleset?.name || `Ruleset v${v}`);
-    lastLoadedVersion = v;
-    setStatus(`Loaded v${v} into editor. Edit and Save Rules to create a new version.`);
-  }
-
-  async function toggleRuleset(version, active) {
-    // requires backend endpoint: POST /api/rules/toggle/:version
-    await jpost(`/api/rules/toggle/${encodeURIComponent(version)}`, { active: Boolean(active), changedBy: "ui" });
-  }
-
-  // ---------- actions ----------
-  async function onSaveRules() {
-    try {
-      setStatus("Saving…");
-      const name = String(strategyName?.value || "Ruleset").trim() || "Ruleset";
-      const config = readForm();
-      await jpost("/api/rules", { name, config, changedBy: "ui" });
-      setStatus("Saved. (New version created)");
-      lastLoadedVersion = null;
-      await boot();
-    } catch (e) {
-      setStatus(`Save failed: ${String(e?.message || e)}`);
-    }
-  }
-
-  async function onNewStrategy() {
-    if (strategyName) strategyName.value = "";
-    lastLoadedVersion = null;
-    fill(DEFAULT_RULES);
-    setStatus("");
-  }
-
-  // ---------- boot ----------
+  // ---------- load + save ----------
   async function boot() {
-    try {
-      setStatus("");
+    const res = await jget("/api/rulesets");
+    const rows = Array.isArray(res?.rulesets) ? res.rulesets : [];
+    renderStrategies(rows);
 
-      // strategies list
-      await refreshStrategies();
+    // pick active ruleset if provided
+    const active = rows.find((r) => r?.active) || rows.find((r) => r?.enabled) || rows[0] || null;
+    if (active?.version != null) {
+      lastLoadedVersion = Number(active.version);
+      const full = await fetchRulesetByVersion(Number(active.version));
 
-      // active rules (this endpoint may still return only one “active” ruleset)
-      // we treat it as “default editor content” for now.
-      const activeRes = await jget("/api/rules");
-      const active = activeRes?.rules || null;
+      let cfg =
+        full?.config ??
+        full?.config_json ??
+        full?.configJson ??
+        full?.configJsonStr ??
+        null;
 
-      activeRules = active;
-      if (active?.config) {
-        fill(active.config);
-        strategyName.value = String(active?.name || "");
-        lastLoadedVersion = Number(active?.version) || null;
-      } else {
-        fill(DEFAULT_RULES);
+      if (typeof cfg === "string") {
+        try { cfg = JSON.parse(cfg); } catch { cfg = null; }
       }
 
-      applyConditionalUI();
-      setStatus("");
-    } catch (e) {
-      // Make this “premium”: actionable, not scary
-      setStatus(`Rules page loaded with warnings: ${String(e?.message || e)}`);
+      fill((cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES);
+      if (strategyName && active?.name) strategyName.value = String(active.name);
+    } else {
+      fill(DEFAULT_RULES);
     }
+  }
+
+  async function saveNewVersion() {
+    const name = String(strategyName?.value || "").trim() || "Strategy";
+    const config = readForm();
+  
+    // Create new ruleset version (correct backend route)
+    const out = await jpost("/api/rules", { name, config, changedBy: "ui" });
+    if (!out?.ok) throw new Error(out?.error || "save failed");
+  
+    await boot();
   }
 
   // ---------- init ----------
   function init() {
-    if (saveRulesBtn) saveRulesBtn.addEventListener("click", onSaveRules);
-    if (newStrategyBtn) newStrategyBtn.addEventListener("click", onNewStrategy);
+    bindLiveSummaryListeners();
+    applyConditionalUI();
+    updateSummaries();
 
-    if (triggerType) triggerType.addEventListener("change", applyConditionalUI);
-    if (moveBeEnabled) moveBeEnabled.addEventListener("change", applyConditionalUI);
-    if (trailEnabled) trailEnabled.addEventListener("change", applyConditionalUI);
+    // persist admin token (optional)
+const adminEl = document.getElementById("adminToken");
+if (adminEl) {
+  adminEl.value = localStorage.getItem("ADMIN_TOKEN") || "";
+  adminEl.addEventListener("input", () => {
+    localStorage.setItem("ADMIN_TOKEN", adminEl.value || "");
+  });
+}
 
-    if (indMa) indMa.addEventListener("change", applyConditionalUI);
-
-    if (strategiesList) {
-      strategiesList.addEventListener("click", async (ev) => {
-        const btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
-        if (!btn) return;
-        const act = String(btn.getAttribute("data-act") || "");
-        const version = String(btn.getAttribute("data-version") || "");
-        const active = String(btn.getAttribute("data-active") || "0") === "1";
-
+    if (saveRulesBtn) {
+      saveRulesBtn.addEventListener("click", async () => {
         try {
-          if (act === "view") {
-            // pass row data for modal; version fetch fills details
-            const rowEl = btn.closest(".strategy-row");
-            const nameEl = rowEl?.querySelector('[data-role="strategy-name"]');
-            const name = nameEl ? nameEl.textContent : "";
-            await openViewModal({ version: Number(version), name, active });
-            return;
-          }
-        
-          if (act === "toggle") {
-            await toggleRuleset(version, !active);
-            await boot();
-            return;
-          }
+          await saveNewVersion();
         } catch (e) {
-          setStatus(String(e?.message || e));
+          alert(`Save failed: ${String(e?.message || e)}`);
         }
       });
     }
 
-    boot();
+    boot().catch((e) => {
+      console.error(e);
+      alert(`Rules boot failed: ${String(e?.message || e)}`);
+      fill(DEFAULT_RULES);
+    });
   }
 
   init();
