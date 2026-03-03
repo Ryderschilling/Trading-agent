@@ -216,6 +216,15 @@
             <label class="small" style="margin-right:14px;"><input id="indVol" type="checkbox" /> Volume</label>
           </div>
 
+          <!-- EMA periods (only shown when Moving Averages is checked) -->
+<div id="emaFields" style="grid-column: 1 / -1; display:none; margin-top:10px;">
+  <label class="small">
+    EMA periods (comma-separated)
+    <input id="emaPeriods" class="input" placeholder="8, 21, 50, 200" style="width:100%; margin-top:6px;" />
+    <div class="card-hint" style="margin-top:6px;">Enter 1–500. Example: 8,21,50,200</div>
+  </label>
+</div>
+
           <!-- Post-signal Management -->
           <div class="sectionTitle" style="grid-column: 1 / -1;">Post-signal Management</div>
 

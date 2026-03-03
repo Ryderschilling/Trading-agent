@@ -33,6 +33,8 @@ let modalVersion = null;
 
   const indVwap = $("indVwap");
   const indMa = $("indMa");
+  const emaFields = $("emaFields");
+const emaPeriods = $("emaPeriods");
   const indRs = $("indRs");
   const indVol = $("indVol");
 
@@ -217,6 +219,10 @@ let modalVersion = null;
     const trl = Boolean(trailEnabled?.checked);
     if (moveBeFields) moveBeFields.style.display = mbe ? "block" : "none";
     if (trailFields) trailFields.style.display = trl ? "block" : "none";
+
+      // EMA UI
+  const maOn = Boolean(indMa?.checked);
+  if (emaFields) emaFields.style.display = maOn ? "block" : "none";
   }
 
   // ---------- form IO ----------
@@ -272,6 +278,11 @@ let modalVersion = null;
     if (trailStartR) trailStartR.value = String(asNum(post.trailStartR, DEFAULT_RULES.post.trailStartR));
     if (trailByR) trailByR.value = String(asNum(post.trailByR, DEFAULT_RULES.post.trailByR));
 
+      // EMA periods (stored)
+  if (emaPeriods) {
+    emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "";
+  }
+
     applyConditionalUI();
   }
 
@@ -312,6 +323,8 @@ let modalVersion = null;
         relativeStrength: Boolean(indRs?.checked),
         volume: Boolean(indVol?.checked)
       },
+
+      ...(Boolean(indMa?.checked) ? { emaPeriods: parseEmaPeriods(emaPeriods?.value) } : {}),
   
       orb: {
         rangeMin: orbRange,
@@ -865,6 +878,8 @@ toggleBtn.onclick = async () => {
     if (triggerType) triggerType.addEventListener("change", applyConditionalUI);
     if (moveBeEnabled) moveBeEnabled.addEventListener("change", applyConditionalUI);
     if (trailEnabled) trailEnabled.addEventListener("change", applyConditionalUI);
+
+    if (indMa) indMa.addEventListener("change", applyConditionalUI);
 
     if (strategiesList) {
       strategiesList.addEventListener("click", async (ev) => {
