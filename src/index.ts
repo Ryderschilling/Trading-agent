@@ -255,7 +255,8 @@ function buildRunner(rs: { version: number; name: string; config: any }): Strate
     engine: new SignalEngine({
       timeframeMin,
       retestTolerancePct,
-      rsWindowBars5m
+      rsWindowBars5m,
+      emaPeriods: Array.isArray(rs.config?.emaPeriods) ? rs.config.emaPeriods : undefined
     }),
 
     outcomeTracker: new OutcomeTracker({
@@ -305,6 +306,25 @@ function saveRules(name: string, config: any, changedBy?: string) {
   if (!Number.isFinite(config.longMinBiasScore)) throw new Error("bad longMinBiasScore");
   if (!Number.isFinite(config.shortMaxBiasScore)) throw new Error("bad shortMaxBiasScore");
 
+  // EMA periods (optional): allow user-defined periods 1..500
+if (config.emaPeriods != null) {
+  if (!Array.isArray(config.emaPeriods)) throw new Error("emaPeriods must be an array");
+  const cleaned = Array.from(
+    new Set<number>(
+      config.emaPeriods
+        .map((x: any) => Number(x))
+        .filter((n: number) => Number.isFinite(n))
+        .map((n: number) => Math.floor(n))
+        .filter((n: number) => n >= 1 && n <= 500)
+    )
+  ).sort((a: number, b: number) => a - b);
+
+  if (cleaned.length === 0) throw new Error("emaPeriods empty");
+  if (cleaned.length > 50) throw new Error("emaPeriods max 50"); // prevents abuse
+
+  config.emaPeriods = cleaned;
+}
+
   const r = insertRuleset(db, name, config, changedBy) as any;
   const version = Number(r?.version ?? r);
 
@@ -321,6 +341,25 @@ function setRulesetActiveFn(version: number, active: boolean) {
 }
 
 function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
+  // EMA periods (optional): allow user-defined periods 1..500
+  if (config?.emaPeriods != null) {
+    if (!Array.isArray(config.emaPeriods)) throw new Error("emaPeriods must be an array");
+    const cleaned = Array.from(
+      new Set<number>(
+        config.emaPeriods
+          .map((x: any) => Number(x))
+          .filter((n: number) => Number.isFinite(n))
+          .map((n: number) => Math.floor(n))
+          .filter((n: number) => n >= 1 && n <= 500)
+      )
+    ).sort((a: number, b: number) => a - b);
+
+    if (cleaned.length === 0) throw new Error("emaPeriods empty");
+    if (cleaned.length > 50) throw new Error("emaPeriods max 50");
+
+    config.emaPeriods = cleaned;
+  }
+
   const out = updateRuleset(db, Number(version), name, config, changedBy);
   refreshRunners();
 
@@ -579,7 +618,7 @@ function normalizedWatchlist(): string[] {
   const cleaned = (watch || [])
     .map((s) => String(s ?? "").trim().toUpperCase())
     .filter(Boolean)
-    .filter(isValidSymbol)
+    .filter(isValidSymbol);
 
   return Array.from(new Set(cleaned)).slice(0, 50);
 }
@@ -1200,23 +1239,38 @@ function onAlpacaBar(b: AlpacaBarMsg) {
 }
 
 if (HAS_KEYS) {
-  stream = new AlpacaStream(
-    { key: KEY, secret: SECRET, feed: FEED },
-    {
-      onBar: onAlpacaBar,
-      onStatus: (s) => {
-        console.log(`[alpaca] ${s}`);
-        const msg = String(s).toLowerCase();
+  let alpacaAuthed = false;
 
-        // resubscribe on reconnect/auth
-        if (msg.includes("connected")) currentSubs = [];
-        if (msg.includes("authenticated")) {
-          currentSubs = [];
-          refreshSubscriptions();
-        }
+stream = new AlpacaStream(
+  { key: KEY, secret: SECRET, feed: FEED },
+  {
+    onBar: onAlpacaBar,
+    onStatus: (s) => {
+      console.log(`[alpaca] ${s}`);
+      const msg = String(s).toLowerCase();
+
+      // If Alpaca reconnects, subscriptions can be dropped.
+      // We track auth and re-subscribe whenever we know we're authenticated.
+      if (msg.includes("authenticated")) {
+        alpacaAuthed = true;
+        currentSubs = [];
+        refreshSubscriptions();
+        return;
+      }
+
+      if (msg.includes("connected") || msg.includes("reconnected")) {
+        currentSubs = [];
+        if (alpacaAuthed) refreshSubscriptions();
+        return;
+      }
+
+      if (msg.includes("disconnected")) {
+        alpacaAuthed = false;
+        return;
       }
     }
-  );
+  }
+);
 
   stream.connect();
 }
@@ -1229,6 +1283,8 @@ function refreshSubscriptions() {
   const next = streamSymbols();
   const toUnsub = currentSubs.filter((s) => !next.includes(s));
   const toSub = next.filter((s) => !currentSubs.includes(s));
+
+  console.log(`[alpaca] subscribe=${toSub.join(",") || "—"} unsubscribe=${toUnsub.join(",") || "—"}`);
 
   if (toUnsub.length) stream.unsubscribeBars(toUnsub);
   if (toSub.length) stream.subscribeBars(toSub);

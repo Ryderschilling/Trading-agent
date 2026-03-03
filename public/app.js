@@ -300,7 +300,7 @@ function renderAPlusPings(alerts) {
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .filter((a) => {
       const k = classifyAlert(a);
-      return k === "ENTRY" || k === "FORMING" || k === "INVALID";
+      return k === "ENTRY";
     })
     .slice(0, 6);
 
@@ -566,6 +566,25 @@ if (socket) {
       }
     }
   });
+
+  socket.on("outcome", (payload) => {
+    try {
+      const o = payload?.outcome || null;
+      const id = String(o?.alertId || "");
+      if (!id) return;
+  
+      // Remove from local alerts so Activity Feed + A+ list can re-render cleanly
+      allAlerts = (allAlerts || []).filter((a) => String(a?.id || "") !== id);
+  
+      // Re-render the pieces that show "active" items
+      renderFeed(allAlerts);
+      renderAPlusPings(allAlerts);
+    } catch {
+      // ignore
+    }
+  });
+
+
 } else {
   // No socket available (likely static deployment). Still keep UI functional.
   if (socketDot) socketDot.classList.remove("on");

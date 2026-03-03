@@ -10,7 +10,6 @@
   </head>
 
   <body>
-    <!-- IMPORTANT: bg-wash must be a sibling overlay, not a wrapper -->
     <div class="bg-wash"></div>
 
     <header class="topbar">
@@ -40,238 +39,247 @@
     <main class="shell">
       <section class="rules-layout">
 
-<!-- Strategies -->
-<section class="card strategies-card">
-  <div class="card-head">
-    <div>
-      <div class="card-title">Strategies</div>
-    </div>
-    <div class="card-actions">
-    </div>
-  </div>
+        <!-- Strategies -->
+        <section class="card strategies-card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Strategies</div>
+            </div>
+            <div class="card-actions"></div>
+          </div>
 
+          <div id="strategiesList" class="strategy-list"></div>
+        </section>
 
-
-  <!-- Bible-style list container -->
-  <div id="strategiesList" class="strategy-list"></div>
-</section>
-
-<div id="rulesEditor" class="rules-editor">
-  <!-- New strategy editor bar (between Strategies and Scan) -->
-  <section class="card rules-editorbar" style="grid-column: 1 / -1;">
-    <div class="rules-topbar">
-      <div class="bar-field">
-        <input id="strategyName" class="input input-bar" placeholder="Strategy name (e.g. Break & Retest v3)" />
-        <span class="bar-caret">▾</span>
-      </div>
-      <button id="saveRulesBtn" class="btn btn-primary">Save Strategy</button>
-    </div>
-    <div class="small muted" style="padding: 10px 16px 14px 16px;">
-      Tip: Use <b>New Strategy</b> to load defaults, then edit the rules below and click <b>Save Strategy</b> to create a new version.
-    </div>
-  </section>
-
-  <!-- Scan -->
-  <div class="sectionTitle" style="grid-column: 1 / -1;">Scan</div>
-
-  <label class="small">
-    Candle size
-    <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
-      <option value="1">1 minute</option>
-      <option value="2">2 minute</option>
-      <option value="5">5 minute</option>
-      <option value="15">15 minute</option>
-      <option value="30">30 minute</option>
-      <option value="60">1 hour</option>
-      <option value="240">4 hour</option>
-      <option value="1440">1 day</option>
-      <option value="10080">1 week</option>
-    </select>
-  </label>
-
-  <label class="small">
-    Session
-    <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
-      <option value="RTH">RTH (Regular hours)</option>
-      <option value="ALL">Anytime (All sessions)</option>
-    </select>
-  </label>
-
-  <label class="small">
-    Universe
-    <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
-      <option value="WATCHLIST">Watchlist</option>
-      <option value="MAG7+INDEX">Mag 7 + Index</option>
-    </select>
-  </label>
-
-  <label class="small">
-    Premarket enabled (engine uses this)
-    <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
-      <option value="false">False</option>
-      <option value="true">True</option>
-    </select>
-  </label>
-
-  <label class="small">
-    Market bias required
-    <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
-      <option value="true">True</option>
-      <option value="false">False</option>
-    </select>
-  </label>
-
-            <!-- Technical Filters -->
-            <div class="sectionTitle" style="grid-column: 1 / -1;">Technical Filters</div>
-
-            <label class="small">
-              Retest tolerance % (engine uses this)
-              <input id="retestTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small">
-              RS window (5m bars) (engine uses this)
-              <input id="rsWindowBars5m" class="input" placeholder="24" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small">
-              Structure window (stored)
-              <input id="structureWindow" class="input" placeholder="100" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small">
-              Sector alignment enabled (engine uses this)
-              <select id="sectorAlignmentEnabled" class="input" style="width:100%; margin-top:6px;">
-                <option value="true">True</option>
-                <option value="false">False</option>
-              </select>
-            </label>
-
-            <label class="small">
-              Trigger type (stored)
-              <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
-                <option value="BREAK_RETEST">Break & Retest</option>
-                <option value="ORB">Opening Range Breakout</option>
-              </select>
-            </label>
-
-            <!-- ORB fields -->
-            <div id="orbFields" style="grid-column: 1 / -1; display:none; padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px;">
-              <div class="small muted" style="margin-bottom:8px;">
-                ORB: defines the opening range, then triggers on breakout + retest.
+        <div id="rulesEditor" class="rules-editor">
+          <!-- New strategy editor bar -->
+          <section class="card rules-editorbar" style="grid-column: 1 / -1;">
+            <div class="rules-topbar">
+              <div class="bar-field">
+                <input id="strategyName" class="input input-bar" placeholder="Strategy name (e.g. Break & Retest v3)" />
+                <span class="bar-caret">▾</span>
               </div>
+              <button id="saveRulesBtn" class="btn btn-primary">Save Strategy</button>
+            </div>
+            <div class="small muted" style="padding: 10px 16px 14px 16px;">
+              Tip: Use <b>New Strategy</b> to load defaults, then edit the rules below and click <b>Save Strategy</b> to create a new version.
+            </div>
+          </section>
+
+          <!-- Scan -->
+          <div class="sectionTitle" style="grid-column: 1 / -1;">Scan</div>
+
+          <label class="small">
+            Candle size
+            <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
+              <option value="1">1 minute</option>
+              <option value="2">2 minute</option>
+              <option value="5">5 minute</option>
+              <option value="15">15 minute</option>
+              <option value="30">30 minute</option>
+              <option value="60">1 hour</option>
+              <option value="240">4 hour</option>
+              <option value="1440">1 day</option>
+              <option value="10080">1 week</option>
+            </select>
+          </label>
+
+          <label class="small">
+            Session
+            <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
+              <option value="RTH">RTH (Regular hours)</option>
+              <option value="ALL">Anytime (All sessions)</option>
+            </select>
+          </label>
+
+          <label class="small">
+            Universe
+            <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
+              <option value="WATCHLIST">Watchlist</option>
+              <option value="MAG7+INDEX">Mag 7 + Index</option>
+            </select>
+          </label>
+
+          <label class="small">
+            Premarket enabled (engine uses this)
+            <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
+              <option value="false">False</option>
+              <option value="true">True</option>
+            </select>
+          </label>
+
+          <label class="small">
+            Market bias required
+            <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
+              <option value="true">True</option>
+              <option value="false">False</option>
+            </select>
+          </label>
+
+          <!-- Technical Filters -->
+          <div class="sectionTitle" style="grid-column: 1 / -1;">Technical Filters</div>
+
+          <label class="small">
+            Retest tolerance % (engine uses this)
+            <input id="retestTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <label class="small">
+            RS window (5m bars) (engine uses this)
+            <input id="rsWindowBars5m" class="input" placeholder="24" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <label class="small">
+            Structure window (stored)
+            <input id="structureWindow" class="input" placeholder="100" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <!-- NEW: EMA periods -->
+          <label class="small" style="grid-column: 1 / -1;">
+            EMA periods (1–500) (engine uses this)
+            <input
+              id="emaPeriods"
+              class="input"
+              placeholder="9,20,50,200"
+              style="width:100%; margin-top:6px;"
+            />
+            <div class="card-hint" style="margin-top:6px;">
+              Comma-separated list. Example: <b>9,20,50,200</b>. Max 50 periods.
+            </div>
+          </label>
+
+          <label class="small">
+            Sector alignment enabled (engine uses this)
+            <select id="sectorAlignmentEnabled" class="input" style="width:100%; margin-top:6px;">
+              <option value="true">True</option>
+              <option value="false">False</option>
+            </select>
+          </label>
+
+          <label class="small">
+            Trigger type (stored)
+            <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
+              <option value="BREAK_RETEST">Break & Retest</option>
+              <option value="ORB">Opening Range Breakout</option>
+            </select>
+          </label>
+
+          <!-- ORB fields -->
+          <div id="orbFields" style="grid-column: 1 / -1; display:none; padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px;">
+            <div class="small muted" style="margin-bottom:8px;">
+              ORB: defines the opening range, then triggers on breakout + retest.
+            </div>
+            <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
+              <label class="small">
+                ORB range minutes
+                <select id="orbRangeMin" class="input" style="width:100%; margin-top:6px;">
+                  <option value="5">5</option>
+                  <option value="10">10</option>
+                  <option value="15" selected>15</option>
+                  <option value="30">30</option>
+                </select>
+              </label>
+
+              <label class="small">
+                ORB entry mode
+                <select id="orbEntryMode" class="input" style="width:100%; margin-top:6px;">
+                  <option value="BREAK_RETEST" selected>Break & Retest</option>
+                  <option value="BREAK">Break only</option>
+                  <option value="RETEST">Retest only</option>
+                </select>
+              </label>
+
+              <label class="small">
+                ORB retest tolerance %
+                <input id="orbTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
+              </label>
+            </div>
+          </div>
+
+          <label class="small">
+            Long min bias score (0–100)
+            <input id="longMinBiasScore" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
+            <div class="card-hint" style="margin-top:6px;">Recommended scale: 50 neutral, 60+ bullish, 40- bearish.</div>
+          </label>
+
+          <label class="small">
+            Short max bias score (0–100)
+            <input id="shortMaxBiasScore" class="input" placeholder="40" style="width:100%; margin-top:6px;" />
+            <div class="card-hint" style="margin-top:6px;">If bias score ≤ this, shorts allowed.</div>
+          </label>
+
+          <div style="grid-column: 1 / -1;">
+            <div class="small muted" style="margin-bottom:6px;">Indicators to scan (stored)</div>
+            <label class="small" style="margin-right:14px;"><input id="indVwap" type="checkbox" /> VWAP</label>
+            <label class="small" style="margin-right:14px;"><input id="indMa" type="checkbox" /> Moving Averages</label>
+            <label class="small" style="margin-right:14px;"><input id="indRs" type="checkbox" /> Relative Strength</label>
+            <label class="small" style="margin-right:14px;"><input id="indVol" type="checkbox" /> Volume</label>
+          </div>
+
+          <!-- Post-signal Management -->
+          <div class="sectionTitle" style="grid-column: 1 / -1;">Post-signal Management</div>
+
+          <label class="small">
+            Target (R) (stored)
+            <input id="targetR" class="input" placeholder="2" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <label class="small">
+            Stop (R) (stored)
+            <input id="stopR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <label class="small">
+            Max hold (bars) (stored)
+            <input id="maxHoldBars" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
+          </label>
+
+          <label class="small" style="grid-column: 1 / -1;">
+            Trailing stop (stored)
+            <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; align-items:center;">
+              <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
+                <input id="moveBeEnabled" type="checkbox" />
+                Move stop to breakeven
+              </label>
+
+              <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
+                <input id="trailEnabled" type="checkbox" />
+                Trailing stop loss
+              </label>
+            </div>
+
+            <div id="moveBeFields" style="display:none; margin-top:10px;">
               <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
                 <label class="small">
-                  ORB range minutes
-                  <select id="orbRangeMin" class="input" style="width:100%; margin-top:6px;">
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                    <option value="15" selected>15</option>
-                    <option value="30">30</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  ORB entry mode
-                  <select id="orbEntryMode" class="input" style="width:100%; margin-top:6px;">
-                    <option value="BREAK_RETEST" selected>Break & Retest</option>
-                    <option value="BREAK">Break only</option>
-                    <option value="RETEST">Retest only</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  ORB retest tolerance %
-                  <input id="orbTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
+                  Move to BE when profit reaches (R)
+                  <input id="moveBeAtR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
                 </label>
               </div>
             </div>
 
-            <label class="small">
-              Long min bias score (0–100)
-              <input id="longMinBiasScore" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
-              <div class="card-hint" style="margin-top:6px;">Recommended scale: 50 neutral, 60+ bullish, 40- bearish.</div>
-            </label>
+            <div id="trailFields" style="display:none; margin-top:10px;">
+              <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
+                <label class="small">
+                  Start trailing when profit reaches (R)
+                  <input id="trailStartR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                </label>
 
-            <label class="small">
-              Short max bias score (0–100)
-              <input id="shortMaxBiasScore" class="input" placeholder="40" style="width:100%; margin-top:6px;" />
-              <div class="card-hint" style="margin-top:6px;">If bias score ≤ this, shorts allowed.</div>
-            </label>
-
-            <div style="grid-column: 1 / -1;">
-              <div class="small muted" style="margin-bottom:6px;">Indicators to scan (stored)</div>
-              <label class="small" style="margin-right:14px;"><input id="indVwap" type="checkbox" /> VWAP</label>
-              <label class="small" style="margin-right:14px;"><input id="indMa" type="checkbox" /> Moving Averages</label>
-              <label class="small" style="margin-right:14px;"><input id="indRs" type="checkbox" /> Relative Strength</label>
-              <label class="small" style="margin-right:14px;"><input id="indVol" type="checkbox" /> Volume</label>
+                <label class="small">
+                  Trail stop by (R)
+                  <input id="trailByR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                </label>
+              </div>
             </div>
+          </label>
 
-            <!-- Post-signal Management -->
-            <div class="sectionTitle" style="grid-column: 1 / -1;">Post-signal Management</div>
-
-            <label class="small">
-              Target (R) (stored)
-              <input id="targetR" class="input" placeholder="2" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small">
-              Stop (R) (stored)
-              <input id="stopR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small">
-              Max hold (bars) (stored)
-              <input id="maxHoldBars" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
-            </label>
-
-            <label class="small" style="grid-column: 1 / -1;">
-              Trailing stop (stored)
-              <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; align-items:center;">
-                <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
-                  <input id="moveBeEnabled" type="checkbox" />
-                  Move stop to breakeven
-                </label>
-
-                <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
-                  <input id="trailEnabled" type="checkbox" />
-                  Trailing stop loss
-                </label>
-              </div>
-
-              <div id="moveBeFields" style="display:none; margin-top:10px;">
-                <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
-                  <label class="small">
-                    Move to BE when profit reaches (R)
-                    <input id="moveBeAtR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                  </label>
-                </div>
-              </div>
-
-              <div id="trailFields" style="display:none; margin-top:10px;">
-                <div class="formGrid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px;">
-                  <label class="small">
-                    Start trailing when profit reaches (R)
-                    <input id="trailStartR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                  </label>
-
-                  <label class="small">
-                    Trail stop by (R)
-                    <input id="trailByR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                  </label>
-                </div>
-              </div>
-            </label>
-
-            <label class="small">
-              Exit on market bias flip (stored)
-              <select id="exitOnBiasFlip" class="input" style="width:100%; margin-top:6px;">
-                <option value="false">False</option>
-                <option value="true">True</option>
-              </select>
-            </label>
-          </div>
-        </section>
+          <label class="small">
+            Exit on market bias flip (stored)
+            <select id="exitOnBiasFlip" class="input" style="width:100%; margin-top:6px;">
+              <option value="false">False</option>
+              <option value="true">True</option>
+            </select>
+          </label>
+        </div>
       </section>
     </main>
 

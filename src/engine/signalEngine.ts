@@ -8,6 +8,13 @@ export type EngineConfig = {
   timeframeMin: number;
   retestTolerancePct: number;
   rsWindowBars5m: number;
+
+  /**
+   * Optional EMA periods to compute on the engine's bar timeframe.
+   * Allowed: integers 1..500
+   * Example: [9, 20, 50, 200]
+   */
+  emaPeriods?: number[];
 };
 
 export type SymbolContext = {
@@ -17,6 +24,9 @@ export type SymbolContext = {
 
   lastMarket?: MarketDirection;
   lastRS?: RelativeStrength;
+
+  // EMA values keyed by period
+  ema?: Record<number, number>;
 
   tapState?: {
     key: string;
@@ -37,12 +47,46 @@ export type FormingCandidate = {
   score: number;
 };
 
+function clampInt(n: any, lo: number, hi: number): number | null {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  const i = Math.floor(x);
+  if (i < lo || i > hi) return null;
+  return i;
+}
+
+function uniqSorted(nums: number[]): number[] {
+  return Array.from(new Set(nums)).sort((a, b) => a - b);
+}
+
+function sanitizeEmaPeriods(input: any): number[] {
+  if (!Array.isArray(input)) return [];
+  const cleaned = input
+    .map((x) => clampInt(x, 1, 500))
+    .filter((x): x is number => x != null);
+
+  // You can raise this later, but keep a cap to avoid heavy CPU on every bar.
+  // (Each symbol * each period is updated every bar.)
+  const unique = uniqSorted(cleaned);
+  return unique.slice(0, 50);
+}
+
+function emaAlpha(period: number) {
+  // standard EMA smoothing
+  return 2 / (period + 1);
+}
+
 export class SignalEngine {
   private cfg: EngineConfig;
   private ctx: Map<string, SymbolContext> = new Map();
+  private emaPeriods: number[] = [];
 
   constructor(cfg: EngineConfig) {
     this.cfg = cfg;
+    this.emaPeriods = sanitizeEmaPeriods(cfg.emaPeriods);
+
+    // Optional: if you want a sensible default when none provided:
+    // this.emaPeriods = this.emaPeriods.length ? this.emaPeriods : [9, 20, 50, 200];
   }
 
   getFormingCandidates(args: { lastPrice: (symbol: string) => number | null }): FormingCandidate[] {
@@ -71,17 +115,38 @@ export class SignalEngine {
 
   ensureSymbol(symbol: string, levels: Levels) {
     if (!this.ctx.has(symbol)) {
-      this.ctx.set(symbol, { levels, bars5: [], state: { state: "IDLE" } });
+      this.ctx.set(symbol, { levels, bars5: [], state: { state: "IDLE" }, ema: {} });
     } else {
-      this.ctx.get(symbol)!.levels = levels;
+      const c = this.ctx.get(symbol)!;
+      c.levels = levels;
+      if (!c.ema) c.ema = {};
     }
   }
 
   pushBar5(symbol: string, bar: Bar5) {
     const c = this.ctx.get(symbol);
     if (!c) return;
+
     c.bars5.push(bar);
     if (c.bars5.length > 500) c.bars5.shift();
+
+    // Update EMA snapshot incrementally
+    if (this.emaPeriods.length) {
+      if (!c.ema) c.ema = {};
+      const close = Number(bar.c);
+      if (Number.isFinite(close)) {
+        for (const p of this.emaPeriods) {
+          const prev = c.ema[p];
+          if (!Number.isFinite(prev)) {
+            // seed EMA with first close
+            c.ema[p] = close;
+          } else {
+            const a = emaAlpha(p);
+            c.ema[p] = prev + a * (close - prev);
+          }
+        }
+      }
+    }
   }
 
   evaluateSymbol(args: {
@@ -225,7 +290,10 @@ export class SignalEngine {
 
     if (!touched) return null;
 
+    // Once we fire an entry, this setup is no longer "forming".
     ctx.tapState.canFire = false;
+    ctx.state = { state: "COOLDOWN", untilBarTime: Date.now() + 2 * this.cfg.timeframeMin * 60_000 };
+    ctx.tapState = undefined;
 
     return this.emit(symbol, marketDir, rs, s.dir, s.levelType, s.levelPrice, close, "A+ ENTRY (1m TAP)");
   }
@@ -264,7 +332,7 @@ export class SignalEngine {
     const structureLevel = broken ? broken.levelPrice : levelPrice;
     const breakBarTime = broken ? broken.breakBarTime : null;
 
-    return {
+    const a: Alert = {
       id: crypto.randomBytes(12).toString("hex"),
       ts: Date.now(),
       symbol,
@@ -278,5 +346,12 @@ export class SignalEngine {
       close,
       message
     };
+
+    // Safe additive metadata: EMA snapshot for UI/debug (doesn't break old consumers)
+    if (ctx?.ema && Object.keys(ctx.ema).length) {
+      (a as any).meta = { ...(a as any).meta, ema: ctx.ema };
+    }
+
+    return a;
   }
 }

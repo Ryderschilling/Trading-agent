@@ -20,15 +20,18 @@ export function attachRealtime(
     });
   });
 
-  return {
-    broadcastAlert(alert: Alert) {
-      io.emit("alert", alert);
-    },
-    broadcastWatchlist(symbols: string[]) {
-      io.emit("watchlist", { symbols });
-    },
-    broadcastSignals(signals: any) {
-      io.emit("signals", { signals });
-    }
-  };
+return {
+    broadcastAlert(alert: Alert) {
+      io.emit("alert", alert);
+    },
+    broadcastOutcome(outcome: any) {
+      io.emit("outcome", { outcome });
+    },
+    broadcastWatchlist(symbols: string[]) {
+      io.emit("watchlist", { symbols });
+    },
+    broadcastSignals(signals: any) {
+      io.emit("signals", { signals });
+    }
+  };
 }

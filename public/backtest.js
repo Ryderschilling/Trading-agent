@@ -22,8 +22,17 @@ if (timeframeSelect) {
   
     const metricsGrid = $("metricsGrid");
     const equityCanvas = $("equityCanvas");
+
 const distCanvas = $("distCanvas");
 const distMeta = $("distMeta");
+
+// NEW analytics
+// NEW analytics (grid IDs)
+const rollingWinCanvas = $("rollingWinCanvas");
+const rollingWinMeta = $("rollingWinMeta");
+
+const exitReasonsBody = $("exitReasonsBody");
+const dowBody = $("dowBody");
     const tradeTableBody = $("tradesBody");
     const sortSelect = $("sortSelect");
   
@@ -137,7 +146,11 @@ const distMeta = $("distMeta");
   
       lastEquity = [];
       drawEquity([]);
-      drawHistogramFromTrades([]);
+drawHistogramFromTrades([]);
+drawRollingWinRate([]);
+if (exitReasonsBody) exitReasonsBody.innerHTML = "";
+if (dowBody) dowBody.innerHTML = "";
+if (rollingWinMeta) rollingWinMeta.textContent = "";
   
       lastTrades = [];
       if (tradeTableBody) tradeTableBody.innerHTML = "";
@@ -602,6 +615,230 @@ function drawHistogramFromTrades(trades) {
       `n=${n} • min ${min.toFixed(2)}R • max ${max.toFixed(2)}R • mean ${mean.toFixed(2)}R • bin ${step.toFixed(2)}R`;
   }
 }
+
+// ---------- Drawdown curve ----------
+function drawDrawdown(points) {
+  if (!ddCanvas) return;
+  const ctx = ddCanvas.getContext("2d");
+  if (!ctx) return;
+
+  const cssW = Math.max(1, ddCanvas.clientWidth || 1);
+  const cssH = Math.max(1, ddCanvas.clientHeight || 220);
+  const dpr = window.devicePixelRatio || 1;
+
+  const targetW = Math.floor(cssW * dpr);
+  const targetH = Math.floor(cssH * dpr);
+  if (ddCanvas.width !== targetW || ddCanvas.height !== targetH) {
+    ddCanvas.width = targetW;
+    ddCanvas.height = targetH;
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = cssW;
+  const h = cssH;
+  ctx.clearRect(0, 0, w, h);
+
+  const raw = Array.isArray(points) ? points : [];
+  const ys = raw.map((p) => Number(p?.drawdown)).filter(Number.isFinite);
+  if (ys.length < 2) {
+    if (ddMeta) ddMeta.textContent = "No drawdown data yet.";
+    return;
+  }
+
+  const minY = Math.min(...ys); // negative or 0
+  const maxY = 0;
+
+  const pad = (maxY - minY) * 0.08 || 0.5;
+  const lo = minY - pad;
+  const hi = maxY + pad;
+
+  const xForIdx = (i) => (i / (ys.length - 1)) * (w - 2) + 1;
+  const yForVal = (v) => {
+    const t = (v - lo) / (hi - lo);
+    return (1 - t) * (h - 2) + 1;
+  };
+
+  // baseline at 0
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  const y0 = yForVal(0);
+  ctx.beginPath();
+  ctx.moveTo(0, y0);
+  ctx.lineTo(w, y0);
+  ctx.stroke();
+
+  // line
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < ys.length; i++) {
+    const x = xForIdx(i);
+    const y = yForVal(ys[i]);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  const worst = Math.min(...ys);
+  if (ddMeta) ddMeta.textContent = `Worst DD: ${worst.toFixed(2)}R`;
+}
+
+// ---------- Rolling win rate ----------
+function computeRollingWinRate(trades, windowN = 20) {
+  const arr = Array.isArray(trades) ? trades : [];
+  const out = [];
+  const w = Math.max(2, Math.floor(windowN));
+
+  for (let i = 0; i < arr.length; i++) {
+    const start = Math.max(0, i - w + 1);
+    let wins = 0;
+    let n = 0;
+    for (let j = start; j <= i; j++) {
+      const r = Number(arr[j]?.rMult);
+      if (!Number.isFinite(r)) continue;
+      n++;
+      if (r > 0) wins++;
+    }
+    if (n > 0) out.push({ idx: i, winRate: wins / n });
+  }
+  return out;
+}
+
+function drawRollingWinRate(points) {
+  if (!rollingWinCanvas) return;
+  const ctx = rollingWinCanvas.getContext("2d");
+  if (!ctx) return;
+
+  const cssW = Math.max(1, rollCanvas.clientWidth || 1);
+  const cssH = Math.max(1, rollCanvas.clientHeight || 220);
+  const dpr = window.devicePixelRatio || 1;
+
+  const targetW = Math.floor(cssW * dpr);
+  const targetH = Math.floor(cssH * dpr);
+  if (rollCanvas.width !== targetW || rollCanvas.height !== targetH) {
+    rollCanvas.width = targetW;
+    rollCanvas.height = targetH;
+  }
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const w = cssW;
+  const h = cssH;
+  ctx.clearRect(0, 0, w, h);
+
+  const pts = Array.isArray(points) ? points : [];
+  if (pts.length < 2) {
+    if (rollMeta) rollMeta.textContent = "Not enough trades.";
+    return;
+  }
+
+  const xForIdx = (i) => (i / (pts.length - 1)) * (w - 2) + 1;
+  const yForVal = (v) => (1 - v) * (h - 2) + 1;
+
+  // grid lines at 50% and 70%
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.lineWidth = 1;
+  for (const p of [0.5, 0.7]) {
+    const y = yForVal(p);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const x = xForIdx(i);
+    const y = yForVal(pts[i].winRate);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  const last = pts[pts.length - 1].winRate;
+  if (rollingWinMeta) rollingWinMeta.textContent = `Latest: ${(last * 100).toFixed(1)}%`;
+}
+
+// ---------- Exit reason breakdown ----------
+function renderExitReasons(trades) {
+  if (!exitReasonsBody) return;
+  exitReasonsBody.innerHTML = "";
+
+  const arr = Array.isArray(trades) ? trades : [];
+  const total = arr.length || 0;
+
+  const counts = { STOP: 0, TARGET: 0, EOD: 0, OTHER: 0 };
+  for (const t of arr) {
+    const r = String(t?.exitReason || "").toUpperCase();
+    if (r === "STOP") counts.STOP++;
+    else if (r === "TARGET") counts.TARGET++;
+    else if (r === "EOD") counts.EOD++;
+    else counts.OTHER++;
+  }
+
+  const rows = Object.entries(counts)
+    .filter(([, c]) => c > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  for (const [k, c] of rows) {
+    const tr = document.createElement("tr");
+    const pct = total ? ((c / total) * 100).toFixed(1) + "%" : "—";
+    tr.innerHTML = `<td>${k}</td><td>${c}</td><td>${pct}</td>`;
+    exitReasonsBody.appendChild(tr);
+  }
+
+  if (!rows.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="3" class="small muted">No trades yet.</td>`;
+    exitReasonsBody.appendChild(tr);
+  }
+}
+
+// ---------- Day-of-week performance ----------
+function renderDayOfWeek(trades) {
+  if (!dowBody) return;
+  dowBody.innerHTML = "";
+
+  const arr = Array.isArray(trades) ? trades : [];
+  if (!arr.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="4" class="small muted">No trades yet.</td>`;
+    dowBody.appendChild(tr);
+    return;
+  }
+
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  const map = {};
+  for (const d of days) map[d] = { n: 0, wins: 0, sumR: 0 };
+
+  for (const t of arr) {
+    const ts = Number(t?.entryTs);
+    const r = Number(t?.rMult);
+    if (!Number.isFinite(ts) || !Number.isFinite(r)) continue;
+
+    const dow = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short"
+    }).format(new Date(ts));
+
+    if (!map[dow]) continue;
+    map[dow].n++;
+    map[dow].sumR += r;
+    if (r > 0) map[dow].wins++;
+  }
+
+  for (const d of days) {
+    const s = map[d];
+    const winp = s.n ? ((s.wins / s.n) * 100).toFixed(1) + "%" : "—";
+    const avgR = s.n ? (s.sumR / s.n).toFixed(2) : "—";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${d}</td><td>${s.n}</td><td>${winp}</td><td>${avgR}</td>`;
+    dowBody.appendChild(tr);
+  }
+}
   
     function renderTrades(trades) {
       if (!tradeTableBody) return;
@@ -688,9 +925,17 @@ function drawHistogramFromTrades(trades) {
             lastEquity = Array.isArray(eqRes) ? eqRes : (Array.isArray(eqRes?.equity) ? eqRes.equity : []);
   
             renderMetrics(run?.metrics || {});
-            drawEquity(lastEquity);
-            renderTrades(lastTrades);
-            drawHistogramFromTrades(lastTrades);
+drawEquity(lastEquity);
+drawDrawdown(lastEquity);
+
+renderTrades(lastTrades);
+drawHistogramFromTrades(lastTrades);
+
+const roll = computeRollingWinRate(lastTrades, 20);
+drawRollingWinRate(roll);
+
+renderExitReasons(lastTrades);
+renderDayOfWeek(lastTrades);
           }
   
           if (status === "FAILED") {

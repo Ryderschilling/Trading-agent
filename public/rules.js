@@ -24,6 +24,7 @@ let modalVersion = null;
   const retestTolerancePct = $("retestTolerancePct");
   const rsWindowBars5m = $("rsWindowBars5m");
   const structureWindow = $("structureWindow");
+  const emaPeriods = $("emaPeriods");
 
   const sectorAlignmentEnabled = $("sectorAlignmentEnabled");
   const triggerType = $("triggerType");
@@ -236,6 +237,7 @@ let modalVersion = null;
     if (retestTolerancePct) retestTolerancePct.value = String(c.retestTolerancePct ?? DEFAULT_RULES.retestTolerancePct);
     if (rsWindowBars5m) rsWindowBars5m.value = String(c.rsWindowBars5m ?? DEFAULT_RULES.rsWindowBars5m);
     if (structureWindow) structureWindow.value = String(c.structureWindow ?? DEFAULT_RULES.structureWindow);
+    if (emaPeriods) emaPeriods.value = Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "";
 
     if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = String(Boolean(c.sectorAlignmentEnabled ?? DEFAULT_RULES.sectorAlignmentEnabled));
     if (triggerType) triggerType.value = String(c.triggerType ?? DEFAULT_RULES.triggerType);
@@ -295,6 +297,8 @@ let modalVersion = null;
       retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
       rsWindowBars5m: asNum(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
       structureWindow: asNum(structureWindow?.value, DEFAULT_RULES.structureWindow),
+
+      emaPeriods: parseEmaPeriods(emaPeriods?.value),
   
       sectorAlignmentEnabled: asBool(sectorAlignmentEnabled?.value ?? DEFAULT_RULES.sectorAlignmentEnabled),
       triggerType: trig,
@@ -517,6 +521,15 @@ delBtn.addEventListener("click", async () => {
     if (post.trailEnabled) parts.push(`Trail start <b>${escapeHtml(String(post.trailStartR ?? "—"))}R</b> by <b>${escapeHtml(String(post.trailByR ?? "—"))}R</b>`);
 
     return parts.join(" &nbsp;•&nbsp; ");
+  }
+
+  function parseEmaPeriods(s) {
+    const out = String(s || "")
+      .split(",")
+      .map((x) => parseInt(x.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500);
+  
+    return Array.from(new Set(out)).sort((a,b) => a-b);
   }
 
   async function fetchRulesetByVersion(version) {

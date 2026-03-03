@@ -378,6 +378,75 @@
   </div>
 </section>
 
+<!-- ANALYTICS GRID (matches existing card UI) -->
+<div class="bt-analytics-grid">
+
+  <!-- Rolling win rate -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Rolling win rate</div>
+        <div class="card-hint">Win rate over the last N trades (default 20).</div>
+      </div>
+      <div class="card-actions">
+        <span id="rollingWinMeta" class="small muted"></span>
+      </div>
+    </div>
+
+    <div style="padding:12px;">
+      <canvas id="rollingWinCanvas" style="width:100%; height:220px;"></canvas>
+    </div>
+  </div>
+
+  <!-- Exit reasons -->
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Exit reasons</div>
+        <div class="card-hint">How trades ended.</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Reason</th>
+            <th style="width:90px;">Count</th>
+            <th style="width:90px;">%</th>
+          </tr>
+        </thead>
+        <tbody id="exitReasonsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Day-of-week performance -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Day-of-week performance</div>
+        <div class="card-hint">Average R by entry day (New York).</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:140px;">Day</th>
+            <th style="width:90px;">Trades</th>
+            <th style="width:90px;">Win %</th>
+            <th style="width:90px;">Avg R</th>
+          </tr>
+        </thead>
+        <tbody id="dowBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
       </section>
     </main>
 
