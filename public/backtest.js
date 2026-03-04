@@ -23,8 +23,12 @@ if (timeframeSelect) {
     const metricsGrid = $("metricsGrid");
     const equityCanvas = $("equityCanvas");
 
-const distCanvas = $("distCanvas");
-const distMeta = $("distMeta");
+    const distCanvas = $("distCanvas");
+    const distMeta = $("distMeta");
+    
+    // Optional (not always present in the HTML). If absent, functions must no-op safely.
+    const ddCanvas = $("ddCanvas");
+    const ddMeta = $("ddMeta");
 
 // NEW analytics
 // NEW analytics (grid IDs)
@@ -710,15 +714,15 @@ function drawRollingWinRate(points) {
   const ctx = rollingWinCanvas.getContext("2d");
   if (!ctx) return;
 
-  const cssW = Math.max(1, rollCanvas.clientWidth || 1);
-  const cssH = Math.max(1, rollCanvas.clientHeight || 220);
+  const cssW = Math.max(1, rollingWinCanvas.clientWidth || 1);
+  const cssH = Math.max(1, rollingWinCanvas.clientHeight || 220);
   const dpr = window.devicePixelRatio || 1;
 
   const targetW = Math.floor(cssW * dpr);
   const targetH = Math.floor(cssH * dpr);
-  if (rollCanvas.width !== targetW || rollCanvas.height !== targetH) {
-    rollCanvas.width = targetW;
-    rollCanvas.height = targetH;
+  if (rollingWinCanvas.width !== targetW || rollingWinCanvas.height !== targetH) {
+    rollingWinCanvas.width = targetW;
+    rollingWinCanvas.height = targetH;
   }
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -729,7 +733,7 @@ function drawRollingWinRate(points) {
 
   const pts = Array.isArray(points) ? points : [];
   if (pts.length < 2) {
-    if (rollMeta) rollMeta.textContent = "Not enough trades.";
+    if (rollingWinMeta) rollingWinMeta.textContent = "Not enough trades.";
     return;
   }
 
@@ -752,14 +756,18 @@ function drawRollingWinRate(points) {
   ctx.beginPath();
   for (let i = 0; i < pts.length; i++) {
     const x = xForIdx(i);
-    const y = yForVal(pts[i].winRate);
+    const y = yForVal(Number(pts[i]?.winRate) || 0);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
 
-  const last = pts[pts.length - 1].winRate;
-  if (rollingWinMeta) rollingWinMeta.textContent = `Latest: ${(last * 100).toFixed(1)}%`;
+  const last = Number(pts[pts.length - 1]?.winRate);
+  if (rollingWinMeta && Number.isFinite(last)) {
+    rollingWinMeta.textContent = `Latest: ${(last * 100).toFixed(1)}%`;
+  } else if (rollingWinMeta) {
+    rollingWinMeta.textContent = "";
+  }
 }
 
 // ---------- Exit reason breakdown ----------
