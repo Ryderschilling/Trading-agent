@@ -135,7 +135,11 @@ const db = openDb();
 
 try {
   const cutoff = Date.now() - (14 * 24 * 60 * 60_000); // 14 days
-  db.prepare(`DELETE FROM alerts WHERE ts < ?`).run(cutoff);
+  db.prepare(`
+    DELETE FROM alerts
+    WHERE ts < ?
+      AND id NOT IN (SELECT alert_id FROM outcomes)
+  `).run(cutoff);
 } catch {}
 
 // NOTE: loadActiveRuleset() returns the highest version with active=1 (per your db.ts query).
@@ -150,17 +154,41 @@ const backtestQueue = new BacktestQueue(db);
 // Ruleset name cache
 // ------------------------------------------------------------------
 let rulesetNameMap: Record<number, string> = {};
+let rulesetMetaMap: Record<number, { timeframeMin: number; emaPeriods: number[]; showVwap: boolean }> = {};
 
 function loadRulesetNames() {
   rulesetNameMap = {};
+  rulesetMetaMap = {};
+
   try {
-    const rows = db.prepare(`SELECT version, name FROM rulesets`).all() as any[];
+    const rows = db.prepare(`SELECT version, name, config_json FROM rulesets`).all() as any[];
     for (const r of rows) {
       const v = Number(r?.version ?? 0);
-      if (v > 0) rulesetNameMap[v] = String(r?.name ?? "");
+      if (!(v > 0)) continue;
+
+      rulesetNameMap[v] = String(r?.name ?? "");
+
+      let cfg: any = {};
+      try {
+        cfg = JSON.parse(String(r?.config_json || "{}"));
+      } catch {
+        cfg = {};
+      }
+
+      const tf = Number(cfg?.timeframeMin);
+      const timeframeMin = Number.isFinite(tf) && tf >= 1 ? Math.floor(tf) : 1;
+
+      const emaPeriods = Array.isArray(cfg?.emaPeriods)
+        ? cfg.emaPeriods.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 500)
+        : [];
+
+      const showVwap = Boolean(cfg?.indicators?.vwap);
+
+      rulesetMetaMap[v] = { timeframeMin, emaPeriods, showVwap };
     }
   } catch {
     rulesetNameMap = {};
+    rulesetMetaMap = {};
   }
 }
 loadRulesetNames();
@@ -389,7 +417,11 @@ const ALERT_TTL_MS = 6 * 60 * 60_000; // 6 hours
 
 // (optional but recommended) prune old rows from DB so it stays small
 try {
-  db.prepare(`DELETE FROM alerts WHERE ts < ?`).run(Date.now() - ALERT_TTL_MS);
+  db.prepare(`
+    DELETE FROM alerts
+    WHERE ts < ?
+      AND id NOT IN (SELECT alert_id FROM outcomes)
+  `).run(Date.now() - ALERT_TTL_MS);
 } catch {}
 
 let alerts: Alert[] = db
@@ -829,6 +861,14 @@ function getDbRows() {
           ? `v${strategyVersion}`
           : "";
 
+          const meta = strategyVersion ? rulesetMetaMap[strategyVersion] : undefined;
+const timeframeMin = meta?.timeframeMin ?? 1;
+const emaPeriods = meta?.emaPeriods ?? [];
+const showVwap = meta?.showVwap ?? false;
+
+const stopTs = (o as any)?.stopTs ?? "";
+const endTs = (o as any)?.endTs ?? "";
+
       return {
         alertId: a.id,
         ts: a.ts,
@@ -853,7 +893,14 @@ function getDbRows() {
         ret30m: r("30m") ?? "",
         ret60m: r("60m") ?? "",
         strategyVersion,
-        strategyName
+strategyName,
+
+// chart/meta fields
+timeframeMin,
+emaPeriods,
+showVwap,
+stopTs,
+endTs,
       };
     });
 }

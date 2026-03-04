@@ -65,7 +65,7 @@ let modalVersion = null;
   // State
   let lastLoadedVersion = null;
 
-  // Defaults (safe)
+  // Defaults (safe) - used only for modal fallback / parsing
   const DEFAULT_RULES = {
     timeframeMin: 1,
     scanSession: "RTH",
@@ -90,11 +90,9 @@ let modalVersion = null;
       volume: false
     },
 
-    // MA config (top-level)
     emaPeriods: [],
     emaTrigger: "NONE",
 
-    // ORB stored config
     orb: {
       rangeMin: 15,
       entryMode: "BREAK_RETEST",
@@ -167,8 +165,7 @@ let modalVersion = null;
     }).format(d);
   }
 
-  // ---------- admin headers (optional) ----------
-  // If you later re-add an admin token input, it will work automatically if present.
+  // ---------- admin headers ----------
   function getAdminHeaders() {
     const tok = String(document.getElementById("adminToken")?.value || "").trim();
     return tok ? { "x-admin-token": tok } : {};
@@ -201,7 +198,8 @@ let modalVersion = null;
 
   // ---------- conditional UI ----------
   function applyConditionalUI() {
-    const trig = String(triggerType?.value || DEFAULT_RULES.triggerType);
+    // IMPORTANT: allow truly blank triggerType in builder
+    const trig = String(triggerType?.value || "");
     if (orbFields) orbFields.style.display = trig === "ORB" ? "block" : "none";
 
     const maOn = Boolean(indMa?.checked);
@@ -218,11 +216,11 @@ let modalVersion = null;
     const tf = String(timeframeMin?.value || "—");
     const sess = String(scanSession?.value || "—");
     const uni = String(scanUniverse?.value || "—");
-    const pm = String(premarketEnabled?.value || "false") === "true" ? "On" : "Off";
-    const biasReq = String(marketBiasRequired?.value || "false") === "true" ? "On" : "Off";
+    const pm = String(premarketEnabled?.value || "—");
+    const biasReq = String(marketBiasRequired?.value || "—");
 
     if (sumScan) {
-      sumScan.textContent = `${tf}m • ${sess} • ${uni} • Premarket: ${pm} • Bias required: ${biasReq}`;
+      sumScan.textContent = `${tf ? `${tf}m` : "—"} • ${sess || "—"} • ${uni || "—"} • Premarket: ${pm || "—"} • Bias required: ${biasReq || "—"}`;
     }
 
     const trig = String(triggerType?.value || "—");
@@ -232,15 +230,17 @@ let modalVersion = null;
         const m = String(orbEntryMode?.value || "—");
         const t = String(orbTolerancePct?.value || "—");
         sumTrigger.textContent = `ORB • Range ${r}m • Mode ${m} • Tol ${t}%`;
-      } else {
+      } else if (trig === "BREAK_RETEST") {
         sumTrigger.textContent = `Break & Retest`;
+      } else {
+        sumTrigger.textContent = `—`;
       }
     }
 
     const rt = String(retestTolerancePct?.value || "—");
     const rs = String(rsWindowBars5m?.value || "—");
     const sw = String(structureWindow?.value || "—");
-    const sec = String(sectorAlignmentEnabled?.value || "false") === "true" ? "On" : "Off";
+    const sec = String(sectorAlignmentEnabled?.value || "—");
     const lb = String(longMinBiasScore?.value || "—");
     const sb = String(shortMaxBiasScore?.value || "—");
 
@@ -258,7 +258,7 @@ let modalVersion = null;
       if (!inds.length) sumIndicators.textContent = "None";
       else {
         const maExtra = indMa?.checked
-          ? ` • EMA: ${String(emaPeriods?.value || "—")} • Trigger: ${String(emaTrigger?.value || "NONE")}`
+          ? ` • EMA: ${String(emaPeriods?.value || "—")} • Trigger: ${String(emaTrigger?.value || "—")}`
           : "";
         sumIndicators.textContent = `${inds.join(", ")}${maExtra}`;
       }
@@ -267,7 +267,7 @@ let modalVersion = null;
     const tr = String(targetR?.value || "—");
     const sr = String(stopR?.value || "—");
     const mh = String(maxHoldBars?.value || "—");
-    const flip = String(exitOnBiasFlip?.value || "false") === "true" ? "On" : "Off";
+    const flip = String(exitOnBiasFlip?.value || "—");
 
     const mbe = Boolean(moveBeEnabled?.checked);
     const trl = Boolean(trailEnabled?.checked);
@@ -283,66 +283,67 @@ let modalVersion = null;
   function fill(cfg) {
     const c = cfg || DEFAULT_RULES;
 
-    if (timeframeMin) timeframeMin.value = String(c.timeframeMin ?? DEFAULT_RULES.timeframeMin);
-
-    const sess = String(c.scanSession ?? DEFAULT_RULES.scanSession);
+    if (timeframeMin) timeframeMin.value = String(c.timeframeMin ?? "");
+    const sess = String(c.scanSession ?? "");
     if (scanSession) scanSession.value = (sess === "PREMARKET") ? "ALL" : sess;
 
-    if (scanUniverse) scanUniverse.value = String(c.scanUniverse ?? DEFAULT_RULES.scanUniverse);
-    if (premarketEnabled) premarketEnabled.value = String(Boolean(c.premarketEnabled ?? DEFAULT_RULES.premarketEnabled));
-    if (marketBiasRequired) marketBiasRequired.value = String(Boolean(c.marketBiasRequired ?? DEFAULT_RULES.marketBiasRequired));
+    if (scanUniverse) scanUniverse.value = String(c.scanUniverse ?? "");
+    if (premarketEnabled) premarketEnabled.value = String(c.premarketEnabled ?? "");
+    if (marketBiasRequired) marketBiasRequired.value = String(c.marketBiasRequired ?? "");
 
-    if (retestTolerancePct) retestTolerancePct.value = String(c.retestTolerancePct ?? DEFAULT_RULES.retestTolerancePct);
-    if (rsWindowBars5m) rsWindowBars5m.value = String(c.rsWindowBars5m ?? DEFAULT_RULES.rsWindowBars5m);
-    if (structureWindow) structureWindow.value = String(c.structureWindow ?? DEFAULT_RULES.structureWindow);
+    if (retestTolerancePct) retestTolerancePct.value = String(c.retestTolerancePct ?? "");
+    if (rsWindowBars5m) rsWindowBars5m.value = String(c.rsWindowBars5m ?? "");
+    if (structureWindow) structureWindow.value = String(c.structureWindow ?? "");
 
-    if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = String(Boolean(c.sectorAlignmentEnabled ?? DEFAULT_RULES.sectorAlignmentEnabled));
-    if (triggerType) triggerType.value = String(c.triggerType ?? DEFAULT_RULES.triggerType);
+    if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = String(c.sectorAlignmentEnabled ?? "");
+    if (triggerType) triggerType.value = String(c.triggerType ?? "");
 
-    if (longMinBiasScore) longMinBiasScore.value = String(clamp(c.longMinBiasScore ?? DEFAULT_RULES.longMinBiasScore, 0, 100));
-    if (shortMaxBiasScore) shortMaxBiasScore.value = String(clamp(c.shortMaxBiasScore ?? DEFAULT_RULES.shortMaxBiasScore, 0, 100));
+    if (longMinBiasScore) longMinBiasScore.value = String(c.longMinBiasScore ?? "");
+    if (shortMaxBiasScore) shortMaxBiasScore.value = String(c.shortMaxBiasScore ?? "");
 
-    const inds = c.indicators || DEFAULT_RULES.indicators;
+    const inds = c.indicators || {};
     if (indVwap) indVwap.checked = Boolean(inds.vwap);
     if (indMa) indMa.checked = Boolean(inds.movingAverages);
     if (indRs) indRs.checked = Boolean(inds.relativeStrength);
     if (indVol) indVol.checked = Boolean(inds.volume);
 
-    // MA settings only meaningful if MA enabled
     if (emaPeriods) {
       const arr = Array.isArray(c.emaPeriods) ? c.emaPeriods : [];
       emaPeriods.value = arr.length ? arr.join(",") : "";
     }
-    if (emaTrigger) emaTrigger.value = String(c.emaTrigger || "NONE");
+    if (emaTrigger) emaTrigger.value = String(c.emaTrigger ?? "");
 
-    // ORB
-    const orb = c.orb || DEFAULT_RULES.orb;
-    if (orbRangeMin) orbRangeMin.value = String(asNum(orb.rangeMin, DEFAULT_RULES.orb.rangeMin));
-    if (orbEntryMode) orbEntryMode.value = String(orb.entryMode || DEFAULT_RULES.orb.entryMode);
-    if (orbTolerancePct) orbTolerancePct.value = String(asNum(orb.tolerancePct, DEFAULT_RULES.orb.tolerancePct));
+    const orb = c.orb || {};
+    if (orbRangeMin) orbRangeMin.value = String(orb.rangeMin ?? "");
+    if (orbEntryMode) orbEntryMode.value = String(orb.entryMode ?? "");
+    if (orbTolerancePct) orbTolerancePct.value = String(orb.tolerancePct ?? "");
 
-    const post = c.post || DEFAULT_RULES.post;
-    if (targetR) targetR.value = String(post.targetR ?? DEFAULT_RULES.post.targetR);
-    if (stopR) stopR.value = String(post.stopR ?? DEFAULT_RULES.post.stopR);
-    if (maxHoldBars) maxHoldBars.value = String(post.maxHoldBars ?? DEFAULT_RULES.post.maxHoldBars);
-    if (exitOnBiasFlip) exitOnBiasFlip.value = String(Boolean(post.exitOnBiasFlip ?? DEFAULT_RULES.post.exitOnBiasFlip));
+    const post = c.post || {};
+    if (targetR) targetR.value = String(post.targetR ?? "");
+    if (stopR) stopR.value = String(post.stopR ?? "");
+    if (maxHoldBars) maxHoldBars.value = String(post.maxHoldBars ?? "");
+    if (exitOnBiasFlip) exitOnBiasFlip.value = String(post.exitOnBiasFlip ?? "");
 
     if (moveBeEnabled) moveBeEnabled.checked = Boolean(post.moveBeEnabled);
     if (trailEnabled) trailEnabled.checked = Boolean(post.trailEnabled);
 
-    if (moveBeAtR) moveBeAtR.value = String(asNum(post.moveBeAtR, DEFAULT_RULES.post.moveBeAtR));
-    if (trailStartR) trailStartR.value = String(asNum(post.trailStartR, DEFAULT_RULES.post.trailStartR));
-    if (trailByR) trailByR.value = String(asNum(post.trailByR, DEFAULT_RULES.post.trailByR));
+    if (moveBeAtR) moveBeAtR.value = String(post.moveBeAtR ?? "");
+    if (trailStartR) trailStartR.value = String(post.trailStartR ?? "");
+    if (trailByR) trailByR.value = String(post.trailByR ?? "");
 
     applyConditionalUI();
     updateSummaries();
   }
 
   function readForm() {
-    const trig = String(triggerType?.value || DEFAULT_RULES.triggerType);
+    // Save-time defaults if user leaves blank (builder can be blank, save cannot)
+    const tfRaw = String(timeframeMin?.value || "").trim();
+    const sessRaw = String(scanSession?.value || "").trim();
+    const uniRaw = String(scanUniverse?.value || "").trim();
+    const trigRaw = String(triggerType?.value || "").trim();
 
-    let tf = asNum(timeframeMin?.value, DEFAULT_RULES.timeframeMin);
-    tf = Math.max(1, Math.floor(tf));
+    const tf = Math.max(1, Math.floor(asNum(tfRaw, DEFAULT_RULES.timeframeMin)));
+    const trig = trigRaw || DEFAULT_RULES.triggerType;
 
     let orbRange = asNum(orbRangeMin?.value, DEFAULT_RULES.orb.rangeMin);
     orbRange = Math.max(1, Math.floor(orbRange));
@@ -356,8 +357,8 @@ let modalVersion = null;
 
     const config = {
       timeframeMin: tf,
-      scanSession: String(scanSession?.value || DEFAULT_RULES.scanSession),
-      scanUniverse: String(scanUniverse?.value || DEFAULT_RULES.scanUniverse),
+      scanSession: sessRaw || DEFAULT_RULES.scanSession,
+      scanUniverse: uniRaw || DEFAULT_RULES.scanUniverse,
       premarketEnabled: asBool(premarketEnabled?.value ?? DEFAULT_RULES.premarketEnabled),
       marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
 
@@ -378,14 +379,12 @@ let modalVersion = null;
         volume: Boolean(indVol?.checked)
       },
 
-      // ORB config always present (safe)
       orb: {
         rangeMin: orbRange,
         entryMode: String(orbEntryMode?.value || DEFAULT_RULES.orb.entryMode),
         tolerancePct: asNum(orbTolerancePct?.value, DEFAULT_RULES.orb.tolerancePct)
       },
 
-      // post
       post: {
         targetR: asNum(targetR?.value, DEFAULT_RULES.post.targetR),
         stopR: asNum(stopR?.value, DEFAULT_RULES.post.stopR),
@@ -401,132 +400,102 @@ let modalVersion = null;
       }
     };
 
-// Only include emaPeriods/emaTrigger when MA is enabled.
-// Backend throws if emaPeriods exists but is empty.
-if (maOn) {
-  const arr = Array.isArray(emaArr) ? emaArr : [];
-  config.emaPeriods = arr.length ? arr : [9, 20, 50, 200]; // safe default to avoid "emaPeriods empty"
-  config.emaTrigger = emaTrig || "NONE";
-} else {
-  // omit entirely
-  delete config.emaPeriods;
-  delete config.emaTrigger;
-}
+    // Only include emaPeriods/emaTrigger when MA is enabled.
+    // Backend throws if emaPeriods exists but is empty.
+    if (maOn) {
+      const arr = Array.isArray(emaArr) ? emaArr : [];
+      config.emaPeriods = arr.length ? arr : [9, 20, 50, 200];
+      config.emaTrigger = emaTrig || "NONE";
+    } else {
+      delete config.emaPeriods;
+      delete config.emaTrigger;
+    }
 
     return config;
   }
 
+  // ---------- summaries live events ----------
+  function bindLiveSummaryListeners() {
+    const els = [
+      timeframeMin, scanSession, scanUniverse, premarketEnabled, marketBiasRequired,
+      triggerType, orbRangeMin, orbEntryMode, orbTolerancePct,
+      retestTolerancePct, rsWindowBars5m, structureWindow, sectorAlignmentEnabled, longMinBiasScore, shortMaxBiasScore,
+      indVwap, indMa, indRs, indVol, emaPeriods, emaTrigger,
+      targetR, stopR, maxHoldBars, exitOnBiasFlip,
+      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR
+    ].filter(Boolean);
+
+    els.forEach((el) => {
+      el.addEventListener("input", () => { applyConditionalUI(); updateSummaries(); });
+      el.addEventListener("change", () => { applyConditionalUI(); updateSummaries(); });
+    });
+  }
+
+  // ---------- builder reset (TRULY blank) ----------
+  function clearEditor() {
+    if (strategyName) strategyName.value = "";
+    lastLoadedVersion = null;
+
+    // selects truly blank
+    if (timeframeMin) timeframeMin.value = "";
+    if (scanSession) scanSession.value = "";
+    if (scanUniverse) scanUniverse.value = "";
+    if (premarketEnabled) premarketEnabled.value = "";
+    if (marketBiasRequired) marketBiasRequired.value = "";
+
+    if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = "";
+    if (triggerType) triggerType.value = "";
+
+    if (orbRangeMin) orbRangeMin.value = "";
+    if (orbEntryMode) orbEntryMode.value = "";
+
+    if (emaTrigger) emaTrigger.value = "";
+    if (exitOnBiasFlip) exitOnBiasFlip.value = "";
+
+    // inputs blank
+    if (retestTolerancePct) retestTolerancePct.value = "";
+    if (rsWindowBars5m) rsWindowBars5m.value = "";
+    if (structureWindow) structureWindow.value = "";
+
+    if (longMinBiasScore) longMinBiasScore.value = "";
+    if (shortMaxBiasScore) shortMaxBiasScore.value = "";
+
+    if (orbTolerancePct) orbTolerancePct.value = "";
+
+    if (targetR) targetR.value = "";
+    if (stopR) stopR.value = "";
+    if (maxHoldBars) maxHoldBars.value = "";
+
+    if (emaPeriods) emaPeriods.value = "";
+
+    // checkboxes off
+    if (indVwap) indVwap.checked = false;
+    if (indMa) indMa.checked = false;
+    if (indRs) indRs.checked = false;
+    if (indVol) indVol.checked = false;
+
+    if (moveBeEnabled) moveBeEnabled.checked = false;
+    if (trailEnabled) trailEnabled.checked = false;
+
+    if (moveBeAtR) moveBeAtR.value = "";
+    if (trailStartR) trailStartR.value = "";
+    if (trailByR) trailByR.value = "";
+
+    applyConditionalUI();
+    updateSummaries();
+  }
+
   // ---------- strategies modal (View) ----------
-  function ensureModal() {
-    let wrap = document.getElementById("rsModalWrap");
-    if (wrap) return wrap;
+  async function fetchRulesetByVersion(version) {
+    const out = await jget(`/api/rulesets/${encodeURIComponent(version)}`);
+    if (!out || !out.ok || !out.ruleset) throw new Error("ruleset fetch failed");
+    return out.ruleset;
+  }
 
-    wrap = document.createElement("div");
-    wrap.id = "rsModalWrap";
-    wrap.style.position = "fixed";
-    wrap.style.inset = "0";
-    wrap.style.background = "rgba(0,0,0,0.35)";
-    wrap.style.display = "none";
-    wrap.style.alignItems = "center";
-    wrap.style.justifyContent = "center";
-    wrap.style.zIndex = "9999";
-    wrap.innerHTML = `
-    <div class="card rs-modal-card" style="width:min(980px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow:auto;">
-      <div class="card-head">
-        <div style="min-width:0;">
-          <div class="card-title" id="rsModalTitle">Strategy</div>
-          <div class="small muted" id="rsModalSub"></div>
-        </div>
-        <div class="card-actions">
-          <button class="btn" id="rsModalClose">Close</button>
-        </div>
-      </div>
-
-      <div class="rs-modal-body" id="rsModalView">
-        <div class="small muted" style="margin-bottom:8px;">Overview</div>
-        <div id="rsModalOverview" class="rs-kv"></div>
-
-        <div class="rs-divider"></div>
-
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-          <button class="btn btn-primary" id="rsModalEdit">Edit</button>
-          <button class="btn" id="rsModalToggle">Enable</button>
-        </div>
-
-        <div class="small muted" style="margin-bottom:8px;">Recent backtests</div>
-        <div id="rsModalBacktests" class="small"></div>
-      </div>
-
-      <div class="rs-modal-body" id="rsModalEditView" style="display:none;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
-          <div class="small muted">Editing in popup</div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button class="btn" id="rsModalDelete">Delete</button>
-            <button class="btn" id="rsModalDone">Done</button>
-          </div>
-        </div>
-        <div id="rsModalEditMount" class="rs-edit-mount"></div>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(wrap);
-
-    const doneBtn = document.getElementById("rsModalDone");
-    const delBtn = document.getElementById("rsModalDelete");
-
-    doneBtn.addEventListener("click", async () => {
-      try {
-        if (!modalVersion) return;
-
-        const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
-        const config = readForm();
-
-        await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
-
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-        await boot();
-      } catch (e) {
-        alert(`Save failed: ${String(e?.message || e)}`);
-      }
-    });
-
-    delBtn.addEventListener("click", async () => {
-      try {
-        if (!modalVersion) return;
-        const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
-        if (!ok) return;
-
-        const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
-
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-        await boot();
-      } catch (e) {
-        alert(`Delete failed: ${String(e?.message || e)}`);
-      }
-    });
-
-    const closeBtn = document.getElementById("rsModalClose");
-    closeBtn.addEventListener("click", () => {
-      restoreEditorFromModal();
-      showModalView("view");
-      wrap.style.display = "none";
-    });
-
-    wrap.addEventListener("click", (ev) => {
-      if (ev.target === wrap) {
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-      }
-    });
-
-    return wrap;
+  async function fetchRecentBacktests(strategyVersion, limit = 5) {
+    const res = await jget(`/api/backtests?limit=${encodeURIComponent(limit)}&strategyVersion=${encodeURIComponent(strategyVersion)}`);
+    const runs = Array.isArray(res?.runs) ? res.runs : [];
+    return runs;
   }
 
   function buildOverviewKVs(cfg) {
@@ -573,19 +542,13 @@ if (maOn) {
     return kv;
   }
 
-  async function fetchRulesetByVersion(version) {
-    const out = await jget(`/api/rulesets/${encodeURIComponent(version)}`);
-    if (!out || !out.ok || !out.ruleset) throw new Error("ruleset fetch failed");
-    return out.ruleset;
-  }
-
-  async function fetchRecentBacktests(strategyVersion, limit = 5) {
-    const res = await jget(`/api/backtests?limit=${encodeURIComponent(limit)}&strategyVersion=${encodeURIComponent(strategyVersion)}`);
-    const runs = Array.isArray(res?.runs) ? res.runs : [];
-    return runs;
-  }
-
   let editorHome = null;
+  let editorBarEl = null;
+
+  function setEditorPopupMode(on) {
+    if (!editorBarEl) editorBarEl = document.querySelector(".rules-editorbar");
+    if (editorBarEl) editorBarEl.style.display = on ? "none" : "";
+  }
 
   function moveEditorIntoModal() {
     const editor = document.getElementById("rulesEditor");
@@ -597,6 +560,7 @@ if (maOn) {
     }
 
     mount.appendChild(editor);
+    setEditorPopupMode(true);
     return true;
   }
 
@@ -607,6 +571,8 @@ if (maOn) {
       if (parent) parent.insertBefore(editor, next || null);
     } finally {
       editorHome = null;
+      setEditorPopupMode(false);
+      clearEditor();
     }
   }
 
@@ -622,6 +588,118 @@ if (maOn) {
       edit.style.display = "none";
       view.style.display = "block";
     }
+  }
+
+  function ensureModal() {
+    let wrap = document.getElementById("rsModalWrap");
+    if (wrap) return wrap;
+
+    wrap = document.createElement("div");
+    wrap.id = "rsModalWrap";
+    wrap.style.position = "fixed";
+    wrap.style.inset = "0";
+    wrap.style.background = "rgba(0,0,0,0.35)";
+    wrap.style.display = "none";
+    wrap.style.alignItems = "center";
+    wrap.style.justifyContent = "center";
+    wrap.style.zIndex = "9999";
+    wrap.innerHTML = `
+    <div class="card rs-modal-card" style="width:min(980px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow:auto;">
+      <div class="card-head">
+        <div style="min-width:0;">
+          <div class="card-title" id="rsModalTitle">Strategy</div>
+          <div class="small muted" id="rsModalSub"></div>
+        </div>
+        <div class="card-actions">
+          <button class="btn" id="rsModalClose">Close</button>
+        </div>
+      </div>
+
+      <div class="rs-modal-body" id="rsModalView">
+        <div class="small muted" style="margin-bottom:8px;">Overview</div>
+        <div id="rsModalOverview" class="rs-kv"></div>
+
+        <div class="rs-divider"></div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <button class="btn btn-primary" id="rsModalEdit">Edit</button>
+          <button class="btn" id="rsModalToggle">Enable</button>
+        </div>
+
+        <div class="small muted" style="margin-bottom:8px;">Recent backtests</div>
+        <div id="rsModalBacktests" class="small"></div>
+      </div>
+
+      <div class="rs-modal-body" id="rsModalEditView" style="display:none;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
+          <div class="small muted">Editing in popup</div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button class="btn" id="rsModalDelete">Delete</button>
+            <button class="btn" id="rsModalDone">Save</button>
+          </div>
+        </div>
+        <div id="rsModalEditMount" class="rs-edit-mount"></div>
+      </div>
+    </div>
+  `;
+    document.body.appendChild(wrap);
+
+    const doneBtn = document.getElementById("rsModalDone");
+    const delBtn = document.getElementById("rsModalDelete");
+
+    doneBtn.addEventListener("click", async () => {
+      try {
+        if (!modalVersion) return;
+
+        const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
+        const config = readForm();
+
+        await jpost(`/api/rules/update/${modalVersion}`, { name, config, changedBy: "ui" });
+
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+        await boot();
+      } catch (e) {
+        alert(`Save failed: ${String(e?.message || e)}`);
+      }
+    });
+
+    delBtn.addEventListener("click", async () => {
+      try {
+        if (!modalVersion) return;
+        const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
+        if (!ok) return;
+
+        const res = await fetch(`/api/rules/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
+
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+        await boot();
+      } catch (e) {
+        alert(`Delete failed: ${String(e?.message || e)}`);
+      }
+    });
+
+    const closeBtn = document.getElementById("rsModalClose");
+    closeBtn.addEventListener("click", () => {
+      restoreEditorFromModal();
+      showModalView("view");
+      wrap.style.display = "none";
+    });
+
+    wrap.addEventListener("click", (ev) => {
+      if (ev.target === wrap) {
+        restoreEditorFromModal();
+        showModalView("view");
+        wrap.style.display = "none";
+      }
+    });
+
+    return wrap;
   }
 
   async function openViewModal(rsRow) {
@@ -642,7 +720,6 @@ if (maOn) {
     titleEl.textContent = rsRow?.name ? String(rsRow.name) : `Strategy v${version}`;
     subEl.textContent = `v${version}${rsRow?.created_ts ? ` • ${new Date(Number(rsRow.created_ts)).toLocaleString()}` : ""}`;
 
-    // fetch full ruleset config
     let ruleset = null;
     try {
       ruleset = await fetchRulesetByVersion(version);
@@ -677,7 +754,6 @@ if (maOn) {
       `).join("");
     }
 
-    // recent backtests
     btEl.innerHTML = `<span class="small muted">Loading…</span>`;
     try {
       const runs = await fetchRecentBacktests(version, 5);
@@ -715,22 +791,19 @@ if (maOn) {
       btEl.innerHTML = `<span class="small muted">Backtest listing endpoint missing or failed.</span>`;
     }
 
-    // Edit button
     editBtn.disabled = false;
     editBtn.onclick = () => {
-      // load config into editor, then move editor into modal for editing
       fill(cfgObj);
       moveEditorIntoModal();
       showModalView("edit");
     };
 
-    // Enable/Disable button
     toggleBtn.disabled = false;
-    toggleBtn.textContent = rsRow?.enabled ? "Disable" : "Enable";
+    toggleBtn.textContent = rsRow?.active ? "Disable" : "Enable";
     toggleBtn.onclick = async () => {
       try {
         const to = !Boolean(rsRow?.active);
-await jpost(`/api/rules/toggle/${version}`, { active: to });
+        await jpost(`/api/rules/toggle/${version}`, { active: to });
         wrap.style.display = "none";
         restoreEditorFromModal();
         showModalView("view");
@@ -781,7 +854,7 @@ await jpost(`/api/rules/toggle/${version}`, { active: to });
 
         if (act === "toggle") {
           try {
-            const to = !Boolean(row?.enabled);
+            const to = !Boolean(row?.active);
             await jpost(`/api/rules/toggle/${v}`, { active: to });
             await boot();
           } catch (e) {
@@ -792,68 +865,44 @@ await jpost(`/api/rules/toggle/${version}`, { active: to });
     });
   }
 
-  // ---------- events ----------
-  function bindLiveSummaryListeners() {
-    const els = [
-      timeframeMin, scanSession, scanUniverse, premarketEnabled, marketBiasRequired,
-      triggerType, orbRangeMin, orbEntryMode, orbTolerancePct,
-      retestTolerancePct, rsWindowBars5m, structureWindow, sectorAlignmentEnabled, longMinBiasScore, shortMaxBiasScore,
-      indVwap, indMa, indRs, indVol, emaPeriods, emaTrigger,
-      targetR, stopR, maxHoldBars, exitOnBiasFlip,
-      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR
-    ].filter(Boolean);
-
-    els.forEach((el) => {
-      el.addEventListener("input", () => {
-        applyConditionalUI();
-        updateSummaries();
-      });
-      el.addEventListener("change", () => {
-        applyConditionalUI();
-        updateSummaries();
-      });
-    });
-  }
-
   // ---------- load + save ----------
   async function boot() {
     const res = await jget("/api/rulesets");
     const rows = Array.isArray(res?.rulesets) ? res.rulesets : [];
     renderStrategies(rows);
 
-    // pick active ruleset if provided
-    const active = rows.find((r) => r?.active) || rows.find((r) => r?.enabled) || rows[0] || null;
-    if (active?.version != null) {
-      lastLoadedVersion = Number(active.version);
-      const full = await fetchRulesetByVersion(Number(active.version));
-
-      let cfg =
-        full?.config ??
-        full?.config_json ??
-        full?.configJson ??
-        full?.configJsonStr ??
-        null;
-
-      if (typeof cfg === "string") {
-        try { cfg = JSON.parse(cfg); } catch { cfg = null; }
-      }
-
-      fill((cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES);
-      if (strategyName && active?.name) strategyName.value = String(active.name);
-    } else {
-      fill(DEFAULT_RULES);
-    }
+    // Never auto-load any strategy into the builder.
+    clearEditor();
   }
 
   async function saveNewVersion() {
+    // minimal required selects
+    if (!timeframeMin?.value) return alert("Select a candle size.");
+    if (!scanSession?.value) return alert("Select a session.");
+    if (!scanUniverse?.value) return alert("Select a universe.");
+    if (!triggerType?.value) return alert("Select a trigger type.");
+    if (!premarketEnabled?.value) return alert("Select premarket enabled.");
+    if (!marketBiasRequired?.value) return alert("Select market bias required.");
+    if (!sectorAlignmentEnabled?.value) return alert("Select sector alignment enabled.");
+    if (!exitOnBiasFlip?.value) return alert("Select exit on bias flip.");
+
+    // ORB required fields if ORB
+    if (triggerType?.value === "ORB") {
+      if (!orbRangeMin?.value) return alert("Select ORB range minutes.");
+      if (!orbEntryMode?.value) return alert("Select ORB entry mode.");
+    }
+
+    // MA required trigger if MA enabled
+    if (indMa?.checked && !emaTrigger?.value) return alert("Select EMA trigger (or disable Moving Averages).");
+
     const name = String(strategyName?.value || "").trim() || "Strategy";
     const config = readForm();
-  
-    // Create new ruleset version (correct backend route)
+
     const out = await jpost("/api/rules", { name, config, changedBy: "ui" });
     if (!out?.ok) throw new Error(out?.error || "save failed");
-  
+
     await boot();
+    clearEditor();
   }
 
   // ---------- init ----------
@@ -862,14 +911,14 @@ await jpost(`/api/rules/toggle/${version}`, { active: to });
     applyConditionalUI();
     updateSummaries();
 
-    // persist admin token (optional)
-const adminEl = document.getElementById("adminToken");
-if (adminEl) {
-  adminEl.value = localStorage.getItem("ADMIN_TOKEN") || "";
-  adminEl.addEventListener("input", () => {
-    localStorage.setItem("ADMIN_TOKEN", adminEl.value || "");
-  });
-}
+    // persist admin token
+    const adminEl = document.getElementById("adminToken");
+    if (adminEl) {
+      adminEl.value = localStorage.getItem("ADMIN_TOKEN") || "";
+      adminEl.addEventListener("input", () => {
+        localStorage.setItem("ADMIN_TOKEN", adminEl.value || "");
+      });
+    }
 
     if (saveRulesBtn) {
       saveRulesBtn.addEventListener("click", async () => {
@@ -884,7 +933,7 @@ if (adminEl) {
     boot().catch((e) => {
       console.error(e);
       alert(`Rules boot failed: ${String(e?.message || e)}`);
-      fill(DEFAULT_RULES);
+      clearEditor();
     });
   }
 

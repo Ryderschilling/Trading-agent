@@ -1683,27 +1683,24 @@ html[data-theme="light"] .topbar.is-solid{
   border-color: rgba(16,24,39,0.12) !important;
 }
 
-/* ---------------------------------- */
-/* Strategy Enable Button States      */
-/* ---------------------------------- */
-
-.strategy-enable-btn {
-  transition: all 0.2s ease;
+/* Strategy enable button states */
+.strategy-enable-btn.is-enabled{
+  /* silvery look */
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  color: rgba(255,255,255,0.92);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
 }
 
-/* ENABLED = silver watery look */
-.strategy-enable-btn.is-enabled {
-  background: linear-gradient(
-    145deg,
-    rgba(255,255,255,0.65),
-    rgba(220,220,220,0.35)
-  );
-  color: #111;
-  border: 1px solid rgba(255,255,255,0.6);
-  box-shadow:
-    inset 0 1px 2px rgba(255,255,255,0.6),
-    0 0 12px rgba(255,255,255,0.15);
-  backdrop-filter: blur(6px);
+/* IMPORTANT: keep it clickable */
+.strategy-enable-btn.is-enabled{
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.strategy-enable-btn.is-enabled:hover{
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.28);
 }
 
 /* Remove the divider line under the Strategies card title only */
@@ -1905,3 +1902,18 @@ html[data-theme="light"] .topbar.is-solid{
     border: 1px solid rgba(16,24,39,0.10);
     background: rgba(16,24,39,0.03);
   }
+
+  /* Outcomes modal: make the card opaque (not glassy/transparent) */
+#modal .card,
+#modal .rs-modal-card,
+#modal .modal-card {
+  background: rgba(20, 32, 54, 0.96) !important; /* deep blue */
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: none !important;
+}
+
+/* Make modal overlay slightly darker so content reads */
+#modal {
+  background: rgba(0, 0, 0, 0.55) !important;
+}

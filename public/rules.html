@@ -62,7 +62,7 @@
                 <input id="strategyName" class="input input-bar" placeholder="Strategy name (e.g. Break & Retest v3)" />
                 <span class="bar-caret">▾</span>
               </div>
-            
+
               <input
                 id="adminToken"
                 class="input"
@@ -70,7 +70,7 @@
                 style="width:180px;"
                 autocomplete="off"
               />
-            
+
               <button id="saveRulesBtn" class="btn btn-primary">Save Strategy</button>
             </div>
 
@@ -94,6 +94,7 @@
                 <label class="small">
                   Candle size
                   <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="1">1 minute</option>
                     <option value="2">2 minute</option>
                     <option value="5">5 minute</option>
@@ -109,6 +110,7 @@
                 <label class="small">
                   Session
                   <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="RTH">RTH (Regular hours)</option>
                     <option value="ALL">Anytime (All sessions)</option>
                   </select>
@@ -117,6 +119,7 @@
                 <label class="small">
                   Universe
                   <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="WATCHLIST">Watchlist</option>
                     <option value="MAG7+INDEX">Mag 7 + Index</option>
                   </select>
@@ -125,6 +128,7 @@
                 <label class="small">
                   Premarket enabled (engine uses this)
                   <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="false">False</option>
                     <option value="true">True</option>
                   </select>
@@ -133,6 +137,7 @@
                 <label class="small">
                   Market bias required
                   <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="true">True</option>
                     <option value="false">False</option>
                   </select>
@@ -156,6 +161,7 @@
                 <label class="small">
                   Trigger type (stored)
                   <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="BREAK_RETEST">Break & Retest</option>
                     <option value="ORB">Opening Range Breakout</option>
                   </select>
@@ -176,9 +182,10 @@
                   <label class="small">
                     ORB range minutes
                     <select id="orbRangeMin" class="input" style="width:100%; margin-top:6px;">
+                      <option value="" selected disabled>— Select —</option>
                       <option value="5">5</option>
                       <option value="10">10</option>
-                      <option value="15" selected>15</option>
+                      <option value="15">15</option>
                       <option value="30">30</option>
                     </select>
                   </label>
@@ -186,7 +193,8 @@
                   <label class="small">
                     ORB entry mode
                     <select id="orbEntryMode" class="input" style="width:100%; margin-top:6px;">
-                      <option value="BREAK_RETEST" selected>Break & Retest</option>
+                      <option value="" selected disabled>— Select —</option>
+                      <option value="BREAK_RETEST">Break & Retest</option>
                       <option value="BREAK">Break only</option>
                       <option value="RETEST">Retest only</option>
                     </select>
@@ -231,6 +239,7 @@
                 <label class="small">
                   Sector alignment enabled (engine uses this)
                   <select id="sectorAlignmentEnabled" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="true">True</option>
                     <option value="false">False</option>
                   </select>
@@ -285,6 +294,7 @@
                   <label class="small">
                     EMA trigger
                     <select id="emaTrigger" class="input" style="width:100%; margin-top:6px;">
+                      <option value="" selected disabled>— Select —</option>
                       <option value="NONE">None (display only)</option>
                       <option value="CROSS">Cross</option>
                       <option value="BREAK">Break</option>
@@ -330,6 +340,7 @@
                 <label class="small">
                   Exit on market bias flip (stored)
                   <select id="exitOnBiasFlip" class="input" style="width:100%; margin-top:6px;">
+                    <option value="" selected disabled>— Select —</option>
                     <option value="false">False</option>
                     <option value="true">True</option>
                   </select>

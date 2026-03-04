@@ -74,29 +74,30 @@
             <!-- Filters -->
             <div class="table-controls" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
               <select id="dbStrategy" class="input small"></select>
-
+            
               <input id="dbSym" class="input small" placeholder="Symbol" />
-
+            
               <select id="dbStatus" class="input small">
                 <option value="">All statuses</option>
                 <option value="LIVE">LIVE</option>
                 <option value="STOPPED">STOPPED</option>
                 <option value="COMPLETED">COMPLETED</option>
               </select>
-
+            
+              <!-- NEW: time range -->
               <select id="dbRange" class="input small">
-                <option value="ALL">All time</option>
-                <option value="DAY">Today (1 day)</option>
-                <option value="WEEK">Past week</option>
-                <option value="MONTH">Past month</option>
-                <option value="YEAR">Past year</option>
+                <option value="all">All time</option>
+                <option value="day">Today</option>
+                <option value="week">Past week</option>
+                <option value="month">Past month</option>
+                <option value="year">Past year</option>
               </select>
-
+            
               <label class="small" style="display:flex;align-items:center;">
                 <input id="dbStoppedOnly" type="checkbox" />
                 <span style="margin-left:4px;">Stopped only</span>
               </label>
-
+            
               <button id="refreshBtn" class="btn small">Refresh</button>
             </div>
 
@@ -125,7 +126,7 @@
 
     <!-- Modal (required for click → details + chart) -->
     <div id="modal">
-      <div class="card modal-card modal-inner">
+      <div class="card rs-modal-card modal-card modal-inner">
         <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
           <div style="min-width:0;">
             <div class="card-title">Outcome Detail</div>
