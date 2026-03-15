@@ -586,6 +586,23 @@ function snapshotStreamStats() {
   };
 }
 
+
+function computeMarketState() {
+  const now = Date.now();
+  const isRth = isRegularMarketHours(now);
+
+  const lastBarTs = streamStats.lastBarTs;
+  const lastBarAgeMs = lastBarTs != null ? now - lastBarTs : null;
+
+  // 1m bars can arrive a bit late; keep this tolerant but meaningful
+  const barsFresh = lastBarAgeMs != null ? lastBarAgeMs <= 90_000 : false;
+
+  // "Data Live" should ONLY be true during RTH and fresh bars are arriving
+  const dataLive = Boolean(isRth && barsFresh);
+
+  return { isRth, barsFresh, dataLive, lastBarTs, lastBarAgeMs };
+}
+
 // -----------------------------
 // Paths (stable even if process.cwd() changes)
 // -----------------------------
@@ -1476,6 +1493,8 @@ const app = createHttpApp({
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
   getCandles1m,
+
+  getMarketState: () => computeMarketState(),
 
   addSymbol: async (s: string) => {
     const sym = String(s || "").trim().toUpperCase();

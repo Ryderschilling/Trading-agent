@@ -56,7 +56,9 @@ const ALERTS_KEEP_MAX = 2000;
 
 // Health polling
 const HEALTH_POLL_MS = 3000;
-const LIVE_THRESHOLD_MS = 15_000;
+// Consider data "live" if we've received a bar within the last 5 minutes.
+// Your health screenshot shows bar ages ~1–2 minutes; 15s was far too strict.
+const LIVE_THRESHOLD_MS = 300_000;
 
 // -----------------------
 // Sound (user gesture gated)
@@ -146,44 +148,40 @@ function fmtAge(ms) {
 }
 
 // -----------------------
-// Health poll (DATA LIVE / STALE)
+// DATA LIVE dot (truthy): green only when RTH + fresh bars
 // -----------------------
-async function pollHealth() {
-  if (!dataLivePillEl) return;
-
+async function refreshDataLiveDot() {
   try {
     const r = await fetch("/api/health", { cache: "no-store" });
-    if (!r.ok) throw new Error("bad response");
     const j = await r.json();
+    const live = Boolean(j?.market?.dataLive);
 
-    const now = Date.now();
-    const lastBarTs = j?.stream?.lastBarTs ?? null;
+    // Dot = live only
+    if (socketDot) {
+      socketDot.classList.toggle("live", live);
+      socketDot.title = live ? "DATA LIVE (RTH + fresh bars)" : "Data not live";
+    }
 
-    if (typeof lastBarTs !== "number") {
+    // Pill (optional): keep consistent with dot
+    if (dataLivePillEl) {
+      dataIsLive = live;
+      dataLivePillEl.textContent = live ? "DATA: LIVE" : "DATA: —";
+      dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
+      dataLivePillEl.classList.add(live ? "bullish" : "neutral");
+    }
+  } catch {
+    if (socketDot) {
+      socketDot.classList.remove("live");
+      socketDot.title = "Health check failed";
+    }
+    if (dataLivePillEl) {
       dataIsLive = false;
       dataLivePillEl.textContent = "DATA: —";
       dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
       dataLivePillEl.classList.add("neutral");
-      return;
     }
-
-    const age = Math.max(0, now - lastBarTs);
-    const live = age <= LIVE_THRESHOLD_MS;
-    dataIsLive = live;
-
-    dataLivePillEl.textContent = live ? `DATA: LIVE (${fmtAge(age)})` : `DATA: STALE (${fmtAge(age)})`;
-    dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
-    dataLivePillEl.classList.add(live ? "bullish" : "bearish");
-  } catch {
-    dataIsLive = false;
-    dataLivePillEl.textContent = "DATA: ERROR";
-    dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
-    dataLivePillEl.classList.add("neutral");
   }
 }
-
-setInterval(pollHealth, HEALTH_POLL_MS);
-pollHealth();
 
 // -----------------------
 // Modal
@@ -384,6 +382,31 @@ async function refreshSignalsFromApi() {
   }
 }
 
+async function refreshAlertsFromApi() {
+  try {
+    const res = await fetch("/api/alerts", {
+      headers: { "Accept": "application/json" },
+      cache: "no-store"
+    });
+    if (!res.ok) throw new Error(`alerts fetch failed: ${res.status}`);
+
+    const data = await res.json().catch(() => null);
+
+    // /api/alerts returns { alerts: [...] }
+    const alerts = Array.isArray(data?.alerts) ? data.alerts : (Array.isArray(data) ? data : []);
+    allAlerts = alerts;
+    trimAlerts();
+
+    // Remove anything already finished so lists match your "active-only" UX
+    allAlerts = (allAlerts || []).filter((a) => !closedAlertIds.has(String(a?.id || "")));
+
+    renderFeed(allAlerts);
+    renderAPlusPings(allAlerts);
+  } catch (err) {
+    console.warn("[alerts] refresh failed", err);
+  }
+}
+
 function renderWatchlist(symbols) {
   if (!watchChips) return;
   watchChips.innerHTML = "";
@@ -421,7 +444,19 @@ function renderWatchlist(symbols) {
 }
 
 function renderSignals(s) {
-  if (!s) return;
+  if (!s) {
+    if (overallBiasPillEl) {
+      overallBiasPillEl.textContent = "NEUTRAL";
+      overallBiasPillEl.classList.remove("bullish", "bearish", "neutral");
+      overallBiasPillEl.classList.add("neutral");
+    }
+    if (marketBiasEl) marketBiasEl.textContent = "Market Bias: —";
+    if (indexStatusEl) indexStatusEl.textContent = "SPY: — • QQQ: —";
+    if (strongListEl) strongListEl.innerHTML = "";
+    if (weakListEl) weakListEl.innerHTML = "";
+    if (formingListEl) formingListEl.innerHTML = "";
+    return;
+  }
 
   if (!dataIsLive) {
     if (overallBiasPillEl) {
@@ -544,13 +579,6 @@ symInput?.addEventListener("keydown", (e) => {
 // Socket wiring (only if socket exists)
 // -----------------------
 if (socket) {
-  socket.on("connect", () => {
-    if (socketDot) socketDot.classList.add("on");
-  });
-
-  socket.on("disconnect", () => {
-    if (socketDot) socketDot.classList.remove("on");
-  });
 
   socket.on("init", (payload) => {
     allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
@@ -618,22 +646,22 @@ if (socket) {
 
 } else {
   // No socket available (likely static deployment). Still keep UI functional.
-  if (socketDot) socketDot.classList.remove("on");
+  if (socketDot) socketDot.classList.remove("live");
 }
 
 // -----------------------
-// Always-on fallback polling (keeps prod usable even without sockets)
+// Always-on polling (works with or without sockets)
 // -----------------------
 refreshWatchlistFromApi();
 refreshSignalsFromApi();
 refreshClosedAlertIdsFromApi();
+refreshAlertsFromApi();
+refreshDataLiveDot();
 
 setInterval(() => {
   refreshWatchlistFromApi();
   refreshSignalsFromApi();
   refreshClosedAlertIdsFromApi();
-
-  // after refreshing closed IDs, re-render so any finished trades disappear
-  renderFeed(allAlerts);
-  renderAPlusPings(allAlerts);
+  refreshAlertsFromApi();
+  refreshDataLiveDot();
 }, 5000);

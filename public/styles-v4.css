@@ -104,10 +104,10 @@ body{
 .status{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px;}
 .status-dot{
   width:10px; height:10px; border-radius:999px;
-  background: var(--bad);
-  border:1px solid rgba(0,0,0,0.08);
+  background: transparent;
+  border:1px solid rgba(0,0,0,0.18);
 }
-.status-dot.on{background:#000000;}
+.status-dot.live { background: var(--pos); }
 
 /* Buttons (unified matte bar style) */
 .btn{

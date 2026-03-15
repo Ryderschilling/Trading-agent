@@ -22,6 +22,14 @@ export function createHttpApp(args: {
   getStreamStats?: () => any;
   replay?: (symbols: string[], minutes: number, emitAlerts: boolean) => Promise<void>;
 
+  getMarketState?: () => {
+    isRth: boolean;
+    barsFresh: boolean;
+    dataLive: boolean;
+    lastBarTs: number | null;
+    lastBarAgeMs: number | null;
+  };
+
   // rules
   getRules?: () => any;
   listRulesets?: () => any[];
@@ -169,13 +177,18 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   // API: health
   // -----------------------------
   app.get("/api/health", (_req, res) => {
+    const now = Date.now();
+    const stream = args.getStreamStats ? args.getStreamStats() : null;
+    const market = args.getMarketState ? args.getMarketState() : null;
+  
     res.json({
       ok: true,
-      now: Date.now(),
-      iso: new Date().toISOString(),
-      stream: args.getStreamStats ? args.getStreamStats() : null
+      now,
+      iso: new Date(now).toISOString(),
+      stream,
+      market,
+      build: "health_fingerprint_v3_2026-03-15_2156"
     });
-  });
 
   // -----------------------------
   // API: replay

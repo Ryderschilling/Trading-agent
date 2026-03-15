@@ -65,6 +65,27 @@ function findAlertById(id) {
 }
 
 // -----------------------
+// DATA LIVE dot (truthy): green only when RTH + fresh bars
+// -----------------------
+async function refreshDataLiveDot() {
+  try {
+    const r = await fetch("/api/health", { cache: "no-store" });
+    const j = await r.json();
+    const live = Boolean(j?.market?.dataLive);
+
+    if (socketDot) {
+      socketDot.classList.toggle("live", live);
+      socketDot.title = live ? "DATA LIVE (RTH + fresh bars)" : "Data not live";
+    }
+  } catch {
+    if (socketDot) {
+      socketDot.classList.remove("live");
+      socketDot.title = "Health check failed";
+    }
+  }
+}
+
+// -----------------------
 // strategies dropdown
 // -----------------------
 async function loadStrategies() {
@@ -238,6 +259,24 @@ function drawChart(canvas, bars, opts) {
 
   const xOf = (i) => pad + i * candleW + Math.floor(candleW / 2);
 
+  // entry/exit indices for spotlight + markers
+  const entryTs = Number(opts?.entryTs || 0);
+  const exitTs = Number(opts?.exitTs || 0);
+
+  const closestIdx = (ts) => {
+    if (!Number.isFinite(ts) || ts <= 0) return null;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(Number(bars[i].ts) - ts);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  };
+
+  const entryIdx = closestIdx(entryTs);
+  const exitIdx = closestIdx(exitTs);
+
   // grid
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   for (let i = 0; i <= 4; i++) {
@@ -346,22 +385,51 @@ function drawChart(canvas, bars, opts) {
   drawHLine(levelPrice, "rgba(255,255,255,0.25)");
   drawHLine(structureLevel, "rgba(255,255,0,0.35)");
 
-  // entry / exit markers (cyan = entry, red = exit)
-  const entryTs = Number(opts?.entryTs || 0);
-  const exitTs = Number(opts?.exitTs || 0);
+  // -----------------------
+  // Trade spotlight: haze outside [entry..exit], clear inside
+  // Draw AFTER candles so the outside candles dim.
+  // -----------------------
+  if (entryIdx != null && exitIdx != null && exitIdx !== entryIdx) {
+    const leftIdx = Math.min(entryIdx, exitIdx);
+    const rightIdx = Math.max(entryIdx, exitIdx);
 
-  const closestIdx = (ts) => {
-    if (!Number.isFinite(ts) || ts <= 0) return null;
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < n; i++) {
-      const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) { bestD = d; best = i; }
-    }
-    return best;
-  };
+    const xL = xOf(leftIdx);
+    const xR = xOf(rightIdx);
 
-  const entryIdx = closestIdx(entryTs);
+    const topY = pad;
+    const botY = pad + chartH;
+
+    ctx.save();
+
+    // main haze blocks
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(pad, topY, Math.max(0, xL - pad), botY - topY);                 // left haze
+    ctx.fillRect(xR, topY, Math.max(0, (w - pad) - xR), botY - topY);            // right haze
+
+    // feather edges (soft gradient at entry/exit)
+    const feather = 28; // px
+    const gradL = ctx.createLinearGradient(xL - feather, 0, xL + feather, 0);
+    gradL.addColorStop(0, "rgba(0,0,0,0.55)");
+    gradL.addColorStop(0.5, "rgba(0,0,0,0.25)");
+    gradL.addColorStop(1, "rgba(0,0,0,0.00)");
+    ctx.fillStyle = gradL;
+    ctx.fillRect(xL - feather, topY, feather * 2, botY - topY);
+
+    const gradR = ctx.createLinearGradient(xR - feather, 0, xR + feather, 0);
+    gradR.addColorStop(0, "rgba(0,0,0,0.00)");
+    gradR.addColorStop(0.5, "rgba(0,0,0,0.25)");
+    gradR.addColorStop(1, "rgba(0,0,0,0.55)");
+    ctx.fillStyle = gradR;
+    ctx.fillRect(xR - feather, topY, feather * 2, botY - topY);
+
+    // subtle outline around the trade window
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.strokeRect(xL, topY, Math.max(1, xR - xL), botY - topY);
+
+    ctx.restore();
+  }
+
+  // entry / exit markers (cyan = entry, red = exit) ON TOP of haze
   if (entryIdx != null) {
     const x = xOf(entryIdx);
     ctx.strokeStyle = "rgba(0,200,255,0.95)";
@@ -371,7 +439,6 @@ function drawChart(canvas, bars, opts) {
     ctx.stroke();
   }
 
-  const exitIdx = closestIdx(exitTs);
   if (exitIdx != null) {
     const x = xOf(exitIdx);
     ctx.strokeStyle = "rgba(255,80,80,0.95)";
@@ -599,8 +666,8 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
     // lower sensitivity: bars-per-pixel based on viewport
     const barsPerPx = visible / Math.max(1, rect.width);
     const PAN_MULT = 0.6; // <— lower = less sensitive
-const deltaBars = Math.round(dx * barsPerPx * PAN_MULT);
-start = clampLocal(dragStartStart - deltaBars, 0, Math.max(0, total - visible));
+    const deltaBars = Math.round(dx * barsPerPx * PAN_MULT);
+    start = clampLocal(dragStartStart - deltaBars, 0, Math.max(0, total - visible));
     redraw();
   });
 
@@ -720,8 +787,6 @@ refreshBtn?.addEventListener("click", fetchDbRows);
 // socket wiring
 // -----------------------
 if (socket) {
-  socket.on("connect", () => socketDot?.classList.add("on"));
-  socket.on("disconnect", () => socketDot?.classList.remove("on"));
 
   socket.on("init", (payload) => {
     allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
@@ -733,9 +798,12 @@ if (socket) {
     fetchDbRows();
   });
 } else {
-  socketDot?.classList.remove("on");
+  socketDot?.classList.remove("live");
 }
 
 // boot
 loadStrategies().then(() => fetchDbRows());
 setInterval(fetchDbRows, 6000);
+
+refreshDataLiveDot();
+setInterval(refreshDataLiveDot, 5000);
