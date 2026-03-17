@@ -31,7 +31,7 @@ export type SymbolContext = {
   tapState?: {
     key: string;
     canFire: boolean;
-    tol: number;
+    tol: number; // absolute price tolerance
   };
 };
 
@@ -65,14 +65,12 @@ function sanitizeEmaPeriods(input: any): number[] {
     .map((x) => clampInt(x, 1, 500))
     .filter((x): x is number => x != null);
 
-  // You can raise this later, but keep a cap to avoid heavy CPU on every bar.
-  // (Each symbol * each period is updated every bar.)
+  // cap to avoid heavy CPU
   const unique = uniqSorted(cleaned);
   return unique.slice(0, 50);
 }
 
 function emaAlpha(period: number) {
-  // standard EMA smoothing
   return 2 / (period + 1);
 }
 
@@ -84,9 +82,6 @@ export class SignalEngine {
   constructor(cfg: EngineConfig) {
     this.cfg = cfg;
     this.emaPeriods = sanitizeEmaPeriods(cfg.emaPeriods);
-
-    // Optional: if you want a sensible default when none provided:
-    // this.emaPeriods = this.emaPeriods.length ? this.emaPeriods : [9, 20, 50, 200];
   }
 
   getFormingCandidates(args: { lastPrice: (symbol: string) => number | null }): FormingCandidate[] {
@@ -97,6 +92,7 @@ export class SignalEngine {
       const p = args.lastPrice(symbol);
       const distPct = p != null && s.levelPrice !== 0 ? Math.abs(p - s.levelPrice) / Math.abs(s.levelPrice) : null;
       const score = distPct == null ? 0 : Math.max(0, Math.min(100, 100 - distPct * 5000));
+
       out.push({
         symbol,
         dir: s.dir,
@@ -109,6 +105,7 @@ export class SignalEngine {
         score: Number(score.toFixed(1))
       });
     }
+
     out.sort((a, b) => (b.score - a.score) || ((a.distancePct ?? 1e9) - (b.distancePct ?? 1e9)));
     return out;
   }
@@ -138,7 +135,6 @@ export class SignalEngine {
         for (const p of this.emaPeriods) {
           const prev = c.ema[p];
           if (!Number.isFinite(prev)) {
-            // seed EMA with first close
             c.ema[p] = close;
           } else {
             const a = emaAlpha(p);
@@ -155,8 +151,9 @@ export class SignalEngine {
     spyBars5: Bar5[];
     symBars5: Bar5[];
     symLevels: Levels;
+    nowTs?: number; // pass bar-close ts from caller for replay determinism
   }): Alert | null {
-    const { symbol, marketDir, spyBars5, symBars5, symLevels } = args;
+    const { symbol, marketDir, spyBars5, symBars5, symLevels, nowTs } = args;
 
     const last = symBars5.at(-1);
     if (!last) return null;
@@ -169,7 +166,7 @@ export class SignalEngine {
     if (marketDir === "NEUTRAL") {
       ctx.lastRS = "NONE";
       if (ctx.state.state === "BROKEN") {
-        return this.emitAndCooldown(symbol, marketDir, "NONE", "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, "NONE", "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
       return null;
     }
@@ -185,7 +182,7 @@ export class SignalEngine {
     ctx.lastRS = rs;
 
     if (ctx.state.state === "COOLDOWN") {
-      // Use bar time, not wall clock, so replay/backfill can't spam signals
+      // compare against bar timestamps, not wall-clock
       if (last.t > ctx.state.untilBarTime) ctx.state = { state: "IDLE" };
       else return null;
     }
@@ -194,21 +191,21 @@ export class SignalEngine {
       const s = ctx.state;
 
       if (s.dir !== dir) {
-        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
 
       if (dir === "CALL" && rs !== "STRONG") {
-        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
       if (dir === "PUT" && rs !== "WEAK") {
-        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
 
       if (s.dir === "CALL" && last.c < s.levelPrice) {
-        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
       if (s.dir === "PUT" && last.c > s.levelPrice) {
-        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN");
+        return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
 
       return null;
@@ -223,7 +220,7 @@ export class SignalEngine {
           ctx.state = { state: "BROKEN", dir: "CALL", levelType: lt, levelPrice: lp, breakBarTime: last.t };
           const tol = Math.abs(lp) * this.cfg.retestTolerancePct;
           ctx.tapState = { key: `${symbol}|CALL|${lt}|${lp}`, canFire: true, tol };
-          return this.emit(symbol, marketDir, rs, "CALL", lt, lp, last.c, "A+ SETUP FORMING — WAIT FOR RETEST");
+          return this.emit(symbol, marketDir, rs, "CALL", lt, lp, last.c, "A+ SETUP FORMING — WAIT FOR RETEST", nowTs ?? last.t);
         }
       }
     } else {
@@ -235,7 +232,7 @@ export class SignalEngine {
           ctx.state = { state: "BROKEN", dir: "PUT", levelType: lt, levelPrice: lp, breakBarTime: last.t };
           const tol = Math.abs(lp) * this.cfg.retestTolerancePct;
           ctx.tapState = { key: `${symbol}|PUT|${lt}|${lp}`, canFire: true, tol };
-          return this.emit(symbol, marketDir, rs, "PUT", lt, lp, last.c, "A+ SETUP FORMING — WAIT FOR RETEST");
+          return this.emit(symbol, marketDir, rs, "PUT", lt, lp, last.c, "A+ SETUP FORMING — WAIT FOR RETEST", nowTs ?? last.t);
         }
       }
     }
@@ -243,6 +240,10 @@ export class SignalEngine {
     return null;
   }
 
+  /**
+   * 1m “tap” entry. Caller supplies the current effective market direction.
+   * This is what makes replay behave like live (entry can happen inside a timeframe bucket).
+   */
   onMinuteBar(args: {
     symbol: string;
     ts: number;
@@ -260,7 +261,9 @@ export class SignalEngine {
 
     const s = ctx.state;
 
+    // must occur after break bar
     if (ts <= s.breakBarTime) return null;
+
     if (marketDir === "NEUTRAL") return null;
 
     const expectedDir: Direction = marketDir === "BULLISH" ? "CALL" : "PUT";
@@ -270,17 +273,22 @@ export class SignalEngine {
     if (s.dir === "CALL" && rs !== "STRONG") return null;
     if (s.dir === "PUT" && rs !== "WEAK") return null;
 
-    if (!ctx.tapState || ctx.tapState.key !== `${symbol}|${s.dir}|${s.levelType}|${s.levelPrice}`) {
+    // ensure tap state
+    const key = `${symbol}|${s.dir}|${s.levelType}|${s.levelPrice}`;
+    if (!ctx.tapState || ctx.tapState.key !== key) {
       const tol = Math.abs(s.levelPrice) * this.cfg.retestTolerancePct;
-      ctx.tapState = { key: `${symbol}|${s.dir}|${s.levelType}|${s.levelPrice}`, canFire: true, tol };
+      ctx.tapState = { key, canFire: true, tol };
     }
 
     const tol = ctx.tapState.tol;
+
+    // touched if the 1m candle range overlaps the level +/- tol
     const touched = low <= s.levelPrice + tol && high >= s.levelPrice - tol;
 
     const disengageDist = tol * 2;
 
     if (!ctx.tapState.canFire) {
+      // re-arm if we moved away enough
       if (s.dir === "CALL") {
         if (close > s.levelPrice + disengageDist) ctx.tapState.canFire = true;
       } else {
@@ -291,12 +299,14 @@ export class SignalEngine {
 
     if (!touched) return null;
 
-    // Once we fire an entry, this setup is no longer "forming".
+    // fire entry
     ctx.tapState.canFire = false;
-    ctx.state = { state: "COOLDOWN", untilBarTime: Date.now() + 2 * this.cfg.timeframeMin * 60_000 };
+
+    // IMPORTANT: cooldown must be bar-time-based (use ts), not Date.now()
+    ctx.state = { state: "COOLDOWN", untilBarTime: ts + 2 * this.cfg.timeframeMin * 60_000 };
     ctx.tapState = undefined;
 
-    return this.emit(symbol, marketDir, rs, s.dir, s.levelType, s.levelPrice, close, "A+ ENTRY (1m TAP)");
+    return this.emit(symbol, marketDir, rs, s.dir, s.levelType, s.levelPrice, close, "A+ ENTRY (1m TAP)", ts);
   }
 
   private emitAndCooldown(
@@ -307,17 +317,18 @@ export class SignalEngine {
     level: LevelType | "—",
     levelPrice: number | null,
     close: number,
-    message: OutputMessage
+    message: OutputMessage,
+    nowTs?: number
   ): Alert {
-    const alert = this.emit(symbol, marketDir, rs, dir, level, levelPrice, close, message);
+    const alert = this.emit(symbol, marketDir, rs, dir, level, levelPrice, close, message, nowTs);
+
     const ctx = this.ctx.get(symbol);
     if (ctx) {
-      // Use wall-clock-independent cooldown
-      // untilBarTime is compared to bar timestamps in evaluateSymbol
-      const lastBarT = ctx.bars5.at(-1)?.t ?? Date.now();
+      const lastBarT = ctx.bars5.at(-1)?.t ?? (nowTs ?? Date.now());
       ctx.state = { state: "COOLDOWN", untilBarTime: lastBarT + 2 * this.cfg.timeframeMin * 60_000 };
       ctx.tapState = undefined;
     }
+
     return alert;
   }
 
@@ -329,7 +340,8 @@ export class SignalEngine {
     level: LevelType | "—",
     levelPrice: number | null,
     close: number,
-    message: OutputMessage
+    message: OutputMessage,
+    nowTs?: number
   ): Alert {
     const ctx = this.ctx.get(symbol);
     const broken = ctx?.state.state === "BROKEN" ? ctx.state : null;
@@ -338,7 +350,7 @@ export class SignalEngine {
 
     const a: Alert = {
       id: crypto.randomBytes(12).toString("hex"),
-      ts: Date.now(),
+      ts: nowTs ?? Date.now(),
       symbol,
       market: marketDir,
       rs,
@@ -351,7 +363,7 @@ export class SignalEngine {
       message
     };
 
-    // Safe additive metadata: EMA snapshot for UI/debug (doesn't break old consumers)
+    // Safe additive metadata: EMA snapshot for UI/debug
     if (ctx?.ema && Object.keys(ctx.ema).length) {
       (a as any).meta = { ...(a as any).meta, ema: ctx.ema };
     }

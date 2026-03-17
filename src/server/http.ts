@@ -22,6 +22,19 @@ export function createHttpApp(args: {
   getStreamStats?: () => any;
   replay?: (symbols: string[], minutes: number, emitAlerts: boolean) => Promise<void>;
 
+  runReplayBacktest?: (cfg: {
+    tickers: string[];
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
+    strategyVersion: number;
+    warmupMinutes?: number;
+
+    // NEW
+    baseEquity?: number;
+    compounding?: boolean;
+    positionPct?: number;
+  }) => Promise<any>;
+
   getMarketState?: () => {
     isRth: boolean;
     barsFresh: boolean;
@@ -68,6 +81,45 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
 }) {
   const app = express();
   app.use(express.json());
+
+  // -----------------------------
+// Backtests (REPLAY = live engine path)
+// -----------------------------
+app.post("/api/backtests/replay", express.json(), async (req, res) =>{
+  try {
+    if (!args.runReplayBacktest) return res.status(400).json({ ok: false, error: "replay backtest not enabled" });
+
+    const tickers = Array.isArray(req.body?.tickers) ? req.body.tickers : [];
+    const startDate = String(req.body?.startDate || "").trim();
+    const endDate = String(req.body?.endDate || "").trim();
+    const strategyVersion = Number(req.body?.strategyVersion);
+
+    if (!startDate || !endDate) return res.status(400).json({ ok: false, error: "startDate/endDate required" });
+    if (!Number.isFinite(strategyVersion) || strategyVersion <= 0)
+      return res.status(400).json({ ok: false, error: "strategyVersion required" });
+
+    const warmupMinutes = req.body?.warmupMinutes != null ? Number(req.body.warmupMinutes) : undefined;
+
+    const baseEquity = req.body?.baseEquity != null ? Number(req.body.baseEquity) : undefined;
+    const compounding = req.body?.compounding != null ? Boolean(req.body.compounding) : undefined;
+    const positionPct = req.body?.positionPct != null ? Number(req.body.positionPct) : undefined;
+
+    const out = await args.runReplayBacktest({
+      tickers,
+      startDate,
+      endDate,
+      strategyVersion,
+      warmupMinutes,
+      baseEquity,
+      compounding,
+      positionPct
+    });
+
+    res.json({ ok: true, result: out });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
 
   // -----------------------------
   // Admin auth (optional)
@@ -189,6 +241,7 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
       market,
       build: "health_fingerprint_v3_2026-03-15_2156"
     });
+  });
 
   // -----------------------------
   // API: replay

@@ -32,3 +32,6 @@ data/*.sqlite
 data/*.sqlite-*
 *.sqlite
 *.sqlite-*
+
+# local sqlite db (do not commit)
+trading-agent.db

@@ -424,13 +424,15 @@ try {
   `).run(Date.now() - ALERT_TTL_MS);
 } catch {}
 
+// Load recent alerts + ANY alerts that have outcomes so /outcomes can show full history
 let alerts: Alert[] = db
   .prepare(
-    `SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json
-     FROM alerts
-     WHERE ts >= ?
-     ORDER BY ts DESC
-     LIMIT 2000`
+`SELECT id, ts, symbol, message, dir, level, level_price, structure_level, close, market, rs, meta_json
+ FROM alerts
+ WHERE ts >= ?
+    OR id IN (SELECT alert_id FROM outcomes)
+ ORDER BY ts DESC
+ LIMIT 50000`
   )
   .all(Date.now() - ALERT_TTL_MS)
   .reverse()
@@ -466,7 +468,7 @@ let outcomes: TradeOutcome[] = db
       stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
      FROM outcomes
      ORDER BY entry_ts DESC
-     LIMIT 5000`
+     LIMIT 50000`
   )
   .all()
   .reverse()
@@ -595,7 +597,7 @@ function computeMarketState() {
   const lastBarAgeMs = lastBarTs != null ? now - lastBarTs : null;
 
   // 1m bars can arrive a bit late; keep this tolerant but meaningful
-  const barsFresh = lastBarAgeMs != null ? lastBarAgeMs <= 90_000 : false;
+  const barsFresh = lastBarAgeMs != null ? lastBarAgeMs <= 180_000 : false;
 
   // "Data Live" should ONLY be true during RTH and fresh bars are arriving
   const dataLive = Boolean(isRth && barsFresh);
@@ -823,6 +825,13 @@ function isoToMsSafe(iso: string): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function ymdToUtcMs(ymd: string): number {
+  // expects YYYY-MM-DD
+  const ms = new Date(`${ymd}T00:00:00.000Z`).getTime();
+  if (!Number.isFinite(ms)) throw new Error("bad date");
+  return ms;
+}
+
 function isRegularMarketHours(ts: number): boolean {
   // NYSE RTH: 9:30–16:00 America/New_York, Mon–Fri
   try {
@@ -851,8 +860,37 @@ function isRegularMarketHours(ts: number): boolean {
 // -----------------------------
 // DB join rows
 // -----------------------------
+function isBlockedMsg(msg: string): boolean {
+  const m = String(msg || "").toUpperCase();
+  return m.includes("FORMING") || m.includes("INVALID");
+}
+
+/**
+ * Trade-signal detection should NOT depend on message strings.
+ * If the engine produced a directional alert with a usable level/structure,
+ * we treat it as a trade entry for tracking/backtest.
+ */
+function isTradeSignal(a: Alert): boolean {
+  if (!a) return false;
+
+  const msg = String(a.message || "");
+  if (isBlockedMsg(msg)) return false;
+
+  const dirOk = a.dir === "CALL" || a.dir === "PUT";
+  if (!dirOk) return false;
+
+  const lp = a.levelPrice != null && Number.isFinite(Number(a.levelPrice)) ? Number(a.levelPrice) : null;
+  const sl =
+    a.structureLevel != null && Number.isFinite(Number(a.structureLevel))
+      ? Number(a.structureLevel)
+      : lp;
+
+  return lp != null && sl != null && Number.isFinite(lp) && Number.isFinite(sl);
+}
+
+// keep old name used elsewhere (dbrows)
 function isEntryAlert(a: Alert) {
-  return String(a.message || "").includes("A+ ENTRY");
+  return isTradeSignal(a);
 }
 
 function getDbRows() {
@@ -1114,6 +1152,73 @@ function recomputeSignalsAndBroadcast() {
   realtime?.broadcastSignals(latestSignals);
 }
 
+function startOutcomeTrackingIfTrade(r: StrategyRunner, alert: Alert, ts: number) {
+  try {
+    if (!isTradeSignal(alert)) return;
+
+    const dir =
+      alert.dir === "CALL" ? ("LONG" as const) :
+      alert.dir === "PUT" ? ("SHORT" as const) :
+      null;
+
+    if (!dir) return;
+
+    const structureLevel =
+      alert.structureLevel != null && Number.isFinite(Number(alert.structureLevel))
+        ? Number(alert.structureLevel)
+        : alert.levelPrice != null && Number.isFinite(Number(alert.levelPrice))
+        ? Number(alert.levelPrice)
+        : null;
+
+    if (structureLevel == null || !Number.isFinite(structureLevel)) return;
+
+    const rules = (() => {
+      const risk = (r.cfg && typeof r.cfg === "object") ? (r.cfg as any).risk : null;
+      if (!risk || typeof risk !== "object") return null;
+      return {
+        stopR: Number((risk as any).stopR),
+        targetR: Number((risk as any).targetR),
+        moveStopToBEAtR: (risk as any).moveStopToBEAtR == null ? null : Number((risk as any).moveStopToBEAtR)
+      };
+    })();
+
+    console.log("[execRules]", "v"+r.version, r.name, rules);
+
+    r.outcomeTracker.startSession({
+      alertId: alert.id,
+      symbol: alert.symbol,
+      dir,
+      structureLevel,
+      entryTs: ts,
+      entryRefPrice: Number(alert.close ?? 0),
+
+      // NEW: pull broker-like execution rules from this strategy's config
+      execRules: (() => {
+        const risk = (r.cfg && typeof r.cfg === "object") ? (r.cfg as any).risk : null;
+        if (!risk || typeof risk !== "object") return undefined;
+
+        const stopR = Number((risk as any).stopR);
+        const targetR = Number((risk as any).targetR);
+        const moveStopToBEAtR =
+          (risk as any).moveStopToBEAtR == null ? undefined : Number((risk as any).moveStopToBEAtR);
+
+        if (!Number.isFinite(stopR) || stopR <= 0) return undefined;
+        if (!Number.isFinite(targetR) || targetR <= 0) return undefined;
+
+        return {
+          stopR,
+          targetR,
+          moveStopToBEAtR:
+            Number.isFinite(moveStopToBEAtR as any) && (moveStopToBEAtR as number) > 0
+              ? (moveStopToBEAtR as number)
+              : undefined
+        };
+      })()
+    });
+  } catch {
+    // ignore
+  }
+}
 // -----------------------------
 // Per-strategy evaluation on bar close
 // -----------------------------
@@ -1133,6 +1238,13 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
   const benchBars = symbol === "SPY" ? qqqBars : spyBars;
 
   const effDir = getEffectiveMarketDir();
+
+  if (replayBacktestRunning) {
+    if (effDir === "NEUTRAL") replayEffNeutral++;
+    else if (effDir === "BULLISH") replayEffBull++;
+    else if (effDir === "BEARISH") replayEffBear++;
+  }
+  
   if (effDir === "NEUTRAL") return;
 
   const alert = r.engine.evaluateSymbol({
@@ -1140,11 +1252,18 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
     marketDir: effDir,
     spyBars5: benchBars,
     symBars5: symBars,
-    symLevels: getLevels(symbol)
+    symLevels: getLevels(symbol),
+    nowTs: ts
   });
 
   if (alert) {
+    if (replayBacktestRunning) {
+      replayAlertsTotal++;
+      if (isTradeSignal(alert)) replayAlertsEntry++;
+    }
     (alert as any).meta = { rulesetVersion: r.version };
+
+    startOutcomeTrackingIfTrade(r, alert, ts);
 
     alerts.push(alert);
     if (alerts.length > 2000) alerts = alerts.slice(-2000);
@@ -1178,24 +1297,52 @@ function ingestMinuteBar(
 
   const allowSignals = !warmup && isRegularMarketHours(ts);
 
-  // Per-strategy minute updates + possible 1m tap entries
-  if (!warmup && runners.size) {
-    for (const r of runners.values()) {
-      // 1) outcome minute updates
-      const doneFromMinute = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
-      for (const id of doneFromMinute) {
-        const out = r.outcomeTracker.finalize(id);
-        if (out) {
-          outcomes.push(out);
-          if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
-          dbInsertOutcome(out);
-          realtime?.broadcastOutcome(out);
-        }
+// Per-strategy minute updates + possible 1m tap entries
+if (!warmup && runners.size) {
+  const effDir = getEffectiveMarketDir();
+
+  for (const r of runners.values()) {
+    // 0) 1m TAP entry (this is what makes replay behave like live)
+    const tap = r.engine.onMinuteBar({
+      symbol,
+      ts,
+      high: h,
+      low: l,
+      close: c,
+      marketDir: effDir
+    });
+
+    if (tap) {
+
+// DEBUG counters for replay
+if (replayBacktestRunning) {
+  replayAlertsTotal++;
+  if (isTradeSignal(tap)) replayAlertsEntry++;
+}
+
+      (tap as any).meta = { ...(tap as any).meta, rulesetVersion: r.version };
+
+      // start outcome tracking for this entry
+      startOutcomeTrackingIfTrade(r, tap, ts);
+
+      alerts.push(tap);
+      if (alerts.length > 2000) alerts = alerts.slice(-2000);
+      dbInsertAlert(tap);
+      realtime?.broadcastAlert(tap);
+    }
+
+    // 1) outcome minute updates
+    const doneFromMinute = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
+    for (const id of doneFromMinute) {
+      const out = r.outcomeTracker.finalize(id);
+      if (out) {
+        outcomes.push(out);
+        dbInsertOutcome(out);
+        realtime?.broadcastOutcome(out);
       }
-
-
     }
   }
+}
 
   // Per-strategy aggregation + bar-close evaluation
   if (runners.size) {
@@ -1217,13 +1364,15 @@ function ingestMinuteBar(
               const out = r.outcomeTracker.finalize(id);
               if (out) {
                 outcomes.push(out);
-                if (outcomes.length > 5000) outcomes = outcomes.slice(-5000);
                 dbInsertOutcome(out);
                 realtime?.broadcastOutcome(out);
               }
             }
 
-            if (allowSignals) evaluateIfNeededForRunner(r, symbol, closeTs);
+            if (allowSignals) {
+  if (replayBacktestRunning) replayEvalCalls++;
+  evaluateIfNeededForRunner(r, symbol, closeTs);
+}
           }
         }
 
@@ -1247,6 +1396,7 @@ let stream: AlpacaStream | null = null;
 
 function onAlpacaBar(b: AlpacaBarMsg) {
   try {
+
     const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
     if (!symbol || !isValidSymbol(symbol)) return;
 
@@ -1284,26 +1434,19 @@ stream = new AlpacaStream(
     onStatus: (s) => {
       console.log(`[alpaca] ${s}`);
       const msg = String(s).toLowerCase();
-
-      // If Alpaca reconnects, subscriptions can be dropped.
-      // We track auth and re-subscribe whenever we know we're authenticated.
-      if (msg.includes("authenticated")) {
-        alpacaAuthed = true;
+    
+      // If we ever see "authenticated", mark authed.
+      if (msg.includes("authenticated")) alpacaAuthed = true;
+    
+      // On ANY connect/reconnect AFTER auth, resubscribe.
+      if (alpacaAuthed && (msg.includes("connected") || msg.includes("reconnected") || msg.includes("authenticated"))) {
         currentSubs = [];
         refreshSubscriptions();
-        return;
       }
-
-      if (msg.includes("connected") || msg.includes("reconnected")) {
-        currentSubs = [];
-        if (alpacaAuthed) refreshSubscriptions();
-        return;
-      }
-
-      if (msg.includes("disconnected")) {
-        alpacaAuthed = false;
-        return;
-      }
+    
+      // If we see disconnect, keep authed=false so next connect requires auth again.
+      if (msg.includes("disconnected")) alpacaAuthed = false;
+    
     }
   }
 );
@@ -1372,6 +1515,39 @@ async function backfillSymbol1m(symbol: string, limit = 300) {
     if (ts == null) continue;
     ingestMinuteBar(symbol, ts, b.o, b.h, b.l, b.c, b.v, true);
   }
+}
+
+async function fetchBars1mRange(symbol: string, startMs: number, endMs: number) {
+  const startIso = new Date(startMs).toISOString();
+  const endIso = new Date(endMs).toISOString();
+
+  let pageToken: string | undefined = undefined;
+  const out: Array<{ t: string; o: number; h: number; l: number; c: number; v: number }> = [];
+
+  // Alpaca endpoint supports pagination via page_token
+  while (true) {
+    const url =
+      `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(symbol)}/bars` +
+      `?timeframe=1Min&start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}` +
+      `&limit=10000&feed=${encodeURIComponent(FEED)}` +
+      (pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : "");
+
+    const json = await httpGetJson(url, {
+      "APCA-API-KEY-ID": KEY,
+      "APCA-API-SECRET-KEY": SECRET
+    });
+
+    const bars = (json?.bars || []) as any[];
+    for (const b of bars) {
+      if (b?.t) out.push({ t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v });
+    }
+
+    const next = json?.next_page_token;
+    if (!next) break;
+    pageToken = String(next);
+  }
+
+  return out;
 }
 
 async function replayBars(symbols: string[], minutes: number, emitAlerts: boolean) {
@@ -1451,6 +1627,299 @@ function getCandles1m(symbol: string, startTs: number, endTs: number, limit: num
   }));
 }
 
+let replayBacktestRunning = false;
+let replayEvalCalls = 0;
+
+let replayEffNeutral = 0;
+let replayEffBull = 0;
+let replayEffBear = 0;
+
+let replayAlertsTotal = 0;
+let replayAlertsEntry = 0;
+
+async function runReplayBacktest(cfg: {
+  tickers: string[];
+  startDate: string;
+  endDate: string;
+  strategyVersion: number;
+  warmupMinutes?: number;
+
+  // --- NEW (optional) ---
+  baseEquity?: number;     // starting account size
+  compounding?: boolean;   // if true -> size off (base + pnl); if false -> size off base only
+  positionPct?: number;    // 0..1 fraction of account per trade (default 1)
+}) {
+  if (replayBacktestRunning) throw new Error("replay backtest already running");
+  if (!HAS_KEYS) throw new Error("Alpaca keys missing; replay backtest requires REST data access");
+
+  replayBacktestRunning = true;
+  replayEvalCalls = 0;
+
+  replayEffNeutral = 0;
+replayEffBull = 0;
+replayEffBear = 0;
+
+replayAlertsTotal = 0;
+replayAlertsEntry = 0;
+
+  // Normalize tickers
+  const tickers = Array.from(
+    new Set((cfg.tickers || []).map((s) => String(s || "").trim().toUpperCase()).filter(Boolean))
+  );
+
+  const startMs = ymdToUtcMs(cfg.startDate);
+  const endMs = ymdToUtcMs(cfg.endDate) + 24 * 60 * 60_000 - 1; // inclusive end day
+  const warmupMin = Number.isFinite(Number(cfg.warmupMinutes)) ? Math.max(0, Number(cfg.warmupMinutes)) : 2000;
+
+
+// -----------------------------
+// NEW: equity sizing toggle
+// -----------------------------
+const baseEquity = Number.isFinite(Number(cfg.baseEquity)) ? Number(cfg.baseEquity) : 100000; // default
+const compounding = cfg.compounding == null ? true : Boolean(cfg.compounding);
+
+const positionPctRaw = Number(cfg.positionPct);
+const positionPct =
+  Number.isFinite(positionPctRaw) ? Math.max(0, Math.min(1, positionPctRaw)) : 1; // default 100%
+
+let cashPnl = 0; // realized PnL accumulated
+
+function equityForSizing() {
+  return compounding ? (baseEquity + cashPnl) : baseEquity;
+}
+  
+  // Build symbol set (includes SPY/QQQ for market/RS logic)
+  const symbols = Array.from(new Set(["SPY", "QQQ", ...tickers])).filter(Boolean);
+
+  // ---- Snapshot live state so we can restore after replay ----
+  const savedWatch = [...watch];
+watch = [...tickers];
+  
+  const savedRealtime = realtime;
+  const savedAlerts = alerts;
+  const savedOutcomes = outcomes;
+
+  const savedRunners = Array.from(runners.entries());
+
+  const savedLevels = new Map(levelsMap);
+  const savedVwap = new Map(vwapMap);
+  const savedLastPrice = new Map(lastPriceMap);
+
+  const savedStream = { ...streamStats, barTimestamps: [...streamStats.barTimestamps] };
+
+  try {
+    // Silence realtime broadcasts during replay
+    (realtime as any) = undefined;
+
+    // Clear live signal caches/maps to isolate replay
+    levelsMap.clear();
+    vwapMap.clear();
+    lastPriceMap.clear();
+
+    streamStats.barsTotal = 0;
+    streamStats.barTimestamps = [];
+    streamStats.lastBarTs = null;
+    streamStats.lastSpyTs = null;
+    streamStats.lastQqqTs = null;
+
+    // Isolate to ONE runner (the strategy under test)
+    runners.clear();
+
+    const rs = getRulesetByVersion(db, Number(cfg.strategyVersion));
+    if (!rs) throw new Error(`ruleset not found: ${cfg.strategyVersion}`);
+
+    // rs.config is already parsed in your db layer; if not, ensure it’s an object
+    const runner = buildRunner({
+      version: Number(cfg.strategyVersion),
+      name: String((rs as any).name || `v${cfg.strategyVersion}`),
+      config: (rs as any).config || (rs as any).config_json || {}
+    });
+
+    runners.set(runner.version, runner);
+
+    // Reset outputs for replay run
+    alerts = [];
+    outcomes = [];
+
+    // ---- Fetch bars for each symbol, then merge by timestamp ----
+    const warmupStartMs = Math.max(0, startMs - warmupMin * 60_000);
+
+    const events: Array<{
+      ts: number;
+      symbol: string;
+      o: number; h: number; l: number; c: number; v: number;
+      warmup: boolean;
+    }> = [];
+
+    for (const s of symbols) {
+      const bars = await fetchBars1mRange(s, warmupStartMs, endMs);
+      for (const b of bars) {
+        const ts = isoToMsSafe(b.t);
+        if (ts == null) continue;
+        events.push({
+          ts,
+          symbol: s,
+          o: Number(b.o),
+          h: Number(b.h),
+          l: Number(b.l),
+          c: Number(b.c),
+          v: Number(b.v || 0),
+          warmup: ts < startMs
+        });
+      }
+    }
+
+    // Sort chronologically to simulate live arrival
+    events.sort((a, b) => a.ts - b.ts);
+
+    // ---- Diagnostics ----
+let warmupCount = 0;
+let rthCount = 0;
+let ingestedCount = 0;
+
+// probe a few timestamps to confirm market hours alignment
+const sampleTs: number[] = [];
+for (let i = 0; i < events.length; i += Math.max(1, Math.floor(events.length / 10))) {
+  sampleTs.push(events[i].ts);
+}
+
+    // Replay through the SAME ingestion pipeline
+    for (const e of events) {
+      if (e.warmup) warmupCount++;
+if (isRegularMarketHours(e.ts)) rthCount++;
+ingestedCount++;
+      // Track stream stats like live does
+      streamStats.barsTotal++;
+      streamStats.lastBarTs = e.ts;
+      streamStats.barTimestamps.push(Date.now());
+      if (e.symbol === "SPY") streamStats.lastSpyTs = e.ts;
+      if (e.symbol === "QQQ") streamStats.lastQqqTs = e.ts;
+
+      ingestMinuteBar(e.symbol, e.ts, e.o, e.h, e.l, e.c, e.v, e.warmup);
+    }
+
+    // ---- Build summary ----
+    const trades = outcomes.filter((o) => o && o.alertId);
+    const total = trades.length;
+
+    let wins = 0;
+    for (const t of trades) {
+      // define win: stopReturnPct > 0 for stopped, or 60m return > 0 if completed
+      const r60 = (t.returnsPct as any)?.["60m"];
+      const basis = t.stoppedOut ? t.stopReturnPct : (r60 != null ? Number(r60) : t.mfePct);
+      if (Number.isFinite(Number(basis)) && Number(basis) > 0) wins++;
+    }
+
+    // -----------------------------
+// NEW: equity curve + realized PnL using the SAME basis logic
+// -----------------------------
+const byTime = trades
+.slice()
+.sort((a, b) => Number(a.entryTs ?? 0) - Number(b.entryTs ?? 0));
+
+const equityCurve: Array<{ ts: number; equity: number; pnl: number; retPct: number; alertId: string; symbol: string }> = [];
+equityCurve.push({ ts: startMs, equity: baseEquity, pnl: 0, retPct: 0, alertId: "START", symbol: "" });
+
+for (const t of byTime) {
+  const exitPct = (t.returnsPct as any)?.["exit"];
+  const r60 = (t.returnsPct as any)?.["60m"];
+  
+  const basisPct =
+    exitPct != null
+      ? Number(exitPct)
+      : (t.stoppedOut ? Number(t.stopReturnPct) : (r60 != null ? Number(r60) : Number(t.mfePct)));
+
+if (!Number.isFinite(basisPct)) continue;
+
+const notional = equityForSizing() * positionPct;
+const pnl = notional * (basisPct / 100);
+
+cashPnl += pnl;
+
+const stamp = Number(t.endTs ?? t.entryTs ?? Date.now());
+equityCurve.push({
+  ts: stamp,
+  equity: baseEquity + cashPnl,
+  pnl,
+  retPct: basisPct,
+  alertId: String(t.alertId),
+  symbol: String(t.symbol)
+});
+}
+
+const finalEquity = baseEquity + cashPnl;
+
+
+    return {
+      strategyVersion: runner.version,
+      strategyName: runner.name,
+      symbols,
+      startDate: cfg.startDate,
+      endDate: cfg.endDate,
+      warmupMinutes: warmupMin,
+    
+      // --- NEW ---
+      baseEquity,
+      compounding,
+      positionPct,
+      finalEquity,
+      equityCurve,
+    
+      totals: {
+        trades: total,
+        wins,
+        winRate: total ? wins / total : 0
+      },
+      debug: {
+        eventsTotal: events.length,
+        ingestedCount,
+        warmupCount,
+        rthCount,
+        replayEvalCalls,
+        effDir: {
+          neutral: replayEffNeutral,
+          bullish: replayEffBull,
+          bearish: replayEffBear
+        },
+        alerts: {
+          total: replayAlertsTotal,
+          entry: replayAlertsEntry
+        },
+        sampleTsIso: sampleTs.map((t) => new Date(t).toISOString())
+      },
+      outcomes: trades
+    };
+  } finally {
+    // Restore everything back to live
+    (realtime as any) = savedRealtime;
+
+    alerts = savedAlerts;
+    outcomes = savedOutcomes;
+
+    runners.clear();
+    for (const [k, v] of savedRunners) runners.set(k, v);
+
+    levelsMap.clear();
+    for (const [k, v] of savedLevels) levelsMap.set(k, v);
+
+    vwapMap.clear();
+    for (const [k, v] of savedVwap) vwapMap.set(k, v);
+
+    lastPriceMap.clear();
+    for (const [k, v] of savedLastPrice) lastPriceMap.set(k, v);
+
+    streamStats.barsTotal = savedStream.barsTotal;
+    streamStats.barTimestamps = savedStream.barTimestamps;
+    streamStats.lastBarTs = savedStream.lastBarTs;
+    streamStats.lastSpyTs = savedStream.lastSpyTs;
+    streamStats.lastQqqTs = savedStream.lastQqqTs;
+
+    watch = savedWatch;
+
+    replayBacktestRunning = false;
+  }
+}
+
 // -----------------------------
 // HTTP app wiring
 // -----------------------------
@@ -1479,6 +1948,7 @@ const app = createHttpApp({
   getSignals: () => latestSignals,
   getStreamStats: () => snapshotStreamStats(),
   replay: (symbols, minutes, emitAlerts) => replayBars(symbols, minutes, emitAlerts),
+  runReplayBacktest: (cfg) => runReplayBacktest(cfg),
 
   // broker integration endpoints
   getBrokers,

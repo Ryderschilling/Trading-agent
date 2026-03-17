@@ -364,7 +364,8 @@ async function refreshClosedAlertIdsFromApi() {
       if (!id) continue;
       if (st === "COMPLETED" || st === "STOPPED") next.add(id);
     }
-    closedAlertIds = next;
+    // Only update if we actually got rows; prevents accidental wipe on bad fetch
+if (next.size) closedAlertIds = next;
   } catch {
     // ignore
   }
@@ -652,10 +653,7 @@ if (socket) {
 // -----------------------
 // Always-on polling (works with or without sockets)
 // -----------------------
-refreshWatchlistFromApi();
-refreshSignalsFromApi();
-refreshClosedAlertIdsFromApi();
-refreshAlertsFromApi();
+
 refreshDataLiveDot();
 
 setInterval(() => {

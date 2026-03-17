@@ -31,6 +31,32 @@ let dbRowsRaw = [];
 let allAlerts = [];
 
 // -----------------------
+// Persistent merge: never drop historical outcomes
+// -----------------------
+function mergeRowsByAlertId(prev, next) {
+  const map = new Map();
+
+  // keep whatever we already have
+  for (const r of (prev || [])) {
+    const id = String(r?.alertId || "");
+    if (!id) continue;
+    map.set(id, r);
+  }
+
+  // overlay with fresh rows (same alertId wins)
+  for (const r of (next || [])) {
+    const id = String(r?.alertId || "");
+    if (!id) continue;
+
+    const prevRow = map.get(id) || {};
+    map.set(id, { ...prevRow, ...r });
+  }
+
+  // newest first
+  return Array.from(map.values()).sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0));
+}
+
+// -----------------------
 // helpers
 // -----------------------
 function fmtTime(ts) {
@@ -768,7 +794,10 @@ async function fetchDbRows() {
   try {
     const r = await fetch("/api/dbrows", { cache: "no-store" });
     const j = await r.json();
-    dbRowsRaw = Array.isArray(j?.rows) ? j.rows : [];
+
+    const rows = Array.isArray(j?.rows) ? j.rows : [];
+dbRowsRaw = mergeRowsByAlertId(dbRowsRaw, rows);
+
     renderDbTable();
   } catch {
     // ignore
