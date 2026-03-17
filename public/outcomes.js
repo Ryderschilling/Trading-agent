@@ -65,7 +65,7 @@ function findAlertById(id) {
 }
 
 // -----------------------
-// DATA LIVE dot (truthy): green only when RTH + fresh bars
+// DATA LIVE dot
 // -----------------------
 async function refreshDataLiveDot() {
   try {
@@ -184,7 +184,10 @@ function emaSeries(closes, period) {
   let ema = null;
   for (const x of closes) {
     const c = Number(x);
-    if (!Number.isFinite(c)) { out.push(null); continue; }
+    if (!Number.isFinite(c)) {
+      out.push(null);
+      continue;
+    }
     if (ema == null) ema = c;
     else ema = c * k + ema * (1 - k);
     out.push(ema);
@@ -265,7 +268,10 @@ function drawChart(canvas, bars, opts) {
     let bestD = Infinity;
     for (let i = 0; i < n; i++) {
       const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) { bestD = d; best = i; }
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
     }
     return best;
   };
@@ -299,8 +305,10 @@ function drawChart(canvas, bars, opts) {
       if (v == null) continue;
       const x = xOf(i);
       const y = yOf(v);
-      if (!started) { ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
     }
     ctx.stroke();
     ctx.lineWidth = 1;
@@ -324,8 +332,10 @@ function drawChart(canvas, bars, opts) {
       if (v == null) continue;
       const x = xOf(i);
       const y = yOf(v);
-      if (!started) { ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
@@ -388,6 +398,7 @@ function drawChart(canvas, bars, opts) {
     ctx.fillRect(xR, topY, Math.max(0, (w - pad) - xR), botY - topY);
 
     const feather = 28;
+
     const gradL = ctx.createLinearGradient(xL - feather, 0, xL + feather, 0);
     gradL.addColorStop(0, "rgba(0,0,0,0.55)");
     gradL.addColorStop(0.5, "rgba(0,0,0,0.25)");
@@ -438,7 +449,7 @@ function drawChart(canvas, bars, opts) {
 }
 
 // -----------------------
-// Smooth pan/zoom viewport (no refetch per wheel)
+// Smooth pan/zoom viewport
 // -----------------------
 async function openModalForRow(r) {
   if (!modalEl || !modalBodyEl || !modalSubEl) return;
@@ -495,7 +506,10 @@ async function openModalForRow(r) {
     let bestD = Infinity;
     for (let i = 0; i < bars.length; i++) {
       const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) { bestD = d; best = i; }
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
     }
     return best;
   }
@@ -551,8 +565,7 @@ async function openModalForRow(r) {
 
   if (total) redraw();
 
-  const recenterBtn = document.getElementById("recenterBtn");
-  recenterBtn?.addEventListener("click", () => {
+  document.getElementById("recenterBtn")?.addEventListener("click", () => {
     visible = initialVisible;
     start = initialStart;
     redraw();
@@ -560,23 +573,27 @@ async function openModalForRow(r) {
 
   canvas.style.cursor = "grab";
 
-  canvas.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    if (!total) return;
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      if (!total) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const mx = Math.max(0, Math.min((e.clientX - rect.left) / Math.max(1, rect.width), 1));
-    const anchor = start + Math.floor(visible * mx);
+      const rect = canvas.getBoundingClientRect();
+      const mx = Math.max(0, Math.min((e.clientX - rect.left) / Math.max(1, rect.width), 1));
+      const anchor = start + Math.floor(visible * mx);
 
-    const factor = e.deltaY < 0 ? 0.98 : 1.02;
-    const nextVisible = Math.max(30, Math.min(Math.round(visible * factor), Math.max(30, total)));
-    const nextStart = Math.max(0, Math.min(anchor - Math.floor(nextVisible * mx), Math.max(0, total - nextVisible)));
+      const factor = e.deltaY < 0 ? 0.98 : 1.02;
+      const nextVisible = Math.max(30, Math.min(Math.round(visible * factor), Math.max(30, total)));
+      const nextStart = Math.max(0, Math.min(anchor - Math.floor(nextVisible * mx), Math.max(0, total - nextVisible)));
 
-    visible = nextVisible;
-    start = nextStart;
+      visible = nextVisible;
+      start = nextStart;
 
-    redraw();
-  }, { passive: false });
+      redraw();
+    },
+    { passive: false }
+  );
 
   let dragging = false;
   let dragStartX = 0;
@@ -645,17 +662,22 @@ function applyDbFilters(rows) {
 }
 
 function computePnlPct(row) {
-  // 1) STOP is authoritative
+  // Prefer explicit exit return if present (DB-native)
+  if (row?.exitReturnPct !== "" && row?.exitReturnPct != null && Number.isFinite(Number(row.exitReturnPct))) {
+    return Number(row.exitReturnPct);
+  }
+
+  // STOP is authoritative
   if (row?.stoppedOut && row?.stopReturnPct !== "" && row?.stopReturnPct != null && Number.isFinite(Number(row.stopReturnPct))) {
     return Number(row.stopReturnPct);
   }
 
-  // 2) Broker-like exit return if present
+  // Legacy broker-like exit stored inside returns_json
   if (!row?.stoppedOut && row?.retExit !== "" && row?.retExit != null && Number.isFinite(Number(row.retExit))) {
     return Number(row.retExit);
   }
 
-  // 3) Otherwise fall back to checkpoint returns
+  // Fallback to checkpoint returns
   const candidates = [row?.ret60m, row?.ret30m, row?.ret15m, row?.ret5m];
   for (const v of candidates) {
     if (v !== "" && v != null && Number.isFinite(Number(v))) return Number(v);
@@ -706,11 +728,18 @@ function renderDbTable() {
   }
 }
 
-async function fetchDbRows() {
+let lastDbrowsHash = "";
+async function fetchDbRowsStable() {
   try {
     const r = await fetch("/api/dbrows", { cache: "no-store" });
     const j = await r.json();
-    dbRowsRaw = Array.isArray(j?.rows) ? j.rows : [];
+    const rows = Array.isArray(j?.rows) ? j.rows : [];
+
+    const hash = rows.map((x) => `${x.alertId}:${x.status}:${x.endTs || ""}`).join("|");
+    if (hash === lastDbrowsHash) return;
+
+    lastDbrowsHash = hash;
+    dbRowsRaw = rows;
     renderDbTable();
   } catch {
     // ignore
@@ -729,34 +758,19 @@ refreshBtn?.addEventListener("click", fetchDbRowsStable);
 if (socket) {
   socket.on("init", (payload) => {
     allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
-    fetchDbRows();
+    fetchDbRowsStable();
   });
 
   socket.on("alert", (a) => {
     allAlerts.push(a);
-    fetchDbRows();
+    fetchDbRowsStable();
   });
 } else {
   socketDot?.classList.remove("live");
 }
 
+// boot
 loadStrategies().then(() => fetchDbRowsStable());
-let lastDbrowsHash = "";
-async function fetchDbRowsStable() {
-  try {
-    const r = await fetch("/api/dbrows", { cache: "no-store" });
-    const j = await r.json();
-    const rows = Array.isArray(j?.rows) ? j.rows : [];
-
-    // hash based on ids + status + endTs only (fast + stable)
-    const hash = rows.map(x => `${x.alertId}:${x.status}:${x.endTs || ""}`).join("|");
-    if (hash === lastDbrowsHash) return;
-
-    lastDbrowsHash = hash;
-    dbRowsRaw = rows;
-    renderDbTable();
-  } catch {}
-}
 setInterval(fetchDbRowsStable, 6000);
 
 refreshDataLiveDot();

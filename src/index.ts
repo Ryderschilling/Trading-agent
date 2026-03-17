@@ -425,6 +425,7 @@ let outcomes: TradeOutcome[] = db
   .prepare(
     `SELECT
       alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
+      exit_reason, exit_fill, exit_return_pct, stop_moved_to_be,
       mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
       stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
      FROM outcomes
@@ -443,6 +444,11 @@ let outcomes: TradeOutcome[] = db
     status: String(r.status) as TradeOutcome["status"],
     endTs: Number(r.end_ts),
 
+    exitReason: r.exit_reason == null ? null : (String(r.exit_reason) as any),
+    exitFill: r.exit_fill == null ? null : Number(r.exit_fill),
+    exitReturnPct: r.exit_return_pct == null ? null : Number(r.exit_return_pct),
+    stopMovedToBE: Boolean(r.stop_moved_to_be),
+
     mfeAbs: Number(r.mfe_abs ?? 0),
     maeAbs: Number(r.mae_abs ?? 0),
     mfePct: Number(r.mfe_pct ?? 0),
@@ -450,10 +456,10 @@ let outcomes: TradeOutcome[] = db
     timeToMfeSec: Number(r.time_to_mfe_sec ?? 0),
 
     stoppedOut: Boolean(r.stopped_out),
-    stopTs: Number(r.stop_ts ?? 0),
-    stopClose: Number(r.stop_close ?? 0),
-    stopReturnPct: Number(r.stop_return_pct ?? 0),
-    barsToStop: Number(r.bars_to_stop ?? 0),
+    stopTs: r.stop_ts == null ? null : Number(r.stop_ts),
+    stopClose: r.stop_close == null ? null : Number(r.stop_close),
+    stopReturnPct: r.stop_return_pct == null ? null : Number(r.stop_return_pct),
+    barsToStop: r.bars_to_stop == null ? null : Number(r.bars_to_stop),
 
     returnsPct: r.returns_json ? JSON.parse(String(r.returns_json)) : {}
   }));
@@ -484,9 +490,10 @@ function dbInsertOutcome(o: TradeOutcome) {
   db.prepare(
     `INSERT OR REPLACE INTO outcomes(
       alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
+      exit_reason, exit_fill, exit_return_pct, stop_moved_to_be,
       mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
       stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     o.alertId,
     o.symbol,
@@ -497,17 +504,22 @@ function dbInsertOutcome(o: TradeOutcome) {
     String(o.status),
     o.endTs,
 
+    (o as any).exitReason ?? null,
+    (o as any).exitFill ?? null,
+    (o as any).exitReturnPct ?? null,
+    (o as any).stopMovedToBE ? 1 : 0,
+
     Number((o as any).mfeAbs ?? 0),
     Number((o as any).maeAbs ?? 0),
     Number((o as any).mfePct ?? 0),
     Number((o as any).maePct ?? 0),
-    Number((o as any).timeToMfeSec ?? 0),
+    (o as any).timeToMfeSec ?? null,
 
     o.stoppedOut ? 1 : 0,
-    Number((o as any).stopTs ?? 0),
-    Number((o as any).stopClose ?? 0),
-    Number((o as any).stopReturnPct ?? 0),
-    Number((o as any).barsToStop ?? 0),
+    (o as any).stopTs ?? null,
+    (o as any).stopClose ?? null,
+    (o as any).stopReturnPct ?? null,
+    (o as any).barsToStop ?? null,
 
     JSON.stringify(o.returnsPct || {})
   );
@@ -891,30 +903,38 @@ function getDbRows() {
   const rows = db
     .prepare(
       `SELECT
-        a.id            AS alert_id,
-        a.ts            AS ts,
-        a.symbol        AS symbol,
-        a.message       AS message,
-        a.dir           AS dir,
-        a.level         AS level,
-        a.level_price   AS level_price,
+        a.id              AS alert_id,
+        a.ts              AS ts,
+        a.symbol          AS symbol,
+        a.message         AS message,
+        a.dir             AS dir,
+        a.level           AS level,
+        a.level_price     AS level_price,
         a.structure_level AS structure_level,
-        a.close         AS close,
-        a.market        AS market,
-        a.rs            AS rs,
-        a.meta_json     AS meta_json,
+        a.close           AS close,
+        a.market          AS market,
+        a.rs              AS rs,
+        a.meta_json       AS meta_json,
 
-        o.status        AS o_status,
-        o.end_ts        AS o_end_ts,
-        o.stopped_out   AS o_stopped_out,
-        o.stop_ts       AS o_stop_ts,
-        o.stop_close    AS o_stop_close,
-        o.stop_return_pct AS o_stop_return_pct,
-        o.bars_to_stop  AS o_bars_to_stop,
-        o.mfe_pct       AS o_mfe_pct,
-        o.mae_pct       AS o_mae_pct,
-        o.time_to_mfe_sec AS o_time_to_mfe_sec,
-        o.returns_json  AS o_returns_json
+        o.status            AS o_status,
+        o.end_ts            AS o_end_ts,
+
+        o.exit_reason       AS o_exit_reason,
+        o.exit_fill         AS o_exit_fill,
+        o.exit_return_pct   AS o_exit_return_pct,
+        o.stop_moved_to_be  AS o_stop_moved_to_be,
+
+        o.stopped_out       AS o_stopped_out,
+        o.stop_ts           AS o_stop_ts,
+        o.stop_close        AS o_stop_close,
+        o.stop_return_pct   AS o_stop_return_pct,
+        o.bars_to_stop      AS o_bars_to_stop,
+
+        o.mfe_pct           AS o_mfe_pct,
+        o.mae_pct           AS o_mae_pct,
+        o.time_to_mfe_sec   AS o_time_to_mfe_sec,
+
+        o.returns_json      AS o_returns_json
        FROM alerts a
        LEFT JOIN outcomes o ON o.alert_id = a.id
        WHERE a.dir IN ('CALL','PUT')
@@ -926,12 +946,14 @@ function getDbRows() {
 
   return rows.map((r) => {
     let meta: any = undefined;
-    try { if (r.meta_json) meta = JSON.parse(String(r.meta_json)); } catch { meta = undefined; }
+    try {
+      if (r.meta_json) meta = JSON.parse(String(r.meta_json));
+    } catch {
+      meta = undefined;
+    }
 
     const strategyVersion =
-      meta?.rulesetVersion != null
-        ? Number(meta.rulesetVersion)
-        : Number(activeRules?.version ?? 0);
+      meta?.rulesetVersion != null ? Number(meta.rulesetVersion) : Number(activeRules?.version ?? 0);
 
     const strategyName =
       strategyVersion && rulesetNameMap[strategyVersion]
@@ -946,50 +968,77 @@ function getDbRows() {
     const showVwap = meta2?.showVwap ?? false;
 
     let returnsPct: any = {};
-    try { returnsPct = r.o_returns_json ? JSON.parse(String(r.o_returns_json)) : {}; } catch { returnsPct = {}; }
+    try {
+      returnsPct = r.o_returns_json ? JSON.parse(String(r.o_returns_json)) : {};
+    } catch {
+      returnsPct = {};
+    }
 
-    const oStatus = r.o_status != null ? String(r.o_status) : "LIVE";
+    const status = r.o_status != null ? String(r.o_status) : "LIVE";
     const stoppedOut = Boolean(r.o_stopped_out);
 
     const stopTs = r.o_stop_ts != null ? Number(r.o_stop_ts) : "";
     const endTs = r.o_end_ts != null ? Number(r.o_end_ts) : "";
 
-    return {
+    // Prefer DB-native exit_return_pct; fall back to returns_json.exit (older rows)
+    const exitReturnPct =
+      r.o_exit_return_pct != null ? Number(r.o_exit_return_pct) : (returnsPct?.["exit"] ?? "");
+
+    const out = {
       alertId: String(r.alert_id),
       ts: Number(r.ts),
       time: new Date(Number(r.ts)).toISOString(),
       symbol: String(r.symbol),
+
       market: (r.market as MarketDirection) ?? "NEUTRAL",
       rs: (r.rs as any) ?? "NONE",
       dir: String(r.dir) === "CALL" ? "LONG" : String(r.dir) === "PUT" ? "SHORT" : "—",
+
       level: r.level ?? "—",
       levelPrice: r.level_price == null ? "" : Number(r.level_price),
-      structureLevel: r.structure_level == null ? (r.level_price == null ? "" : Number(r.level_price)) : Number(r.structure_level),
+      structureLevel:
+        r.structure_level == null
+          ? (r.level_price == null ? "" : Number(r.level_price))
+          : Number(r.structure_level),
       entryRef: r.close == null ? "" : Number(r.close),
 
-      status: oStatus,
+      status,
       stoppedOut,
+
+      // stop fields
+      stopTs,
+      endTs,
+      stopClose: r.o_stop_close == null ? "" : Number(r.o_stop_close),
       stopReturnPct: r.o_stop_return_pct == null ? "" : Number(r.o_stop_return_pct),
       barsToStop: r.o_bars_to_stop == null ? "" : Number(r.o_bars_to_stop),
+
+      // broker-like exit fields
+      exitReason: r.o_exit_reason == null ? "" : String(r.o_exit_reason),
+      exitFill: r.o_exit_fill == null ? "" : Number(r.o_exit_fill),
+      exitReturnPct,
+      stopMovedToBE: Boolean(r.o_stop_moved_to_be),
+
+      // metrics
       mfePct: r.o_mfe_pct == null ? "" : Number(r.o_mfe_pct),
       maePct: r.o_mae_pct == null ? "" : Number(r.o_mae_pct),
       timeToMfeSec: r.o_time_to_mfe_sec == null ? "" : Number(r.o_time_to_mfe_sec),
 
+      // returns
       ret5m: returnsPct?.["5m"] ?? "",
       ret15m: returnsPct?.["15m"] ?? "",
       ret30m: returnsPct?.["30m"] ?? "",
       ret60m: returnsPct?.["60m"] ?? "",
       retExit: returnsPct?.["exit"] ?? "",
 
+      // strategy meta for chart
       strategyVersion,
       strategyName,
-
       timeframeMin,
       emaPeriods,
-      showVwap,
-      stopTs,
-      endTs
+      showVwap
     };
+
+    return out;
   });
 }
 
