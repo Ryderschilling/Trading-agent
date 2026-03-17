@@ -35,3 +35,18 @@ data/*.sqlite-*
 
 # local sqlite db (do not commit)
 trading-agent.db
+
+# local sqlite artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+
+data/*.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm
+*.db
