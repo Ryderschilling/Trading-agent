@@ -31,32 +31,6 @@ let dbRowsRaw = [];
 let allAlerts = [];
 
 // -----------------------
-// Persistent merge: never drop historical outcomes
-// -----------------------
-function mergeRowsByAlertId(prev, next) {
-  const map = new Map();
-
-  // keep whatever we already have
-  for (const r of (prev || [])) {
-    const id = String(r?.alertId || "");
-    if (!id) continue;
-    map.set(id, r);
-  }
-
-  // overlay with fresh rows (same alertId wins)
-  for (const r of (next || [])) {
-    const id = String(r?.alertId || "");
-    if (!id) continue;
-
-    const prevRow = map.get(id) || {};
-    map.set(id, { ...prevRow, ...r });
-  }
-
-  // newest first
-  return Array.from(map.values()).sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0));
-}
-
-// -----------------------
 // helpers
 // -----------------------
 function fmtTime(ts) {
@@ -238,7 +212,6 @@ function vwapSeries(bars) {
 
 // -----------------------
 // Chart render (canvas)
-// bars = viewport slice only (for smoothness)
 // -----------------------
 function drawChart(canvas, bars, opts) {
   if (!canvas) return;
@@ -250,7 +223,6 @@ function drawChart(canvas, bars, opts) {
 
   ctx.clearRect(0, 0, w, h);
 
-  // solid panel background
   ctx.fillStyle = "#0b0f1a";
   ctx.fillRect(0, 0, w, h);
 
@@ -261,7 +233,6 @@ function drawChart(canvas, bars, opts) {
     return;
   }
 
-  // layout
   const pad = 18;
   const volH = 70;
   const chartH = h - pad * 2 - volH - 10;
@@ -285,7 +256,6 @@ function drawChart(canvas, bars, opts) {
 
   const xOf = (i) => pad + i * candleW + Math.floor(candleW / 2);
 
-  // entry/exit indices for spotlight + markers
   const entryTs = Number(opts?.entryTs || 0);
   const exitTs = Number(opts?.exitTs || 0);
 
@@ -303,7 +273,6 @@ function drawChart(canvas, bars, opts) {
   const entryIdx = closestIdx(entryTs);
   const exitIdx = closestIdx(exitTs);
 
-  // grid
   ctx.strokeStyle = "rgba(255,255,255,0.06)";
   for (let i = 0; i <= 4; i++) {
     const y = pad + (chartH * i) / 4;
@@ -313,7 +282,6 @@ function drawChart(canvas, bars, opts) {
     ctx.stroke();
   }
 
-  // overlays
   const closes = bars.map((b) => Number(b.c));
   const emaPeriods = Array.isArray(opts?.emaPeriods) ? opts.emaPeriods : [];
   const emaMap = {};
@@ -321,7 +289,6 @@ function drawChart(canvas, bars, opts) {
 
   const vwap = opts?.showVwap ? vwapSeries(bars) : [];
 
-  // VWAP line
   if (vwap.length) {
     ctx.strokeStyle = "rgba(120,180,255,0.85)";
     ctx.lineWidth = 2;
@@ -339,7 +306,6 @@ function drawChart(canvas, bars, opts) {
     ctx.lineWidth = 1;
   }
 
-  // EMA lines
   const emaColors = [
     "rgba(255,255,255,0.75)",
     "rgba(255,220,120,0.85)",
@@ -364,7 +330,6 @@ function drawChart(canvas, bars, opts) {
     ctx.stroke();
   }
 
-  // candles + volume
   for (let i = 0; i < n; i++) {
     const b = bars[i];
     const o = Number(b.o), c = Number(b.c), hh = Number(b.h), ll = Number(b.l);
@@ -372,14 +337,12 @@ function drawChart(canvas, bars, opts) {
 
     const x = xOf(i);
 
-    // wick
     ctx.strokeStyle = "rgba(255,255,255,0.50)";
     ctx.beginPath();
     ctx.moveTo(x, yOf(hh));
     ctx.lineTo(x, yOf(ll));
     ctx.stroke();
 
-    // body
     const up = c >= o;
     ctx.fillStyle = up ? "rgba(80,200,120,0.85)" : "rgba(255,120,80,0.85)";
     const bodyTop = Math.min(yOf(o), yOf(c));
@@ -387,13 +350,11 @@ function drawChart(canvas, bars, opts) {
     const bw = Math.max(2, candleW - 2);
     ctx.fillRect(x - Math.floor(bw / 2), bodyTop, bw, Math.max(2, bodyBot - bodyTop));
 
-    // volume bar
     const vh = vmax ? Math.round((vol / vmax) * volH) : 0;
     ctx.fillStyle = up ? "rgba(80,200,120,0.35)" : "rgba(255,120,80,0.35)";
     ctx.fillRect(x - Math.floor(bw / 2), pad + chartH + 10 + (volH - vh), bw, vh);
   }
 
-  // horizontal lines: level / structure
   const levelPrice = opts?.levelPrice;
   const structureLevel = opts?.structureLevel;
 
@@ -407,14 +368,9 @@ function drawChart(canvas, bars, opts) {
     ctx.stroke();
   };
 
-  // Level = white-ish, Structure = yellow (this is your yellow line)
   drawHLine(levelPrice, "rgba(255,255,255,0.25)");
   drawHLine(structureLevel, "rgba(255,255,0,0.35)");
 
-  // -----------------------
-  // Trade spotlight: haze outside [entry..exit], clear inside
-  // Draw AFTER candles so the outside candles dim.
-  // -----------------------
   if (entryIdx != null && exitIdx != null && exitIdx !== entryIdx) {
     const leftIdx = Math.min(entryIdx, exitIdx);
     const rightIdx = Math.max(entryIdx, exitIdx);
@@ -427,13 +383,11 @@ function drawChart(canvas, bars, opts) {
 
     ctx.save();
 
-    // main haze blocks
     ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(pad, topY, Math.max(0, xL - pad), botY - topY);                 // left haze
-    ctx.fillRect(xR, topY, Math.max(0, (w - pad) - xR), botY - topY);            // right haze
+    ctx.fillRect(pad, topY, Math.max(0, xL - pad), botY - topY);
+    ctx.fillRect(xR, topY, Math.max(0, (w - pad) - xR), botY - topY);
 
-    // feather edges (soft gradient at entry/exit)
-    const feather = 28; // px
+    const feather = 28;
     const gradL = ctx.createLinearGradient(xL - feather, 0, xL + feather, 0);
     gradL.addColorStop(0, "rgba(0,0,0,0.55)");
     gradL.addColorStop(0.5, "rgba(0,0,0,0.25)");
@@ -448,14 +402,12 @@ function drawChart(canvas, bars, opts) {
     ctx.fillStyle = gradR;
     ctx.fillRect(xR - feather, topY, feather * 2, botY - topY);
 
-    // subtle outline around the trade window
     ctx.strokeStyle = "rgba(255,255,255,0.10)";
     ctx.strokeRect(xL, topY, Math.max(1, xR - xL), botY - topY);
 
     ctx.restore();
   }
 
-  // entry / exit markers (cyan = entry, red = exit) ON TOP of haze
   if (entryIdx != null) {
     const x = xOf(entryIdx);
     ctx.strokeStyle = "rgba(0,200,255,0.95)";
@@ -474,7 +426,6 @@ function drawChart(canvas, bars, opts) {
     ctx.stroke();
   }
 
-  // legend
   ctx.fillStyle = "rgba(255,255,255,0.78)";
   ctx.font = "12px system-ui";
   const legend = [
@@ -489,14 +440,9 @@ function drawChart(canvas, bars, opts) {
 // -----------------------
 // Smooth pan/zoom viewport (no refetch per wheel)
 // -----------------------
-function clamp(n, lo, hi) {
-  return Math.max(lo, Math.min(hi, n));
-}
-
 async function openModalForRow(r) {
   if (!modalEl || !modalBodyEl || !modalSubEl) return;
 
-  // --------- basics ----------
   const strat = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "—");
   modalSubEl.textContent = `${r.symbol || ""} • ${strat}`;
   modalBodyEl.innerHTML = "Loading…";
@@ -510,14 +456,12 @@ async function openModalForRow(r) {
       ? Number(r.endTs)
       : 0;
 
-  const tfMin = Math.max(1, Math.floor(Number(r.timeframeMin || 1))); // strategy timeframe (ex: 15)
-  console.log("[outcomes] timeframeMin from row:", r.timeframeMin, "-> tfMin used:", tfMin);
+  const tfMin = Math.max(1, Math.floor(Number(r.timeframeMin || 1)));
   const tfLabel = `${tfMin}m`;
 
   const emaPeriods = Array.isArray(r.emaPeriods) ? r.emaPeriods : [];
   const showVwap = Boolean(r.showVwap);
 
-  // --------- modal html ----------
   const detailHtml = `
     <div style="margin-bottom:12px;">
       <div><b>Details</b></div>
@@ -531,7 +475,7 @@ async function openModalForRow(r) {
 
     <div class="small muted" style="margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
       <div>
-Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (cyan) • Exit (red)
+        Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (cyan) • Exit (red)
         <span class="small" style="opacity:0.7;">(wheel = zoom, drag = pan)</span>
       </div>
       <button id="recenterBtn" class="btn small">Recenter</button>
@@ -545,64 +489,43 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
 
   modalBodyEl.innerHTML = detailHtml;
 
-  // --------- helpers ----------
-  const clampLocal = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
-
   function closestIdxByTs(bars, ts) {
     if (!Array.isArray(bars) || !bars.length) return 0;
     let best = 0;
     let bestD = Infinity;
     for (let i = 0; i < bars.length; i++) {
       const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
+      if (d < bestD) { bestD = d; best = i; }
     }
     return best;
   }
 
-  // --------- fetch once (max 2000 minutes), aggregate to strategy TF ----------
   let barsTfAll = [];
   try {
-    const minutes = 2000; // server clamps to 2000 anyway
+    const minutes = 2000;
     const res = await fetch(
       `/api/candles?symbol=${encodeURIComponent(r.symbol)}&end=${encodeURIComponent(entryTs)}&minutes=${minutes}`,
       { cache: "no-store" }
     );
     const j = await res.json().catch(() => null);
     const bars1m = Array.isArray(j?.bars) ? j.bars : [];
-    barsTfAll = aggregateBars(bars1m, tfMin); // IMPORTANT: displayed candles are strategy TF
-    console.log("[chart] tfMin", tfMin, "bars1m", bars1m.length, "barsTf", barsTfAll.length);
+    barsTfAll = aggregateBars(bars1m, tfMin);
   } catch {
     barsTfAll = [];
   }
 
   const canvas = document.getElementById("outcomeChart");
-  if (!canvas || !canvas.getContext) {
-    const a = findAlertById(r.alertId);
-    if (a) {
-      const msg = escapeHtml(String(a.message || ""));
-      modalBodyEl.insertAdjacentHTML("beforeend", `<div style="margin-top:10px;"><b>Raw message:</b> ${msg}</div>`);
-    }
-    return;
-  }
+  if (!canvas || !canvas.getContext) return;
 
-  // --------- viewport state (index-based, smooth) ----------
   const total = barsTfAll.length;
-
-  // choose initial visible count: not too wide, not too tight
-  let visible = total ? clampLocal(90, 30, Math.max(30, total)) : 30;
+  let visible = total ? Math.max(30, Math.min(90, total)) : 30;
 
   const entryIdxAll = total ? closestIdxByTs(barsTfAll, entryTs) : 0;
-
-  // place entry around 60% across the window
-  let start = total ? clampLocal(entryIdxAll - Math.floor(visible * 0.6), 0, Math.max(0, total - visible)) : 0;
+  let start = total ? Math.max(0, Math.min(entryIdxAll - Math.floor(visible * 0.6), Math.max(0, total - visible))) : 0;
 
   const initialVisible = visible;
   const initialStart = start;
 
-  // RAF throttle redraw
   let raf = 0;
   const redraw = () => {
     if (raf) return;
@@ -610,8 +533,8 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
       raf = 0;
       if (!total) return;
 
-      start = clampLocal(start, 0, Math.max(0, total - visible));
-      const end = clampLocal(start + visible, 0, total);
+      start = Math.max(0, Math.min(start, Math.max(0, total - visible)));
+      const end = Math.max(0, Math.min(start + visible, total));
       const slice = barsTfAll.slice(start, end);
 
       drawChart(canvas, slice, {
@@ -626,10 +549,8 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
     });
   };
 
-  // initial draw
   if (total) redraw();
 
-  // --------- recenter ----------
   const recenterBtn = document.getElementById("recenterBtn");
   recenterBtn?.addEventListener("click", () => {
     visible = initialVisible;
@@ -637,34 +558,26 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
     redraw();
   });
 
-  // --------- zoom (less sensitive) anchored at cursor ----------
   canvas.style.cursor = "grab";
 
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
-      if (!total) return;
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (!total) return;
 
-      const rect = canvas.getBoundingClientRect();
-      const mx = clampLocal((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-      const anchor = start + Math.floor(visible * mx);
+    const rect = canvas.getBoundingClientRect();
+    const mx = Math.max(0, Math.min((e.clientX - rect.left) / Math.max(1, rect.width), 1));
+    const anchor = start + Math.floor(visible * mx);
 
-      // smaller steps = less touchy
-      const factor = e.deltaY < 0 ? 0.98 : 1.02; // 2% step (much smoother)
-      const nextVisible = clampLocal(Math.round(visible * factor), 30, Math.max(30, total));
+    const factor = e.deltaY < 0 ? 0.98 : 1.02;
+    const nextVisible = Math.max(30, Math.min(Math.round(visible * factor), Math.max(30, total)));
+    const nextStart = Math.max(0, Math.min(anchor - Math.floor(nextVisible * mx), Math.max(0, total - nextVisible)));
 
-      const nextStart = clampLocal(anchor - Math.floor(nextVisible * mx), 0, Math.max(0, total - nextVisible));
+    visible = nextVisible;
+    start = nextStart;
 
-      visible = nextVisible;
-      start = nextStart;
+    redraw();
+  }, { passive: false });
 
-      redraw();
-    },
-    { passive: false }
-  );
-
-  // --------- pan (drag) ----------
   let dragging = false;
   let dragStartX = 0;
   let dragStartStart = 0;
@@ -689,15 +602,13 @@ Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (
     const rect = canvas.getBoundingClientRect();
     const dx = e.clientX - dragStartX;
 
-    // lower sensitivity: bars-per-pixel based on viewport
     const barsPerPx = visible / Math.max(1, rect.width);
-    const PAN_MULT = 0.6; // <— lower = less sensitive
+    const PAN_MULT = 0.6;
     const deltaBars = Math.round(dx * barsPerPx * PAN_MULT);
-    start = clampLocal(dragStartStart - deltaBars, 0, Math.max(0, total - visible));
+    start = Math.max(0, Math.min(dragStartStart - deltaBars, Math.max(0, total - visible)));
     redraw();
   });
 
-  // --------- raw message ----------
   const a = findAlertById(r.alertId);
   if (a) {
     const msg = escapeHtml(String(a.message || ""));
@@ -734,10 +645,17 @@ function applyDbFilters(rows) {
 }
 
 function computePnlPct(row) {
+  // 1) STOP is authoritative
   if (row?.stoppedOut && row?.stopReturnPct !== "" && row?.stopReturnPct != null && Number.isFinite(Number(row.stopReturnPct))) {
     return Number(row.stopReturnPct);
   }
 
+  // 2) Broker-like exit return if present
+  if (!row?.stoppedOut && row?.retExit !== "" && row?.retExit != null && Number.isFinite(Number(row.retExit))) {
+    return Number(row.retExit);
+  }
+
+  // 3) Otherwise fall back to checkpoint returns
   const candidates = [row?.ret60m, row?.ret30m, row?.ret15m, row?.ret5m];
   for (const v of candidates) {
     if (v !== "" && v != null && Number.isFinite(Number(v))) return Number(v);
@@ -771,7 +689,6 @@ function renderDbTable() {
     const stratLabel = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "");
     const pnl = computePnlPct(r);
 
-    // keep pnl on row for modal
     r.pnlPct = pnl;
 
     tr.appendChild(td(stratLabel));
@@ -785,7 +702,6 @@ function renderDbTable() {
     tr.appendChild(td(pnl == null ? "—" : `${fmt2(pnl)}%`));
 
     tr.addEventListener("click", () => openModalForRow(r));
-
     dbBodyEl.appendChild(tr);
   }
 }
@@ -794,10 +710,7 @@ async function fetchDbRows() {
   try {
     const r = await fetch("/api/dbrows", { cache: "no-store" });
     const j = await r.json();
-
-    const rows = Array.isArray(j?.rows) ? j.rows : [];
-dbRowsRaw = mergeRowsByAlertId(dbRowsRaw, rows);
-
+    dbRowsRaw = Array.isArray(j?.rows) ? j.rows : [];
     renderDbTable();
   } catch {
     // ignore
@@ -810,13 +723,10 @@ dbStatusEl?.addEventListener("change", renderDbTable);
 dbRangeEl?.addEventListener("change", renderDbTable);
 dbStoppedOnlyEl?.addEventListener("change", renderDbTable);
 dbStrategyEl?.addEventListener("change", renderDbTable);
-refreshBtn?.addEventListener("click", fetchDbRows);
+refreshBtn?.addEventListener("click", fetchDbRowsStable);
 
-// -----------------------
 // socket wiring
-// -----------------------
 if (socket) {
-
   socket.on("init", (payload) => {
     allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
     fetchDbRows();
@@ -830,9 +740,24 @@ if (socket) {
   socketDot?.classList.remove("live");
 }
 
-// boot
-loadStrategies().then(() => fetchDbRows());
-setInterval(fetchDbRows, 6000);
+loadStrategies().then(() => fetchDbRowsStable());
+let lastDbrowsHash = "";
+async function fetchDbRowsStable() {
+  try {
+    const r = await fetch("/api/dbrows", { cache: "no-store" });
+    const j = await r.json();
+    const rows = Array.isArray(j?.rows) ? j.rows : [];
+
+    // hash based on ids + status + endTs only (fast + stable)
+    const hash = rows.map(x => `${x.alertId}:${x.status}:${x.endTs || ""}`).join("|");
+    if (hash === lastDbrowsHash) return;
+
+    lastDbrowsHash = hash;
+    dbRowsRaw = rows;
+    renderDbTable();
+  } catch {}
+}
+setInterval(fetchDbRowsStable, 6000);
 
 refreshDataLiveDot();
 setInterval(refreshDataLiveDot, 5000);
