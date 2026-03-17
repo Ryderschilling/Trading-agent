@@ -1,71 +1,81 @@
-import { LevelType } from "../market/levels";
-import { MarketDirection } from "../market/marketDirection";
-
-export type OutputMessage =
-  | "A+ SETUP FORMING — WAIT FOR RETEST"
-  | "A+ ENTRY — BUY ON THIS 5-MIN CLOSE"
-  | "A+ ENTRY (1m TAP)"
-  | "NO TRADE — DOES NOT MEET RULES"
-  | "SETUP INVALID — STAND DOWN";
+// src/engine/types.ts
 
 export type Direction = "CALL" | "PUT";
-export type RelativeStrength = "STRONG" | "WEAK" | "NONE";
+export type TradeDirection = "LONG" | "SHORT";
 
-export type SignalState =
-  | { state: "IDLE" }
-  | {
-      state: "BROKEN";
-      dir: Direction;
-      levelType: LevelType;
-      levelPrice: number;
-      breakBarTime: number;
-    }
-  | { state: "COOLDOWN"; untilBarTime: number };
+export type RelativeStrength = "STRONG" | "WEAK" | "NONE";
+export type MarketDirection = "BULLISH" | "BEARISH" | "NEUTRAL";
+
+export type OutputMessage =
+  | "FORMING"
+  | "BREAK"
+  | "BREAK_RETEST"
+  | "INVALID"
+  | "ENTRY"
+  | "INFO";
+
+export type SignalState = {
+  symbol: string;
+  lastLevel?: string;
+  lastLevelPrice?: number;
+  lastStructureLevel?: number;
+  lastDir?: Direction;
+  lastMsg?: OutputMessage;
+  lastTs?: number;
+};
 
 export type Alert = {
   id: string;
   ts: number;
   symbol: string;
+
   market: MarketDirection;
   rs: RelativeStrength;
+
   dir: Direction | "—";
-  level: LevelType | "—";
+  level: string | "—";
+
   levelPrice: number | null;
+  structureLevel: number | null;
+
+  breakBarTime: number | null;
   close: number;
-  message: OutputMessage;
 
-  // Frozen structure used for 5m close stop-loss + outcome tracking
-  structureLevel?: number | null;
-  breakBarTime?: number | null;
+  message: string;
+  meta?: any;
 };
-
-export type TradeDirection = "LONG" | "SHORT";
-export type TradeSessionStatus = "LIVE" | "STOPPED" | "COMPLETED";
 
 export type TradeOutcome = {
   alertId: string;
   symbol: string;
   dir: TradeDirection;
+
   structureLevel: number;
+
   entryTs: number;
   entryRefPrice: number;
 
-  status: TradeSessionStatus;
+  status: "LIVE" | "STOPPED" | "COMPLETED";
   endTs: number;
 
-  // excursions
   mfeAbs: number;
   maeAbs: number;
   mfePct: number;
   maePct: number;
   timeToMfeSec: number | null;
 
-  // stop rule: first 5m close breaches structure
+  // stop rule: first 5m close breaches structure (legacy) OR broker-like stop
   stoppedOut: boolean;
   stopTs: number | null;
   stopClose: number | null;
   stopReturnPct: number | null;
   barsToStop: number | null;
+
+  // broker-like execution (optional, persisted when available)
+  exitReason?: "STOP" | "TARGET" | "TIME" | null;
+  exitFill?: number | null;
+  exitReturnPct?: number | null;
+  stopMovedToBE?: boolean;
 
   // checkpoint returns (% from entry ref)
   returnsPct: Record<string, number>;
