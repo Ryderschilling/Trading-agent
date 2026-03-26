@@ -28,6 +28,10 @@ import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
 import { OutcomeTracker } from "./engine/outcomeTracker";
 import { createHttpApp } from "./server/http";
 import { attachRealtime } from "./server/realtime";
+import { BrokerExecutionService } from "./broker/service";
+import { maskSecretConfig, mergeSecretConfig, normalizeExecutionPolicy } from "./broker/config";
+import { BrokerConfig } from "./broker/types";
+import { normalizeRulesetConfig } from "./rules/executionPolicy";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -133,6 +137,7 @@ console.log("[ENV CHECK]", {
 // DB + Rules
 // -----------------------------
 const db = openDb();
+const brokerExecution = new BrokerExecutionService(db);
 
 // keep alerts that have outcomes; prune truly orphaned old alerts
 try {
@@ -243,7 +248,12 @@ function listEnabledRulesets(): Array<{ version: number; name: string; active: b
     .map((r) => {
       let cfg: any = {};
       try { cfg = JSON.parse(String(r.config_json || "{}")); } catch { cfg = {}; }
-      return { version: Number(r.version), name: String(r.name || `v${r.version}`), active: Boolean(r.active), config: cfg };
+      return {
+        version: Number(r.version),
+        name: String(r.name || `v${r.version}`),
+        active: Boolean(r.active),
+        config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+      };
     })
     .filter((x) => Number.isFinite(x.version) && x.version > 0);
 }
@@ -303,8 +313,21 @@ refreshRunners();
 // -----------------------------
 // Rules mutations
 // -----------------------------
-function saveRules(name: string, config: any, changedBy?: string) {
+function normalizePositiveInt(value: unknown, fallback: number) {
+  const raw = typeof value === "string" ? value.trim() : value;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+}
+
+function normalizeRulesConfigForStorage(config: any) {
   if (!config || typeof config !== "object") throw new Error("config required");
+  const normalized = normalizeRulesetConfig(config, { ensureBrokerExecution: true });
+  normalized.rsWindowBars5m = normalizePositiveInt((normalized as any).rsWindowBars5m, RS_WINDOW_BARS);
+  return normalized;
+}
+
+function saveRules(name: string, config: any, changedBy?: string) {
+  config = normalizeRulesConfigForStorage(config);
   if (!Number.isFinite(config.timeframeMin) || config.timeframeMin < 1) throw new Error("bad timeframeMin");
   if (!Number.isFinite(config.retestTolerancePct) || config.retestTolerancePct < 0) throw new Error("bad retestTolerancePct");
   if (!Number.isFinite(config.rsWindowBars5m) || config.rsWindowBars5m < 1) throw new Error("bad rsWindowBars5m");
@@ -343,6 +366,7 @@ function setRulesetActiveFn(version: number, active: boolean) {
 }
 
 function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
+  config = normalizeRulesConfigForStorage(config);
   if (config?.emaPeriods != null) {
     if (!Array.isArray(config.emaPeriods)) throw new Error("emaPeriods must be an array");
     const cleaned = Array.from(
@@ -700,13 +724,17 @@ type SignalsSnapshot = {
   forming: Array<{
     symbol: string;
     dir: "CALL" | "PUT";
+    stage: "prebreak" | "retest";
     level: string;
     levelPrice: number;
     lastPrice: number | null;
-    distancePct: number | null;
-    score: number;
+    distanceToTriggerPct: number | null;
+    readinessScore: number;
     rs: "STRONG" | "WEAK" | "NONE";
     market: "BULLISH" | "BEARISH" | "NEUTRAL";
+    passedConditions: string[];
+    missingConditions: string[];
+    nextCatalyst: string;
     strategyVersion?: number;
     strategyName?: string;
     timeframeMin?: number;
@@ -1047,24 +1075,56 @@ function getDbRows() {
 // -----------------------------
 let realtime: ReturnType<typeof attachRealtime>;
 
+function maskSecretsForUi(cfg: any) {
+  const brokerKey = String(cfg?.brokerKey || "");
+  const broker = BROKERS.find((b) => b.key === brokerKey);
+  if (!broker) return cfg;
+
+  return {
+    ...cfg,
+    config: maskSecretConfig(cfg.config || {}, broker.fields.filter((f) => f.secret).map((f) => f.key))
+  };
+}
+
 // Broker config wiring
 function getBrokers() { return BROKERS; }
-function getBrokerConfig() { return loadBrokerConfig(db); }
+function getBrokerConfig() {
+  return maskSecretsForUi(loadBrokerConfig(db));
+}
 
 function setBrokerConfig(next: any, _changedBy?: string) {
+  const current = loadBrokerConfig(db);
   const brokerKey = String(next?.brokerKey || "").trim();
-  const mode = String(next?.mode || "paper") === "live" ? "live" : "paper";
-  const config = next?.config && typeof next.config === "object" ? next.config : {};
+  const broker = BROKERS.find((b) => b.key === brokerKey);
+
+  const configRaw = (next?.config && typeof next.config === "object") ? next.config : {};
+  const secretKeys = broker?.fields.filter((f) => f.secret).map((f) => f.key) || [];
+  const baseConfig = current.brokerKey === brokerKey ? current.config : {};
+  const config = mergeSecretConfig({ existing: baseConfig, next: configRaw, secretKeys });
+
   const tradingEnabled = Boolean(next?.tradingEnabled);
+  const execution = normalizeExecutionPolicy(next?.execution);
 
   if (!brokerKey) {
-    return saveBrokerConfig(db, { brokerKey: "", mode, config: {}, tradingEnabled: false });
+    return saveBrokerConfig(db, {
+      brokerKey: "",
+      mode: "disabled",
+      config: {},
+      execution,
+      tradingEnabled: false
+    });
   }
 
   const allowed = new Set(BROKERS.map((b) => b.key));
   if (!allowed.has(brokerKey)) throw new Error("unsupported broker");
 
-  return saveBrokerConfig(db, { brokerKey, mode, config, tradingEnabled });
+  return saveBrokerConfig(db, {
+    brokerKey,
+    mode: String(next?.mode || "").trim().toLowerCase(),
+    config,
+    execution,
+    tradingEnabled
+  });
 }
 
 // -----------------------------
@@ -1150,19 +1210,23 @@ function recomputeSignalsAndBroadcast() {
       const pa = priorityRank(a.symbol);
       const pb = priorityRank(b.symbol);
       if (pa !== pb) return pa - pb;
-      return (b.score ?? 0) - (a.score ?? 0);
+      return (b.readinessScore ?? 0) - (a.readinessScore ?? 0);
     })
     .slice(0, 12)
     .map((f) => ({
       symbol: f.symbol,
       dir: f.dir,
+      stage: f.stage,
       level: f.levelType,
       levelPrice: f.levelPrice,
       lastPrice: f.lastPrice,
-      distancePct: f.distancePct,
-      score: f.score,
+      distanceToTriggerPct: f.distanceToTriggerPct,
+      readinessScore: f.readinessScore,
       rs: f.rs,
       market: f.market,
+      passedConditions: f.passedConditions,
+      missingConditions: f.missingConditions,
+      nextCatalyst: f.nextCatalyst,
       strategyVersion: f.strategyVersion,
       strategyName: f.strategyName,
       timeframeMin: f.timeframeMin
@@ -1198,6 +1262,14 @@ function startOutcomeTrackingIfTrade(r: StrategyRunner, alert: Alert, ts: number
       execRules: buildExecRulesFromCfg(r.cfg)
     });
   } catch {}
+}
+
+function triggerBrokerExecutionIfEligible(alert: Alert) {
+  if (!isTradeSignal(alert)) return;
+
+  void brokerExecution.executeConfirmedAlert(alert).catch((e) => {
+    console.log("[broker] execution error", e?.message || e);
+  });
 }
 
 // -----------------------------
@@ -1237,6 +1309,7 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
     if (alerts.length > 2000) alerts = alerts.slice(-2000);
     dbInsertAlert(alert);
     realtime?.broadcastAlert(alert);
+    triggerBrokerExecutionIfEligible(alert);
   }
 }
 
@@ -1277,6 +1350,7 @@ function ingestMinuteBar(
         if (alerts.length > 2000) alerts = alerts.slice(-2000);
         dbInsertAlert(tap);
         realtime?.broadcastAlert(tap);
+        triggerBrokerExecutionIfEligible(tap);
       }
 
       const doneFromMinute = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
@@ -1764,6 +1838,8 @@ const app = createHttpApp({
   getBrokers,
   getBrokerConfig,
   saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
+  getBrokerStatus: () => brokerExecution.getStatus(),
+  getBrokerActivity: (limit?: number) => brokerExecution.getActivity(limit),
 
   httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
 

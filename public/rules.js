@@ -39,6 +39,22 @@ let modalVersion = null;
   const stopR = $("stopR");
   const maxHoldBars = $("maxHoldBars");
   const exitOnBiasFlip = $("exitOnBiasFlip");
+  const brokerExecEnabled = $("brokerExecEnabled");
+  const brokerExecAllowLong = $("brokerExecAllowLong");
+  const brokerExecAllowShort = $("brokerExecAllowShort");
+  const brokerExecMode = $("brokerExecMode");
+  const brokerExecSessionFilter = $("brokerExecSessionFilter");
+  const brokerExecSizingMode = $("brokerExecSizingMode");
+  const brokerExecDefaultNotional = $("brokerExecDefaultNotional");
+  const brokerExecDefaultQty = $("brokerExecDefaultQty");
+  const brokerExecDuplicatePolicy = $("brokerExecDuplicatePolicy");
+  const brokerExecStopModel = $("brokerExecStopModel");
+  const brokerExecStopLossPct = $("brokerExecStopLossPct");
+  const brokerExecTakeProfitPct = $("brokerExecTakeProfitPct");
+  const brokerExecMaxOpenPositions = $("brokerExecMaxOpenPositions");
+  const brokerExecMaxOrdersPerSymbolPerDay = $("brokerExecMaxOrdersPerSymbolPerDay");
+  const brokerExecEntryPolicy = $("brokerExecEntryPolicy");
+  const brokerExecNotes = $("brokerExecNotes");
 
   // ORB fields
   const orbFields = $("orbFields");
@@ -61,6 +77,7 @@ let modalVersion = null;
   const sumFilters = $("sumFilters");
   const sumIndicators = $("sumIndicators");
   const sumMgmt = $("sumMgmt");
+  const sumExecution = $("sumExecution");
 
   // State
   let lastLoadedVersion = null;
@@ -111,6 +128,25 @@ let modalVersion = null;
       trailEnabled: false,
       trailStartR: 1,
       trailByR: 1
+    },
+
+    brokerExecution: {
+      enabled: true,
+      mode: "inherit",
+      sizingMode: "inherit",
+      defaultNotional: null,
+      defaultQty: null,
+      allowLong: true,
+      allowShort: true,
+      sessionFilter: "inherit",
+      entryPolicy: "confirmed_only",
+      stopModel: "inherit",
+      stopLossPct: null,
+      takeProfitPct: null,
+      maxOpenPositionsForStrategy: null,
+      maxOrdersPerSymbolPerDay: null,
+      duplicatePolicy: "inherit",
+      notes: null
     }
   };
 
@@ -122,8 +158,15 @@ let modalVersion = null;
   }
 
   function asNum(v, fallback) {
+    if (typeof v === "string" && v.trim() === "") return fallback;
     const n = Number(v);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  function asPositiveInt(v, fallback) {
+    if (typeof v === "string" && v.trim() === "") return fallback;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
   }
 
   function clamp(n, lo, hi) {
@@ -277,6 +320,27 @@ let modalVersion = null;
     if (trl) parts.push(`Trail start ${String(trailStartR?.value || "—")}R by ${String(trailByR?.value || "—")}R`);
 
     if (sumMgmt) sumMgmt.textContent = parts.join(" • ");
+
+    const exec = DEFAULT_RULES.brokerExecution;
+    const execEnabled = brokerExecEnabled ? Boolean(brokerExecEnabled.checked) : exec.enabled;
+    const execMode = String(brokerExecMode?.value || exec.mode);
+    const execSizing = String(brokerExecSizingMode?.value || exec.sizingMode);
+    const dup = String(brokerExecDuplicatePolicy?.value || exec.duplicatePolicy);
+    const dirs = [
+      brokerExecAllowLong?.checked ? "CALL" : null,
+      brokerExecAllowShort?.checked ? "PUT" : null,
+    ].filter(Boolean);
+    const dirText = dirs.length ? dirs.join("/") : "No directions";
+
+    if (sumExecution) {
+      sumExecution.textContent = [
+        execEnabled ? "Execution on" : "Execution off",
+        `Mode ${execMode}`,
+        `Size ${execSizing}`,
+        dirText,
+        `Duplicate ${dup}`,
+      ].join(" • ");
+    }
   }
 
   // ---------- form IO ----------
@@ -331,6 +395,41 @@ let modalVersion = null;
     if (trailStartR) trailStartR.value = String(post.trailStartR ?? "");
     if (trailByR) trailByR.value = String(post.trailByR ?? "");
 
+    const brokerExecution = c.brokerExecution || DEFAULT_RULES.brokerExecution;
+    if (brokerExecEnabled) brokerExecEnabled.checked = brokerExecution.enabled !== false;
+    if (brokerExecAllowLong) brokerExecAllowLong.checked = brokerExecution.allowLong !== false;
+    if (brokerExecAllowShort) brokerExecAllowShort.checked = brokerExecution.allowShort !== false;
+    if (brokerExecMode) brokerExecMode.value = String(brokerExecution.mode ?? DEFAULT_RULES.brokerExecution.mode);
+    if (brokerExecSessionFilter) brokerExecSessionFilter.value = String(brokerExecution.sessionFilter ?? DEFAULT_RULES.brokerExecution.sessionFilter);
+    if (brokerExecSizingMode) brokerExecSizingMode.value = String(brokerExecution.sizingMode ?? DEFAULT_RULES.brokerExecution.sizingMode);
+    if (brokerExecDefaultNotional) {
+      brokerExecDefaultNotional.value =
+        brokerExecution.defaultNotional != null ? String(brokerExecution.defaultNotional) : "";
+    }
+    if (brokerExecDefaultQty) brokerExecDefaultQty.value = brokerExecution.defaultQty != null ? String(brokerExecution.defaultQty) : "";
+    if (brokerExecDuplicatePolicy) {
+      brokerExecDuplicatePolicy.value = String(brokerExecution.duplicatePolicy ?? DEFAULT_RULES.brokerExecution.duplicatePolicy);
+    }
+    if (brokerExecStopModel) brokerExecStopModel.value = String(brokerExecution.stopModel ?? DEFAULT_RULES.brokerExecution.stopModel);
+    if (brokerExecStopLossPct) {
+      brokerExecStopLossPct.value = brokerExecution.stopLossPct != null ? String(brokerExecution.stopLossPct) : "";
+    }
+    if (brokerExecTakeProfitPct) {
+      brokerExecTakeProfitPct.value = brokerExecution.takeProfitPct != null ? String(brokerExecution.takeProfitPct) : "";
+    }
+    if (brokerExecMaxOpenPositions) {
+      brokerExecMaxOpenPositions.value =
+        brokerExecution.maxOpenPositionsForStrategy != null ? String(brokerExecution.maxOpenPositionsForStrategy) : "";
+    }
+    if (brokerExecMaxOrdersPerSymbolPerDay) {
+      brokerExecMaxOrdersPerSymbolPerDay.value =
+        brokerExecution.maxOrdersPerSymbolPerDay != null ? String(brokerExecution.maxOrdersPerSymbolPerDay) : "";
+    }
+    if (brokerExecEntryPolicy) {
+      brokerExecEntryPolicy.value = String(brokerExecution.entryPolicy ?? DEFAULT_RULES.brokerExecution.entryPolicy);
+    }
+    if (brokerExecNotes) brokerExecNotes.value = brokerExecution.notes != null ? String(brokerExecution.notes) : "";
+
     applyConditionalUI();
     updateSummaries();
   }
@@ -363,7 +462,7 @@ let modalVersion = null;
       marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
 
       retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
-      rsWindowBars5m: asNum(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
+      rsWindowBars5m: asPositiveInt(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
       structureWindow: asNum(structureWindow?.value, DEFAULT_RULES.structureWindow),
 
       sectorAlignmentEnabled: asBool(sectorAlignmentEnabled?.value ?? DEFAULT_RULES.sectorAlignmentEnabled),
@@ -397,6 +496,30 @@ let modalVersion = null;
         trailEnabled: Boolean(trailEnabled?.checked),
         trailStartR: asNum(trailStartR?.value, DEFAULT_RULES.post.trailStartR),
         trailByR: asNum(trailByR?.value, DEFAULT_RULES.post.trailByR)
+      },
+
+      brokerExecution: {
+        enabled: brokerExecEnabled ? Boolean(brokerExecEnabled.checked) : DEFAULT_RULES.brokerExecution.enabled,
+        mode: String(brokerExecMode?.value || DEFAULT_RULES.brokerExecution.mode),
+        sizingMode: String(brokerExecSizingMode?.value || DEFAULT_RULES.brokerExecution.sizingMode),
+        defaultNotional:
+          brokerExecDefaultNotional?.value === "" ? null : asNum(brokerExecDefaultNotional?.value, DEFAULT_RULES.brokerExecution.defaultNotional),
+        defaultQty: brokerExecDefaultQty?.value === "" ? null : asNum(brokerExecDefaultQty?.value, DEFAULT_RULES.brokerExecution.defaultQty),
+        allowLong: brokerExecAllowLong ? Boolean(brokerExecAllowLong.checked) : DEFAULT_RULES.brokerExecution.allowLong,
+        allowShort: brokerExecAllowShort ? Boolean(brokerExecAllowShort.checked) : DEFAULT_RULES.brokerExecution.allowShort,
+        sessionFilter: String(brokerExecSessionFilter?.value || DEFAULT_RULES.brokerExecution.sessionFilter),
+        entryPolicy: "confirmed_only",
+        stopModel: String(brokerExecStopModel?.value || DEFAULT_RULES.brokerExecution.stopModel),
+        stopLossPct: brokerExecStopLossPct?.value === "" ? null : asNum(brokerExecStopLossPct?.value, 0),
+        takeProfitPct: brokerExecTakeProfitPct?.value === "" ? null : asNum(brokerExecTakeProfitPct?.value, 0),
+        maxOpenPositionsForStrategy:
+          brokerExecMaxOpenPositions?.value === "" ? null : Math.max(0, Math.floor(asNum(brokerExecMaxOpenPositions?.value, 0))),
+        maxOrdersPerSymbolPerDay:
+          brokerExecMaxOrdersPerSymbolPerDay?.value === ""
+            ? null
+            : Math.max(0, Math.floor(asNum(brokerExecMaxOrdersPerSymbolPerDay?.value, 0))),
+        duplicatePolicy: String(brokerExecDuplicatePolicy?.value || DEFAULT_RULES.brokerExecution.duplicatePolicy),
+        notes: String(brokerExecNotes?.value || "").trim() || null
       }
     };
 
@@ -422,7 +545,11 @@ let modalVersion = null;
       retestTolerancePct, rsWindowBars5m, structureWindow, sectorAlignmentEnabled, longMinBiasScore, shortMaxBiasScore,
       indVwap, indMa, indRs, indVol, emaPeriods, emaTrigger,
       targetR, stopR, maxHoldBars, exitOnBiasFlip,
-      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR
+      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR,
+      brokerExecEnabled, brokerExecAllowLong, brokerExecAllowShort, brokerExecMode, brokerExecSessionFilter,
+      brokerExecSizingMode, brokerExecDefaultNotional, brokerExecDefaultQty, brokerExecDuplicatePolicy,
+      brokerExecStopModel, brokerExecStopLossPct, brokerExecTakeProfitPct, brokerExecMaxOpenPositions,
+      brokerExecMaxOrdersPerSymbolPerDay, brokerExecEntryPolicy, brokerExecNotes
     ].filter(Boolean);
 
     els.forEach((el) => {
@@ -481,6 +608,23 @@ let modalVersion = null;
     if (trailStartR) trailStartR.value = "";
     if (trailByR) trailByR.value = "";
 
+    if (brokerExecEnabled) brokerExecEnabled.checked = true;
+    if (brokerExecAllowLong) brokerExecAllowLong.checked = true;
+    if (brokerExecAllowShort) brokerExecAllowShort.checked = true;
+    if (brokerExecMode) brokerExecMode.value = DEFAULT_RULES.brokerExecution.mode;
+    if (brokerExecSessionFilter) brokerExecSessionFilter.value = DEFAULT_RULES.brokerExecution.sessionFilter;
+    if (brokerExecSizingMode) brokerExecSizingMode.value = DEFAULT_RULES.brokerExecution.sizingMode;
+    if (brokerExecDefaultNotional) brokerExecDefaultNotional.value = "";
+    if (brokerExecDefaultQty) brokerExecDefaultQty.value = "";
+    if (brokerExecDuplicatePolicy) brokerExecDuplicatePolicy.value = DEFAULT_RULES.brokerExecution.duplicatePolicy;
+    if (brokerExecStopModel) brokerExecStopModel.value = DEFAULT_RULES.brokerExecution.stopModel;
+    if (brokerExecStopLossPct) brokerExecStopLossPct.value = "";
+    if (brokerExecTakeProfitPct) brokerExecTakeProfitPct.value = "";
+    if (brokerExecMaxOpenPositions) brokerExecMaxOpenPositions.value = "";
+    if (brokerExecMaxOrdersPerSymbolPerDay) brokerExecMaxOrdersPerSymbolPerDay.value = "";
+    if (brokerExecEntryPolicy) brokerExecEntryPolicy.value = DEFAULT_RULES.brokerExecution.entryPolicy;
+    if (brokerExecNotes) brokerExecNotes.value = "";
+
     applyConditionalUI();
     updateSummaries();
   }
@@ -503,6 +647,7 @@ let modalVersion = null;
     const inds = c.indicators || {};
     const post = c.post || {};
     const orb = c.orb || {};
+    const brokerExecution = c.brokerExecution || DEFAULT_RULES.brokerExecution;
 
     const enabledInds = [];
     if (inds.vwap) enabledInds.push("VWAP");
@@ -538,6 +683,25 @@ let modalVersion = null;
 
     if (post.moveBeEnabled) kv.push(["Move BE @", post.moveBeAtR != null ? `${post.moveBeAtR}R` : "—"]);
     if (post.trailEnabled) kv.push(["Trail", `start ${post.trailStartR ?? "—"}R by ${post.trailByR ?? "—"}R`]);
+
+    kv.push(["Broker execution", brokerExecution.enabled === false ? "Disabled" : "Enabled"]);
+    kv.push(["Execution mode", brokerExecution.mode ?? "inherit"]);
+    kv.push(["Sizing", brokerExecution.sizingMode ?? "inherit"]);
+    kv.push([
+      "Directions",
+      [brokerExecution.allowLong ? "CALL" : null, brokerExecution.allowShort ? "PUT" : null].filter(Boolean).join("/") || "None",
+    ]);
+    kv.push(["Duplicate policy", brokerExecution.duplicatePolicy ?? "inherit"]);
+    kv.push(["Stop model", brokerExecution.stopModel ?? "inherit"]);
+    if (brokerExecution.stopLossPct != null) kv.push(["Stop loss %", String(brokerExecution.stopLossPct)]);
+    if (brokerExecution.takeProfitPct != null) kv.push(["Take profit %", String(brokerExecution.takeProfitPct)]);
+    if (brokerExecution.maxOpenPositionsForStrategy != null) {
+      kv.push(["Max open positions", String(brokerExecution.maxOpenPositionsForStrategy)]);
+    }
+    if (brokerExecution.maxOrdersPerSymbolPerDay != null) {
+      kv.push(["Max symbol/day", String(brokerExecution.maxOrdersPerSymbolPerDay)]);
+    }
+    if (brokerExecution.notes) kv.push(["Execution notes", brokerExecution.notes]);
 
     return kv;
   }
@@ -654,7 +818,7 @@ let modalVersion = null;
         const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
         const config = readForm();
 
-        await jpost(`/api/rules/update/${modalVersion}`, { name, config, changedBy: "ui" });
+        await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
 
         restoreEditorFromModal();
         showModalView("view");
@@ -671,7 +835,7 @@ let modalVersion = null;
         const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
         if (!ok) return;
 
-        const res = await fetch(`/api/rules/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
+        const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
 

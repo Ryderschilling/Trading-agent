@@ -1,6 +1,9 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { normalizeBrokerConfig, normalizeExecutionPolicy } from "../broker/config";
+import { BrokerActivityRow, BrokerConfig, BrokerOrderRecord } from "../broker/types";
+import { normalizeRulesetConfig } from "../rules/executionPolicy";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "trading-agent.sqlite");
@@ -16,6 +19,42 @@ function hasColumn(db: Database.Database, table: string, col: string): boolean {
   } catch {
     return false;
   }
+}
+
+function insertRuleChange(
+  db: Database.Database,
+  args: { ts: number; version: number; changedBy?: string; action: string; payload: string }
+) {
+  const cols: string[] = ["ts"];
+  const values: any[] = [args.ts];
+
+  if (hasColumn(db, "rule_changes", "ruleset_version")) {
+    cols.push("ruleset_version");
+    values.push(args.version);
+  }
+  if (hasColumn(db, "rule_changes", "version")) {
+    cols.push("version");
+    values.push(args.version);
+  }
+  if (hasColumn(db, "rule_changes", "changed_by")) {
+    cols.push("changed_by");
+    values.push(args.changedBy ?? null);
+  }
+  if (hasColumn(db, "rule_changes", "action")) {
+    cols.push("action");
+    values.push(args.action);
+  }
+  if (hasColumn(db, "rule_changes", "payload")) {
+    cols.push("payload");
+    values.push(args.payload);
+  }
+  if (hasColumn(db, "rule_changes", "diff_json")) {
+    cols.push("diff_json");
+    values.push(args.payload);
+  }
+
+  const placeholders = cols.map(() => "?").join(",");
+  db.prepare(`INSERT INTO rule_changes(${cols.join(",")}) VALUES(${placeholders})`).run(...values);
 }
 
 function migrate(db: Database.Database) {
@@ -110,11 +149,36 @@ function migrate(db: Database.Database) {
       broker_key      TEXT,
       mode            TEXT,
       config_json     TEXT,
+      execution_json  TEXT,
       trading_enabled INTEGER NOT NULL DEFAULT 0
     );
 
-    INSERT OR IGNORE INTO broker_config(id, broker_key, mode, config_json, trading_enabled)
-    VALUES (1, '', 'paper', '{}', 0);
+    CREATE TABLE IF NOT EXISTS broker_orders (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts                INTEGER NOT NULL,
+      day_key           TEXT NOT NULL,
+      alert_id          TEXT,
+      symbol            TEXT NOT NULL,
+      direction         TEXT NOT NULL,
+      setup_key         TEXT NOT NULL,
+      broker_key        TEXT NOT NULL,
+      mode              TEXT NOT NULL,
+      client_order_id   TEXT,
+      broker_order_id   TEXT,
+      status            TEXT NOT NULL,
+      broker_status     TEXT,
+      reason            TEXT,
+      sizing_mode       TEXT NOT NULL,
+      qty               REAL,
+      notional          REAL,
+      order_type        TEXT NOT NULL,
+      time_in_force     TEXT NOT NULL,
+      extended_hours    INTEGER NOT NULL DEFAULT 0,
+      bracket_enabled   INTEGER NOT NULL DEFAULT 0,
+      strategy_version  INTEGER,
+      request_json      TEXT,
+      response_json     TEXT
+    );
 
     CREATE TABLE IF NOT EXISTS backtest_runs (
       id            TEXT PRIMARY KEY,
@@ -157,11 +221,47 @@ function migrate(db: Database.Database) {
     );
   `);
 
+  // Safety: older DBs may have a legacy rule_changes shape
+  const hasLegacyRulesetVersion = hasColumn(db, "rule_changes", "ruleset_version");
+  const hasLegacyDiffJson = hasColumn(db, "rule_changes", "diff_json");
+  if (!hasColumn(db, "rule_changes", "version")) {
+    db.exec(`ALTER TABLE rule_changes ADD COLUMN version INTEGER NOT NULL DEFAULT 0;`);
+  }
+  if (hasLegacyRulesetVersion) {
+    db.exec(`
+      UPDATE rule_changes
+      SET version = COALESCE(NULLIF(version, 0), ruleset_version, 0)
+      WHERE version IS NULL OR version = 0;
+    `);
+  }
+  if (!hasColumn(db, "rule_changes", "action")) {
+    db.exec(`ALTER TABLE rule_changes ADD COLUMN action TEXT;`);
+  }
+  db.exec(`UPDATE rule_changes SET action='legacy' WHERE action IS NULL OR TRIM(action)='';`);
+  if (!hasColumn(db, "rule_changes", "payload")) {
+    db.exec(`ALTER TABLE rule_changes ADD COLUMN payload TEXT;`);
+  }
+  if (hasLegacyDiffJson) {
+    db.exec(`
+      UPDATE rule_changes
+      SET payload = diff_json
+      WHERE payload IS NULL AND diff_json IS NOT NULL;
+    `);
+  }
+
   // Safety: older DBs may have broker_config without trading_enabled
   if (!hasColumn(db, "broker_config", "trading_enabled")) {
     db.exec(`ALTER TABLE broker_config ADD COLUMN trading_enabled INTEGER NOT NULL DEFAULT 0;`);
     db.exec(`UPDATE broker_config SET trading_enabled=0 WHERE trading_enabled IS NULL;`);
   }
+  if (!hasColumn(db, "broker_config", "execution_json")) {
+    db.exec(`ALTER TABLE broker_config ADD COLUMN execution_json TEXT;`);
+    db.exec(`UPDATE broker_config SET execution_json='{}' WHERE execution_json IS NULL;`);
+  }
+  db.exec(`
+    INSERT OR IGNORE INTO broker_config(id, broker_key, mode, config_json, execution_json, trading_enabled)
+    VALUES (1, '', 'disabled', '{}', '{}', 0);
+  `);
 
   // Safety: older DBs may have outcomes without exec columns
   if (!hasColumn(db, "outcomes", "exit_reason")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_reason TEXT;`);
@@ -169,6 +269,10 @@ function migrate(db: Database.Database) {
   if (!hasColumn(db, "outcomes", "exit_return_pct")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_return_pct REAL;`);
   if (!hasColumn(db, "outcomes", "stop_moved_to_be"))
     db.exec(`ALTER TABLE outcomes ADD COLUMN stop_moved_to_be INTEGER NOT NULL DEFAULT 0;`);
+}
+
+export function migrateDb(db: Database.Database) {
+  migrate(db);
 }
 
 export function openDb() {
@@ -184,7 +288,11 @@ export function loadActiveRuleset(db: Database.Database) {
   if (!row) return null;
   let cfg: any = {};
   try { cfg = JSON.parse(String(row.config_json || "{}")); } catch { cfg = {}; }
-  return { version: Number(row.version), name: String(row.name || `v${row.version}`), config: cfg };
+  return {
+    version: Number(row.version),
+    name: String(row.name || `v${row.version}`),
+    config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+  };
 }
 
 export function insertRuleset(db: Database.Database, name: string, config: any, changedBy?: string) {
@@ -201,13 +309,13 @@ export function insertRuleset(db: Database.Database, name: string, config: any, 
   );
 
   if (changedBy) {
-    db.prepare(`INSERT INTO rule_changes(ts, version, changed_by, action, payload) VALUES(?,?,?,?,?)`).run(
-      created,
+    insertRuleChange(db, {
+      ts: created,
       version,
       changedBy,
-      "create",
-      JSON.stringify({ name, config })
-    );
+      action: "create",
+      payload: JSON.stringify({ name, config })
+    });
   }
 
   return { version };
@@ -223,7 +331,12 @@ export function getRulesetByVersion(db: Database.Database, version: number) {
   if (!row) return null;
   let cfg: any = {};
   try { cfg = JSON.parse(String(row.config_json || "{}")); } catch { cfg = {}; }
-  return { version: Number(row.version), name: String(row.name || `v${row.version}`), active: Boolean(row.active), config: cfg };
+  return {
+    version: Number(row.version),
+    name: String(row.name || `v${row.version}`),
+    active: Boolean(row.active),
+    config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+  };
 }
 
 export function deleteRuleset(db: Database.Database, version: number) {
@@ -239,43 +352,197 @@ export function updateRuleset(db: Database.Database, version: number, name: stri
   );
 
   if (changedBy) {
-    db.prepare(`INSERT INTO rule_changes(ts, version, changed_by, action, payload) VALUES(?,?,?,?,?)`).run(
-      Date.now(),
-      Number(version),
+    insertRuleChange(db, {
+      ts: Date.now(),
+      version: Number(version),
       changedBy,
-      "update",
-      JSON.stringify({ name, config })
-    );
+      action: "update",
+      payload: JSON.stringify({ name, config })
+    });
   }
 
   return { ok: true };
 }
 
-export function loadBrokerConfig(db: Database.Database) {
-  const row = db.prepare(`SELECT broker_key, mode, config_json, trading_enabled FROM broker_config WHERE id=1`).get() as any;
-  if (!row) return { brokerKey: "", mode: "paper", config: {}, tradingEnabled: false };
+export function loadBrokerConfig(db: Database.Database): BrokerConfig {
+  const row = db.prepare(`SELECT broker_key, mode, config_json, execution_json, trading_enabled FROM broker_config WHERE id=1`).get() as any;
+  if (!row) return normalizeBrokerConfig({ brokerKey: "", mode: "disabled", config: {}, execution: {}, tradingEnabled: false });
   let cfg: any = {};
+  let execution: any = {};
   try { cfg = JSON.parse(String(row.config_json || "{}")); } catch { cfg = {}; }
-  return {
+  try { execution = JSON.parse(String(row.execution_json || "{}")); } catch { execution = {}; }
+  return normalizeBrokerConfig({
     brokerKey: String(row.broker_key || ""),
-    mode: String(row.mode || "paper") === "live" ? "live" : "paper",
+    mode: String(row.mode || ""),
     config: cfg,
+    execution,
     tradingEnabled: Boolean(row.trading_enabled)
-  };
+  });
 }
 
 export function saveBrokerConfig(db: Database.Database, next: any) {
-  const brokerKey = String(next?.brokerKey || "");
-  const mode = String(next?.mode || "paper") === "live" ? "live" : "paper";
-  const configJson = JSON.stringify(next?.config && typeof next.config === "object" ? next.config : {});
-  const tradingEnabled = next?.tradingEnabled ? 1 : 0;
+  const normalized = normalizeBrokerConfig(next);
+  const brokerKey = String(normalized.brokerKey || "");
+  const configJson = JSON.stringify(normalized.config || {});
+  const executionJson = JSON.stringify(normalizeExecutionPolicy(normalized.execution));
+  const tradingEnabled = normalized.tradingEnabled ? 1 : 0;
 
-  db.prepare(`UPDATE broker_config SET broker_key=?, mode=?, config_json=?, trading_enabled=? WHERE id=1`).run(
+  db.prepare(`UPDATE broker_config SET broker_key=?, mode=?, config_json=?, execution_json=?, trading_enabled=? WHERE id=1`).run(
     brokerKey,
-    mode,
+    normalized.mode,
     configJson,
+    executionJson,
     tradingEnabled
   );
 
   return { ok: true };
+}
+
+export function insertBrokerOrder(db: Database.Database, row: BrokerOrderRecord) {
+  db.prepare(
+    `INSERT INTO broker_orders(
+      ts, day_key, alert_id, symbol, direction, setup_key, broker_key, mode,
+      client_order_id, broker_order_id, status, broker_status, reason,
+      sizing_mode, qty, notional, order_type, time_in_force,
+      extended_hours, bracket_enabled, strategy_version, request_json, response_json
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(
+    row.ts,
+    row.dayKey,
+    row.alertId,
+    row.symbol,
+    row.direction,
+    row.setupKey,
+    row.brokerKey,
+    row.mode,
+    row.clientOrderId,
+    row.brokerOrderId,
+    row.status,
+    row.brokerStatus,
+    row.reason,
+    row.sizingMode,
+    row.qty,
+    row.notional,
+    row.orderType,
+    row.timeInForce,
+    row.extendedHours ? 1 : 0,
+    row.bracketEnabled ? 1 : 0,
+    row.strategyVersion,
+    row.requestJson == null ? null : JSON.stringify(row.requestJson),
+    row.responseJson == null ? null : JSON.stringify(row.responseJson)
+  );
+}
+
+function parseJson(value: any) {
+  try {
+    return value == null ? null : JSON.parse(String(value));
+  } catch {
+    return null;
+  }
+}
+
+export function listBrokerOrders(db: Database.Database, limit = 25): BrokerActivityRow[] {
+  const rows = db
+    .prepare(
+      `SELECT
+        id, ts, day_key, alert_id, symbol, direction, setup_key, broker_key, mode,
+        client_order_id, broker_order_id, status, broker_status, reason, sizing_mode,
+        qty, notional, order_type, time_in_force, extended_hours, bracket_enabled,
+        strategy_version, request_json, response_json
+       FROM broker_orders
+       ORDER BY ts DESC, id DESC
+       LIMIT ?`
+    )
+    .all(Math.max(1, Math.floor(limit))) as any[];
+
+  return rows.map((row) => ({
+    id: Number(row.id),
+    ts: Number(row.ts),
+    dayKey: String(row.day_key),
+    alertId: row.alert_id == null ? null : String(row.alert_id),
+    symbol: String(row.symbol),
+    direction: String(row.direction) as BrokerOrderRecord["direction"],
+    setupKey: String(row.setup_key),
+    brokerKey: String(row.broker_key),
+    mode: String(row.mode) as BrokerOrderRecord["mode"],
+    clientOrderId: row.client_order_id == null ? null : String(row.client_order_id),
+    brokerOrderId: row.broker_order_id == null ? null : String(row.broker_order_id),
+    status: String(row.status) as BrokerOrderRecord["status"],
+    brokerStatus: row.broker_status == null ? null : String(row.broker_status),
+    reason: row.reason == null ? null : String(row.reason),
+    sizingMode: String(row.sizing_mode) as BrokerOrderRecord["sizingMode"],
+    qty: row.qty == null ? null : Number(row.qty),
+    notional: row.notional == null ? null : Number(row.notional),
+    orderType: String(row.order_type) as BrokerOrderRecord["orderType"],
+    timeInForce: String(row.time_in_force) as BrokerOrderRecord["timeInForce"],
+    extendedHours: Boolean(row.extended_hours),
+    bracketEnabled: Boolean(row.bracket_enabled),
+    strategyVersion: row.strategy_version == null ? null : Number(row.strategy_version),
+    requestJson: parseJson(row.request_json),
+    responseJson: parseJson(row.response_json),
+  }));
+}
+
+export function findSubmittedBrokerOrderBySetup(db: Database.Database, dayKey: string, setupKey: string) {
+  const row = db
+    .prepare(
+      `SELECT id
+       FROM broker_orders
+       WHERE day_key=? AND setup_key=? AND status='SUBMITTED'
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+    .get(dayKey, setupKey) as any;
+  return row ? Number(row.id) : null;
+}
+
+export function countBrokerOrdersForSymbolDay(db: Database.Database, dayKey: string, symbol: string) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c
+       FROM broker_orders
+       WHERE day_key=? AND symbol=? AND status='SUBMITTED'`
+    )
+    .get(dayKey, symbol) as any;
+  return Number(row?.c || 0);
+}
+
+export function countBrokerOrdersForStrategySymbolDay(
+  db: Database.Database,
+  dayKey: string,
+  symbol: string,
+  strategyVersion: number
+) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c
+       FROM broker_orders
+       WHERE day_key=? AND symbol=? AND strategy_version=? AND status='SUBMITTED'`
+    )
+    .get(dayKey, symbol, strategyVersion) as any;
+  return Number(row?.c || 0);
+}
+
+export function sumSubmittedBrokerNotionalForDay(db: Database.Database, dayKey: string) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(notional), 0) AS total
+       FROM broker_orders
+       WHERE day_key=? AND status='SUBMITTED'`
+    )
+    .get(dayKey) as any;
+  return Number(row?.total || 0);
+}
+
+export function findLatestSuccessfulBrokerCheckTs(db: Database.Database): number | null {
+  const row = db
+    .prepare(
+      `SELECT ts
+       FROM broker_orders
+       WHERE status='SUBMITTED'
+       ORDER BY ts DESC, id DESC
+       LIMIT 1`
+    )
+    .get() as any;
+  return row?.ts == null ? null : Number(row.ts);
 }
