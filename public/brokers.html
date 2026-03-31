@@ -2,544 +2,1088 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Brokers • Trading Agent</title>
+
     <link rel="stylesheet" href="/styles-v4.css" />
     <script src="/ui.js" defer></script>
-    <style>
-      /* ============================
-         Brokers page — premium skin
-         (page-scoped, does not affect other pages)
-         ============================ */
 
-      /* Make this page use more horizontal space without changing global layout */
-      .shell {
-        max-width: 1320px; /* wider than default 1120 */
+    <style>
+      .page-brokers .broker-shell {
+        max-width: 1180px;
       }
 
-      /* Subtle section heading above cards */
-      .page-head {
+      .page-brokers .broker-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .page-brokers .broker-page-head {
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         gap: 16px;
-        margin-top: 14px;
       }
-      .page-head .title {
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: -0.01em;
+
+      .page-brokers .broker-page-title {
+        font-size: 28px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
       }
-      .page-head .subtitle {
-        margin-top: 4px;
+
+      .page-brokers .broker-page-copy {
+        margin-top: 6px;
+        max-width: 68ch;
         color: var(--muted);
-        font-size: 12px;
-        line-height: 1.35;
-        max-width: 70ch;
+        font-size: 13px;
+        line-height: 1.55;
       }
-      .page-actions {
+
+      .page-brokers .broker-card {
+        overflow: hidden;
+      }
+
+      .page-brokers .broker-card-body {
+        padding: 18px;
+      }
+
+      .page-brokers .broker-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .page-brokers .broker-status-badge::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.35);
+      }
+
+      .page-brokers .broker-status-badge.is-ok {
+        border-color: rgba(34, 197, 94, 0.24);
+        background: rgba(34, 197, 94, 0.12);
+      }
+
+      .page-brokers .broker-status-badge.is-ok::before {
+        background: #22c55e;
+      }
+
+      .page-brokers .broker-status-badge.is-warn {
+        border-color: rgba(245, 158, 11, 0.24);
+        background: rgba(245, 158, 11, 0.12);
+      }
+
+      .page-brokers .broker-status-badge.is-warn::before {
+        background: #f59e0b;
+      }
+
+      .page-brokers .broker-status-badge.is-bad {
+        border-color: rgba(239, 68, 68, 0.24);
+        background: rgba(239, 68, 68, 0.12);
+      }
+
+      .page-brokers .broker-status-badge.is-bad::before {
+        background: #ef4444;
+      }
+
+      .page-brokers .broker-status-badge.is-neutral::before {
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .page-brokers .broker-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .page-brokers .broker-pill.is-ok {
+        border-color: rgba(34, 197, 94, 0.22);
+        background: rgba(34, 197, 94, 0.10);
+      }
+
+      .page-brokers .broker-pill.is-warn {
+        border-color: rgba(245, 158, 11, 0.22);
+        background: rgba(245, 158, 11, 0.10);
+      }
+
+      .page-brokers .broker-pill.is-bad {
+        border-color: rgba(239, 68, 68, 0.22);
+        background: rgba(239, 68, 68, 0.10);
+      }
+
+      .page-brokers .broker-pill.is-subtle {
+        color: var(--muted);
+      }
+
+      .page-brokers .broker-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .page-brokers .broker-toolbar-left,
+      .page-brokers .broker-toolbar-right {
         display: flex;
         align-items: center;
         gap: 10px;
         flex-wrap: wrap;
       }
 
-      /* Card system: reuse your vars for perfect match */
-      .panel {
-        background: var(--card-bg);
-        border: 1px solid var(--card-border);
-        border-radius: 18px;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
-        overflow: hidden;
-      }
-      .panel-h {
-        padding: 14px 14px 12px 14px;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 10px;
-      }
-      .panel-h .h-title {
-        font-weight: 800;
-        letter-spacing: -0.01em;
-      }
-      .panel-h .h-sub {
-        margin-top: 3px;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.35;
-      }
-      .panel-b {
-        padding: 14px;
-      }
-
-      /* Grid layout */
-      .brokers-grid {
-        display: grid;
-        grid-template-columns: 390px 1fr;
-        gap: 14px;
-        margin-top: 14px;
-        align-items: start;
-      }
-      @media (max-width: 980px) {
-        .brokers-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      /* Form styling (clean, premium, consistent) */
-      .form {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .field {
-        display: grid;
-        grid-template-columns: 92px 1fr;
-        gap: 10px;
-        align-items: center;
-      }
-      .field label {
-        font-size: 12px;
-        color: var(--muted);
-        font-weight: 700;
-      }
-      .control,
-      select.control,
-      input.control {
-        width: 100%;
-        height: 34px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.12);
-        background: rgba(255, 255, 255, 0.72);
-        padding: 0 10px;
-        font-size: 13px;
-        outline: none;
-      }
-      .control:focus {
-        border-color: rgba(0, 0, 0, 0.22);
-        box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
-      }
-
-      /* Broker fields container injected by JS */
-      #brokerFields .form-row {
-        display: grid;
-        grid-template-columns: 92px 1fr;
-        gap: 10px;
-        align-items: center;
-        margin-top: 10px;
-      }
-      #brokerFields .form-row label {
-        font-size: 12px;
-        color: var(--muted);
-        font-weight: 700;
-      }
-      #brokerFields input,
-      #brokerFields select {
-        width: 100%;
-        height: 34px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.12);
-        background: rgba(255, 255, 255, 0.72);
-        padding: 0 10px;
-        font-size: 13px;
-        outline: none;
-      }
-      #brokerFields input:focus,
-      #brokerFields select:focus {
-        border-color: rgba(0, 0, 0, 0.22);
-        box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
-      }
-
-      /* Buttons */
-      .btn {
-        height: 34px;
-        padding: 0 12px;
-        border-radius: 999px;
-        border: 1px solid rgba(0, 0, 0, 0.14);
-        background: rgba(255, 255, 255, 0.75);
-        cursor: pointer;
-        font-weight: 800;
-        font-size: 12px;
-        letter-spacing: -0.01em;
-      }
-      .btn:hover {
-        background: rgba(255, 255, 255, 0.9);
-      }
-      .btn.primary {
-        background: #111;
-        color: #fff;
-        border-color: rgba(0, 0, 0, 0.35);
-      }
-      .btn.primary:hover {
-        background: #000;
-      }
-
-      /* Pills / status */
-      .pill {
+      .page-brokers .broker-control-cluster {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        height: 28px;
-        padding: 0 10px;
-        border-radius: 999px;
-        border: 1px solid rgba(0, 0, 0, 0.12);
-        background: rgba(255, 255, 255, 0.6);
-        font-size: 12px;
-        font-weight: 800;
-        color: #222;
-      }
-      .dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 999px;
-        background: #999;
-      }
-
-      /* Execution toggle row */
-      .exec-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 10px 12px;
-        border: 1px solid rgba(0, 0, 0, 0.10);
-        background: rgba(255, 255, 255, 0.52);
+        min-height: 42px;
+        padding: 6px;
+        border: 1px solid var(--line);
         border-radius: 14px;
-      }
-      .exec-row .left {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-      .exec-row .left span {
-        font-weight: 800;
-      }
-      .exec-row .hint {
-        margin-top: 8px;
-        color: var(--muted);
-        font-size: 12px;
-        line-height: 1.35;
+        background: rgba(255, 255, 255, 0.03);
       }
 
-      /* KPI row */
-      .kpi-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
-        margin-top: 10px;
-      }
-      @media (max-width: 980px) {
-        .kpi-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-      .kpi {
-        border: 1px solid rgba(0, 0, 0, 0.10);
-        background: rgba(255, 255, 255, 0.58);
-        border-radius: 16px;
-        padding: 12px;
-      }
-      .kpi .label {
+      .page-brokers .broker-control-label {
+        padding-inline: 8px 4px;
         color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .page-brokers .broker-segmented {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .page-brokers .broker-segment-btn,
+      .page-brokers .broker-toggle-btn {
+        min-height: 30px;
+        padding: 6px 12px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+
+      .page-brokers .broker-segment-btn.is-active-paper {
+        background: rgba(34, 197, 94, 0.14);
+        border-color: rgba(34, 197, 94, 0.28);
+      }
+
+      .page-brokers .broker-segment-btn.is-active-live {
+        background: rgba(245, 158, 11, 0.14);
+        border-color: rgba(245, 158, 11, 0.28);
+      }
+
+      .page-brokers .broker-toggle-btn.is-on {
+        background: rgba(34, 197, 94, 0.14);
+        border-color: rgba(34, 197, 94, 0.28);
+      }
+
+      .page-brokers .broker-toggle-btn.is-off {
+        background: rgba(239, 68, 68, 0.14);
+        border-color: rgba(239, 68, 68, 0.28);
+      }
+
+      .page-brokers .broker-alert-strip {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 10px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(245, 158, 11, 0.20);
+        background: rgba(245, 158, 11, 0.08);
+        color: var(--text);
         font-size: 12px;
         font-weight: 700;
+        line-height: 1.5;
       }
-      .kpi .value {
-        margin-top: 6px;
-        font-size: 20px;
-        font-weight: 900;
+
+      .page-brokers .broker-alert-strip.is-bad {
+        border-color: rgba(239, 68, 68, 0.22);
+        background: rgba(239, 68, 68, 0.08);
+      }
+
+      .page-brokers .broker-alert-strip.is-ok {
+        border-color: rgba(34, 197, 94, 0.22);
+        background: rgba(34, 197, 94, 0.08);
+      }
+
+      .page-brokers .broker-section-title {
+        font-size: 15px;
+        font-weight: 800;
         letter-spacing: -0.02em;
       }
 
-      /* Two tables */
-      .tables {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px;
-        margin-top: 12px;
-      }
-      @media (max-width: 980px) {
-        .tables {
-          grid-template-columns: 1fr;
-        }
-      }
-      .table {
-        border: 1px solid rgba(0, 0, 0, 0.10);
-        background: rgba(255, 255, 255, 0.52);
-        border-radius: 16px;
-        overflow: hidden;
-      }
-      .table-h {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 12px;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-      }
-      .table-h .t-title {
-        font-weight: 900;
-      }
-      .table-b {
-        padding: 8px 10px 10px 10px;
+      .page-brokers .broker-section-copy {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
       }
 
-      /* rows rendered by brokers.js */
-      .row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
+      .page-brokers .broker-overview-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 10px;
-        padding: 10px 10px;
-        border-radius: 12px;
-        border: 1px solid rgba(0, 0, 0, 0.08);
-        background: rgba(255, 255, 255, 0.55);
-        margin-bottom: 8px;
       }
-      .row:last-child {
-        margin-bottom: 0;
+
+      .page-brokers .broker-overview-item,
+      .page-brokers .broker-toggle-card,
+      .page-brokers .broker-detail,
+      .page-brokers .broker-list-row {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
       }
-      .row .left {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
+
+      .page-brokers .broker-overview-item {
+        display: grid;
+        gap: 8px;
+        min-height: 88px;
+        padding: 14px;
+      }
+
+      .page-brokers .broker-section-label,
+      .page-brokers .broker-detail-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .page-brokers .broker-overview-value {
+        font-size: 24px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+      }
+
+      .page-brokers .broker-overview-meta,
+      .page-brokers .broker-note {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .page-brokers .broker-two-up {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .page-brokers .broker-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .page-brokers .broker-list-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 14px;
+        align-items: center;
+        min-height: 78px;
+        padding: 12px 14px;
+      }
+
+      .page-brokers .broker-list-main {
         min-width: 0;
       }
-      .row .left b {
-        font-size: 12px;
-        letter-spacing: -0.01em;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .row .left .small {
-        font-size: 11px;
-        color: var(--muted);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .row .right {
-        font-weight: 900;
-        font-size: 12px;
-        white-space: nowrap;
+
+      .page-brokers .broker-list-main strong,
+      .page-brokers .broker-list-side strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 800;
       }
 
-      .empty {
+      .page-brokers .broker-list-main span,
+      .page-brokers .broker-list-side span {
+        display: block;
+        margin-top: 4px;
         color: var(--muted);
         font-size: 12px;
-        padding: 8px 2px 0 2px;
+        line-height: 1.5;
       }
 
-      /* Connection details */
-      .kvs {
+      .page-brokers .broker-list-side {
+        text-align: right;
+      }
+
+      .page-brokers .broker-activity-side {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
-        margin-top: 12px;
+        justify-items: end;
+        gap: 6px;
       }
-      @media (max-width: 980px) {
-        .kvs {
-          grid-template-columns: 1fr;
-        }
+
+      .page-brokers .broker-activity-pills {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
       }
-      .kv {
-        border: 1px solid rgba(0, 0, 0, 0.10);
-        background: rgba(255, 255, 255, 0.55);
+
+      .page-brokers .broker-empty {
+        padding: 16px;
+        border: 1px dashed var(--line);
         border-radius: 14px;
-        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .page-brokers .broker-activity-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .page-brokers .broker-section-kicker {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .page-brokers .broker-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: none;
+      }
+
+      .page-brokers .broker-modal.is-open {
+        display: block;
+      }
+
+      .page-brokers .broker-modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(5, 8, 12, 0.72);
+        backdrop-filter: blur(10px);
+      }
+
+      .page-brokers .broker-modal-panel {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        bottom: 18px;
+        width: min(720px, calc(100vw - 36px));
+        display: grid;
+        grid-template-rows: auto 1fr;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04)),
+          var(--card);
+        box-shadow: var(--shadowLift);
+        overflow: hidden;
+      }
+
+      .page-brokers .broker-modal-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .page-brokers .broker-modal-title {
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+      }
+
+      .page-brokers .broker-modal-copy {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .page-brokers .broker-modal-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .page-brokers .broker-modal-body {
+        display: grid;
+        gap: 14px;
+        padding: 16px 18px 18px;
+        overflow-y: auto;
+      }
+
+      .page-brokers .broker-accordion {
+        overflow: hidden;
+      }
+
+      .page-brokers .broker-accordion-head {
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 14px;
+        padding: 16px 18px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .page-brokers .broker-accordion-head:hover {
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .page-brokers .broker-accordion-copy {
+        min-width: 0;
+      }
+
+      .page-brokers .broker-accordion-title {
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+
+      .page-brokers .broker-accordion-summary {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .page-brokers .broker-accordion-caret {
+        width: 10px;
+        height: 10px;
+        flex: 0 0 auto;
+        margin-right: 4px;
+        border-right: 1.5px solid var(--muted);
+        border-bottom: 1.5px solid var(--muted);
+        transform: rotate(45deg);
+        transition: transform 160ms ease;
+      }
+
+      .page-brokers .broker-accordion.is-open .broker-accordion-caret {
+        transform: rotate(225deg);
+      }
+
+      .page-brokers .broker-accordion-body {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 160ms ease;
+      }
+
+      .page-brokers .broker-accordion.is-open .broker-accordion-body {
+        grid-template-rows: 1fr;
+      }
+
+      .page-brokers .broker-accordion-panel {
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .page-brokers .broker-form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .page-brokers .broker-field-grid,
+      .page-brokers #brokerFields {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
-      .kv span:first-child {
-        color: var(--muted);
+
+      .page-brokers .broker-field,
+      .page-brokers #brokerFields .form-row {
+        display: grid;
+        gap: 8px;
+      }
+
+      .page-brokers .broker-field label,
+      .page-brokers #brokerFields label {
+        color: var(--text);
         font-size: 12px;
         font-weight: 800;
       }
-      .kv span:last-child {
-        font-weight: 900;
+
+      .page-brokers .broker-control,
+      .page-brokers #brokerFields input,
+      .page-brokers #brokerFields select {
+        width: 100%;
       }
 
-      /* Divider */
-      .hr {
-        height: 1px;
-        background: rgba(0, 0, 0, 0.08);
-        margin: 14px 0;
+      .page-brokers .broker-form-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .page-brokers .broker-toggle-grid,
+      .page-brokers .broker-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .page-brokers .broker-toggle-card {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        min-height: 110px;
+        padding: 14px;
+      }
+
+      .page-brokers .broker-toggle-copy {
+        display: grid;
+        gap: 5px;
+      }
+
+      .page-brokers .broker-toggle-copy strong {
+        font-size: 14px;
+      }
+
+      .page-brokers .broker-toggle-copy span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .page-brokers .broker-checkbox {
+        width: 18px;
+        height: 18px;
+        margin: 2px 0 0 0;
+        accent-color: #5da9ff;
+      }
+
+      .page-brokers .broker-inline-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+
+      .page-brokers .broker-alert {
+        display: none;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(239, 68, 68, 0.20);
+        background: rgba(239, 68, 68, 0.10);
+      }
+
+      .page-brokers .broker-alert.is-warn {
+        border-color: rgba(245, 158, 11, 0.20);
+        background: rgba(245, 158, 11, 0.10);
+      }
+
+      .page-brokers .broker-alert.is-ok {
+        border-color: rgba(34, 197, 94, 0.20);
+        background: rgba(34, 197, 94, 0.10);
+      }
+
+      .page-brokers .broker-alert-title {
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .page-brokers .broker-alert-body {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .page-brokers .broker-detail {
+        min-height: 100px;
+        padding: 14px;
+      }
+
+      .page-brokers .broker-detail-value {
+        margin-top: 10px;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 980px) {
+        .page-brokers .broker-overview-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .page-brokers .broker-two-up,
+        .page-brokers .broker-toggle-grid,
+        .page-brokers .broker-detail-grid,
+        .page-brokers .broker-field-grid,
+        .page-brokers #brokerFields {
+          grid-template-columns: 1fr;
+        }
+
+        .page-brokers .broker-modal-panel {
+          top: 10px;
+          right: 10px;
+          bottom: 10px;
+          width: calc(100vw - 20px);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page-brokers .broker-page-head,
+        .page-brokers .broker-modal-head,
+        .page-brokers .broker-modal-actions,
+        .page-brokers .broker-form-footer,
+        .page-brokers .broker-activity-head,
+        .page-brokers .broker-toggle-card {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .page-brokers .broker-overview-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .page-brokers .broker-list-row {
+          grid-template-columns: 1fr;
+        }
+
+        .page-brokers .broker-list-side,
+        .page-brokers .broker-activity-side {
+          text-align: left;
+          justify-items: start;
+        }
+
+        .page-brokers .broker-activity-pills {
+          justify-content: flex-start;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page-brokers .broker-overview-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
-  <body>
-    <div class="shell">
-      <!-- TOP BAR: keep identical structure/pattern to the rest of the app -->
-      <div class="topbar">
+
+  <body class="page-brokers">
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
         <div class="brand">
-          <div class="brand-dot"></div>
+          <img src="/logo.PNG" class="brand-logo" alt="Logo" />
           <div class="brand-text">Trading Agent</div>
         </div>
-            <div style="font-weight: 800">Trading Agent</div>
-            <div class="small">Brokers dashboard</div>
-          </div>
-        </div>
 
-        <div class="tabs">
+        <nav class="tabs">
           <a class="tab" href="/">Workspace</a>
           <a class="tab" href="/outcomes">Outcomes</a>
-          <a class="tab" href="/watchlist">Watch</a>
+          <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
+          <a class="tab" href="/backtest">Backtest</a>
           <a class="tab active" href="/brokers">Brokers</a>
-        </div>
-
-        <div class="actions">
-          <button class="btn" id="refreshBtn">Refresh</button>
-          <span class="pill" id="brokerStatusPill"><span class="dot"></span>Not connected</span>
-        </div>
+        </nav>
       </div>
 
-      <!-- PAGE HEAD -->
-      <div class="page-head">
-        <div>
-          <div class="title">Brokers</div>
-          <div class="subtitle">
-            Configure broker integration, view account status, and keep execution <b>OFF</b> until signals/rules are dialed.
-          </div>
-        </div>
-
-        <div class="page-actions">
-          <!-- keep using refreshBtn / brokerStatusPill above (JS binds to those) -->
+      <div class="topbar-right">
+        <div class="status">
+          <span class="status-dot"></span>
+          <span>Broker Controls</span>
         </div>
       </div>
+    </header>
 
-      <!-- MAIN GRID -->
-      <div class="brokers-grid">
-        <!-- LEFT COLUMN -->
-        <div style="display:flex; flex-direction:column; gap:14px;">
-          <!-- Connection panel -->
-          <div class="panel">
-            <div class="panel-h">
-              <div>
-                <div class="h-title">Connection</div>
-                <div class="h-sub">Select broker + mode, enter credentials, then save.</div>
-              </div>
-            </div>
-
-            <div class="panel-b">
-              <div class="form">
-                <div class="field">
-                  <label for="brokerSelect">Broker</label>
-                  <select class="control" id="brokerSelect"></select>
-                </div>
-
-                <div class="field">
-                  <label for="modeSelect">Mode</label>
-                  <select class="control" id="modeSelect">
-                    <option value="paper">paper</option>
-                    <option value="live">live</option>
-                  </select>
-                </div>
-
-                <!-- JS injects additional fields here; styling handled above -->
-                <div id="brokerFields"></div>
-
-                <div style="display:flex; gap:10px; align-items:center; margin-top: 8px;">
-                  <button class="btn primary" id="saveCfg">Save Broker Config</button>
-                  <span class="pill" id="saveStatus" style="display:none"></span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Execution panel -->
-          <div class="panel">
-            <div class="panel-h">
-              <div>
-                <div class="h-title">Execution</div>
-                <div class="h-sub">Hard-toggle execution. Leave OFF until you trust the signals + rules.</div>
-              </div>
-            </div>
-
-            <div class="panel-b">
-              <div class="exec-row">
-                <div class="left">
-                  <input type="checkbox" id="tradingEnabled" />
-                  <span>Trading execution</span>
-                </div>
-                <button class="btn" id="saveExec">Save</button>
-              </div>
-
-              <div class="hint" id="execHint">
-                Execution is OFF by default. When ON, future builds can place trades through the connected broker.
-              </div>
-            </div>
+    <main class="shell broker-shell">
+      <section class="stack broker-stack">
+        <div class="broker-page-head">
+          <div>
+            <div class="broker-page-title">Brokers</div>
+            <div class="broker-page-copy">Manage the account from a compact control strip, monitor balances, and operate open positions, orders, and broker activity without exposing broker admin details on the main surface.</div>
           </div>
         </div>
 
-        <!-- RIGHT COLUMN -->
-        <div class="panel">
-          <div class="panel-h">
+        <section class="card broker-card">
+          <div class="broker-card-body">
+            <div class="broker-toolbar">
+              <div class="broker-toolbar-left">
+                <span class="broker-pill" id="statusProviderPill">Provider —</span>
+                <span class="broker-pill" id="statusConnectionPill">Status —</span>
+              </div>
+
+              <div class="broker-toolbar-right">
+                <div class="broker-control-cluster">
+                  <span class="broker-control-label">Mode</span>
+                  <div class="broker-segmented">
+                    <button class="btn broker-segment-btn" id="modePaperBtn">PAPER</button>
+                    <button class="btn broker-segment-btn" id="modeLiveBtn">LIVE</button>
+                  </div>
+                </div>
+
+                <div class="broker-control-cluster">
+                  <span class="broker-control-label">Execution</span>
+                  <button class="btn broker-toggle-btn" id="toggleExecutionBtn">OFF</button>
+                </div>
+
+                <button class="btn" id="openSettingsBtn">Broker Settings</button>
+                <span id="saveStatus" class="broker-status-badge is-neutral" style="display:none;">Saved</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="broker-alert-strip" id="blockingAlert">
+          <span id="blockingAlertText">Broker issue</span>
+        </div>
+
+        <section class="card broker-card">
+          <div class="card-head">
             <div>
-              <div class="h-title">Account dashboard</div>
-              <div class="h-sub" id="dashSubtitle">Live snapshot from the connected broker (Alpaca status implemented first).</div>
+              <div class="card-title">Account Overview</div>
+              <div class="card-hint">Core brokerage balances and live account counts from the current broker status check.</div>
             </div>
           </div>
 
-          <div class="panel-b">
-            <!-- KPIs -->
-            <div class="kpi-grid" aria-label="account kpis">
-              <div class="kpi">
-                <div class="label">Equity</div>
-                <div class="value" id="kpiEquity">—</div>
-              </div>
-              <div class="kpi">
-                <div class="label">Cash</div>
-                <div class="value" id="kpiCash">—</div>
-              </div>
-              <div class="kpi">
-                <div class="label">Buying power</div>
-                <div class="value" id="kpiBuyingPower">—</div>
-              </div>
-            </div>
-
-            <!-- Tables -->
-            <div class="tables">
-              <div class="table">
-                <div class="table-h">
-                  <div class="t-title">Positions</div>
-                </div>
-                <div class="table-b">
-                  <div id="positionsList"></div>
-                  <div class="empty" id="positionsEmpty" style="display:none">No open positions.</div>
-                </div>
+          <div class="broker-card-body">
+            <div class="broker-overview-grid">
+              <div class="broker-overview-item">
+                <div class="broker-section-label">Equity</div>
+                <div class="broker-overview-value" id="kpiEquity">—</div>
+                <div class="broker-overview-meta">Current total account equity.</div>
               </div>
 
-              <div class="table">
-                <div class="table-h">
-                  <div class="t-title">Open orders</div>
-                </div>
-                <div class="table-b">
-                  <div id="ordersList"></div>
-                  <div class="empty" id="ordersEmpty" style="display:none">No open orders.</div>
-                </div>
+              <div class="broker-overview-item">
+                <div class="broker-section-label">Cash</div>
+                <div class="broker-overview-value" id="kpiCash">—</div>
+                <div class="broker-overview-meta">Available cash balance.</div>
+              </div>
+
+              <div class="broker-overview-item">
+                <div class="broker-section-label">Buying Power</div>
+                <div class="broker-overview-value" id="kpiBuyingPower">—</div>
+                <div class="broker-overview-meta">Current broker buying power.</div>
+              </div>
+
+              <div class="broker-overview-item">
+                <div class="broker-section-label">Open Positions</div>
+                <div class="broker-overview-value" id="kpiOpenPositions">—</div>
+                <div class="broker-overview-meta">Positions currently reported by the broker.</div>
+              </div>
+
+              <div class="broker-overview-item">
+                <div class="broker-section-label">Open Orders</div>
+                <div class="broker-overview-value" id="kpiOpenOrders">—</div>
+                <div class="broker-overview-meta">Outstanding orders on the account.</div>
               </div>
             </div>
 
-            <div class="hr"></div>
+            <div id="kpiProvider" style="display:none;">—</div>
+          </div>
+        </section>
 
-            <!-- Connection details -->
-            <div style="display:flex; align-items:baseline; justify-content:space-between; gap:10px;">
-              <div style="font-weight:900;">Connection details</div>
+        <div class="broker-two-up">
+          <section class="card broker-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Positions</div>
+                <div class="card-hint">Open holdings returned by the active broker connection.</div>
+              </div>
             </div>
 
-            <div class="kvs" id="connDetails">
-              <div class="kv"><span>Broker</span><span id="kvBroker">—</span></div>
-              <div class="kv"><span>Mode</span><span id="kvMode">—</span></div>
-              <div class="kv"><span>Status</span><span id="kvStatus">—</span></div>
+            <div class="broker-card-body">
+              <div id="positionsList" class="broker-list"></div>
+              <div class="broker-empty" id="positionsEmpty" style="display:none;">No open positions.</div>
             </div>
+          </section>
+
+          <section class="card broker-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Open Orders</div>
+                <div class="card-hint">Working orders that are still outstanding at the broker.</div>
+              </div>
+            </div>
+
+            <div class="broker-card-body">
+              <div id="ordersList" class="broker-list"></div>
+              <div class="broker-empty" id="ordersEmpty" style="display:none;">No open orders.</div>
+            </div>
+          </section>
+        </div>
+
+        <section class="card broker-card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Recent Broker Activity</div>
+              <div class="card-hint">Recent submissions, skips, rejects, and broker-side activity used to operate the account.</div>
+            </div>
+          </div>
+
+          <div class="broker-card-body">
+            <div class="broker-activity-head">
+              <div class="broker-section-kicker">Latest 20 broker-side actions</div>
+              <div class="broker-note" id="activityContext">Broker activity is historical and may reflect a different readiness state than the current one.</div>
+            </div>
+
+            <div id="activityList" class="broker-list"></div>
+            <div class="broker-empty" id="activityEmpty">No recent broker activity.</div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="broker-modal" id="settingsModal" hidden>
+      <div class="broker-modal-backdrop" id="settingsBackdrop"></div>
+
+      <section class="broker-modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="broker-modal-head">
+          <div>
+            <div class="broker-modal-title" id="settingsTitle">Broker Settings</div>
+            <div class="broker-modal-copy">Broker connection, masked credentials, safety controls, and diagnostic state live here so the main page can stay focused on account operations.</div>
+          </div>
+
+          <div class="broker-modal-actions">
+            <button class="btn" id="refreshBtn">Refresh Status</button>
+            <button class="btn" id="closeSettingsBtn">Close</button>
           </div>
         </div>
-      </div>
+
+        <div class="broker-modal-body">
+          <section class="card broker-card broker-accordion" data-accordion-item="connection_settings">
+            <button class="broker-accordion-head broker-accordion-toggle" type="button" aria-expanded="false">
+              <div class="broker-accordion-copy">
+                <div class="broker-accordion-title">Connection Settings</div>
+                <div class="broker-accordion-summary">Provider selection, account mode, and masked API credential storage.</div>
+              </div>
+              <span class="broker-accordion-caret" aria-hidden="true"></span>
+            </button>
+
+            <div class="broker-accordion-body">
+              <div class="broker-accordion-panel">
+                <div class="broker-card-body">
+                  <div class="broker-form">
+                    <div class="broker-field-grid">
+                      <div class="broker-field">
+                        <label for="brokerSelect">Provider</label>
+                        <select class="input broker-control" id="brokerSelect"></select>
+                      </div>
+
+                      <div class="broker-field">
+                        <label for="modeSelect">Mode</label>
+                        <select class="input broker-control" id="modeSelect">
+                          <option value="disabled">disabled</option>
+                          <option value="paper">paper</option>
+                          <option value="live">live</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div id="brokerFields"></div>
+
+                    <div class="broker-form-footer">
+                      <button class="btn btn-primary" id="saveCfg">Save Connection</button>
+                      <span class="broker-note">Credentials remain masked in the UI and are stored server-side.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card broker-card broker-accordion" data-accordion-item="global_safety">
+            <button class="broker-accordion-head broker-accordion-toggle" type="button" aria-expanded="false">
+              <div class="broker-accordion-copy">
+                <div class="broker-accordion-title">Global Safety</div>
+                <div class="broker-accordion-summary">Master execution gate and live arm control for this broker.</div>
+              </div>
+              <span class="broker-accordion-caret" aria-hidden="true"></span>
+            </button>
+
+            <div class="broker-accordion-body">
+              <div class="broker-accordion-panel">
+                <div class="broker-card-body">
+                  <div class="broker-toggle-grid">
+                    <div class="broker-toggle-card">
+                      <div class="broker-toggle-copy">
+                        <strong>Execution Enabled</strong>
+                        <span>Master broker submission switch. Disable to keep alerts visible without sending new orders.</span>
+                      </div>
+                      <input type="checkbox" id="tradingEnabled" class="broker-checkbox" />
+                    </div>
+
+                    <div class="broker-toggle-card">
+                      <div class="broker-toggle-copy">
+                        <strong>Live Arm</strong>
+                        <span>Required before a live broker can submit. Returning to paper still clears live arm.</span>
+                      </div>
+                      <input type="checkbox" id="liveArmed" class="broker-checkbox" />
+                    </div>
+                  </div>
+
+                  <div class="broker-form-footer" style="margin-top:14px;">
+                    <div class="broker-toolbar-left">
+                      <button class="btn" id="revertPaperBtn">Revert To Paper</button>
+                      <button class="btn btn-primary" id="saveSafety">Save Safety</button>
+                    </div>
+                    <span class="broker-note">Strategy execution policy remains the authority for order sizing. Broker defaults remain hidden fallback only.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card broker-card broker-accordion" data-accordion-item="execution_diagnostics">
+            <button class="broker-accordion-head broker-accordion-toggle" type="button" aria-expanded="false">
+              <div class="broker-accordion-copy">
+                <div class="broker-accordion-title">Execution Readiness Diagnostics</div>
+                <div class="broker-accordion-summary">Detailed execution gating, strategy coverage, and broker safety diagnostics.</div>
+              </div>
+              <span class="broker-accordion-caret" aria-hidden="true"></span>
+            </button>
+
+            <div class="broker-accordion-body">
+              <div class="broker-accordion-panel">
+                <div class="broker-card-body">
+                  <div class="broker-inline-meta">
+                    <span class="broker-pill" id="executionReadinessBadge">Execution —</span>
+                    <span class="broker-pill" id="executionModeBadge">Mode —</span>
+                  </div>
+
+                  <div class="broker-alert" id="executionStateAlert" style="display:block;">
+                    <div class="broker-alert-title" id="executionStateAlertTitle">Execution readiness</div>
+                    <div class="broker-alert-body" id="executionStateAlertBody">Readiness information is unavailable.</div>
+                  </div>
+
+                  <div class="broker-detail-grid" style="margin-top:12px;">
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Execution State</div>
+                      <div class="broker-detail-value" id="execStateValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Connection State</div>
+                      <div class="broker-detail-value" id="execConnectionValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Live Arm</div>
+                      <div class="broker-detail-value" id="execLiveArmValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Kill Switch</div>
+                      <div class="broker-detail-value" id="execKillSwitchValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Strategy Coverage</div>
+                      <div class="broker-detail-value" id="execCoverageValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Next Operator Action</div>
+                      <div class="broker-detail-value" id="execNextActionValue">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Last Skip Reason</div>
+                      <div class="broker-detail-value" id="execLastSkipValue">—</div>
+                    </div>
+                  </div>
+
+                  <div class="broker-note" id="executionHistoricalNote" style="margin-top:12px;">Activity rows below are historical facts from the moment an alert reached broker execution.</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card broker-card broker-accordion" data-accordion-item="connection_details">
+            <button class="broker-accordion-head broker-accordion-toggle" type="button" aria-expanded="false">
+              <div class="broker-accordion-copy">
+                <div class="broker-accordion-title">Connection Details</div>
+                <div class="broker-accordion-summary">Provider/account health, connection diagnostics, and broker metadata.</div>
+              </div>
+              <span class="broker-accordion-caret" aria-hidden="true"></span>
+            </button>
+
+            <div class="broker-accordion-body">
+              <div class="broker-accordion-panel">
+                <div class="broker-card-body">
+                  <div class="broker-alert" id="connectionAlert">
+                    <div class="broker-alert-title" id="connectionAlertTitle">Connection warning</div>
+                    <div class="broker-alert-body" id="connectionAlertBody"></div>
+                  </div>
+
+                  <div class="broker-detail-grid" id="connDetails" style="margin-top:12px;">
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Broker</div>
+                      <div class="broker-detail-value" id="kvBroker">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Mode</div>
+                      <div class="broker-detail-value" id="kvMode">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Connection State</div>
+                      <div class="broker-detail-value" id="kvStatus">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Last Check</div>
+                      <div class="broker-detail-value" id="kvLastCheck">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Status Detail</div>
+                      <div class="broker-detail-value" id="kvStatusDetail">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Last Good Check</div>
+                      <div class="broker-detail-value" id="kvLastGoodCheckMirror">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Duplicate Guard</div>
+                      <div class="broker-detail-value" id="dupStatus">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Connection Summary</div>
+                      <div class="broker-detail-value" id="connSummary">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Kill Switch</div>
+                      <div class="broker-detail-value" id="kvKillSwitch">—</div>
+                    </div>
+                    <div class="broker-detail">
+                      <div class="broker-detail-label">Last Good Check Mirror</div>
+                      <div class="broker-detail-value" id="lastGoodCheck">—</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </div>
 
     <script src="/brokers.js"></script>

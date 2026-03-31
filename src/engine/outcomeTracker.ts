@@ -1,10 +1,42 @@
+// src/engine/outcomeTracker.ts
 import { TradeDirection, TradeOutcome } from "./types";
-import { initExec, onMinuteBarExec, ExecRules, ExecState } from "../sim/executionSim";
+
+/**
+ * Broker-like execution rules (derived from strategy config).
+ * Interpretation:
+ * - We compute 1R as the absolute distance from entryRefPrice to structureLevel.
+ * - stopR=1 => stopPrice == entry +/- 1R (not structure).
+ * - targetR=2 => targetPrice == entry +/- 2R.
+ * - moveStopToBEAtR=1 => once price reaches +1R, stop moves to entry (breakeven).
+ */
+export type ExecRules = {
+  stopR: number;              // > 0
+  targetR: number;            // > 0
+  moveStopToBEAtR?: number;   // > 0 (optional)
+};
+
+type ExecState = {
+  enabled: boolean;
+
+  // fixed at entry
+  rAbs: number;        // absolute $ value of 1R
+  entry: number;
+  stopPx: number;
+  targetPx: number;
+  beTriggerPx: number | null;
+
+  // mutates
+  stopMovedToBE: boolean;
+  exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | null;
+  exitTs: number | null;
+  exitFill: number | null;
+};
 
 type ActiveSession = {
   alertId: string;
   symbol: string;
   dir: TradeDirection;
+
   structureLevel: number;
 
   entryTs: number;
@@ -13,35 +45,162 @@ type ActiveSession = {
   status: "LIVE" | "STOPPED" | "COMPLETED";
   endTs: number;
 
+  // tracking
   maxHigh: number;
   minLow: number;
   mfeAbs: number;
   maeAbs: number;
   mfeTs: number | null;
 
+  // stop fields
   stoppedOut: boolean;
   stopTs: number | null;
   stopClose: number | null;
   barsToStop: number | null;
 
+  // counters
   bar1mCount: number;
 
+  // checkpoint returns
   checkpointsMin: number[];
   returnsPct: Record<string, number>;
 
-  // exit metadata (broker-like + UI)
-  exitReason: TradeOutcome["exitReason"]; // STOP | TARGET | TIME | STOP_CLOSE
-  exitFill: number | null;
-  exitReturnPct: number | null;
-  stopMovedToBE: boolean;
-
-  // optional broker-like execution
+  // broker-like exec (optional)
   execRules?: ExecRules;
-  exec: ExecState | null; // null = execution sim disabled
+  exec: ExecState;
 };
 
 function isFiniteNum(x: any): x is number {
   return Number.isFinite(Number(x));
+}
+
+function computeExecState(args: {
+  dir: TradeDirection;
+  entry: number;
+  structureLevel: number;
+  execRules?: ExecRules;
+}): ExecState {
+  const entry = Number(args.entry);
+  const structure = Number(args.structureLevel);
+
+  const rules = args.execRules;
+  if (!rules) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  const stopR = Number(rules.stopR);
+  const targetR = Number(rules.targetR);
+  const moveBE = rules.moveStopToBEAtR == null ? null : Number(rules.moveStopToBEAtR);
+
+  if (!isFiniteNum(entry) || entry <= 0) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  if (!isFiniteNum(structure)) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  if (!isFiniteNum(stopR) || stopR <= 0) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  if (!isFiniteNum(targetR) || targetR <= 0) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  const rAbs = Math.abs(entry - structure);
+  if (!isFiniteNum(rAbs) || rAbs <= 0) {
+    return {
+      enabled: false,
+      rAbs: 0,
+      entry,
+      stopPx: structure,
+      targetPx: entry,
+      beTriggerPx: null,
+      stopMovedToBE: false,
+      exitReason: null,
+      exitTs: null,
+      exitFill: null
+    };
+  }
+
+  const dir = args.dir;
+
+  const stopPx = dir === "LONG" ? entry - stopR * rAbs : entry + stopR * rAbs;
+  const targetPx = dir === "LONG" ? entry + targetR * rAbs : entry - targetR * rAbs;
+
+  const beTriggerPx =
+    moveBE != null && isFiniteNum(moveBE) && moveBE > 0
+      ? (dir === "LONG" ? entry + moveBE * rAbs : entry - moveBE * rAbs)
+      : null;
+
+  return {
+    enabled: true,
+    rAbs,
+    entry,
+    stopPx,
+    targetPx,
+    beTriggerPx,
+    stopMovedToBE: false,
+    exitReason: null,
+    exitTs: null,
+    exitFill: null
+  };
 }
 
 function computeReturnPct(dir: TradeDirection, entry: number, px: number): number {
@@ -63,8 +222,6 @@ export class OutcomeTracker {
     structureLevel: number;
     entryTs: number;
     entryRefPrice: number;
-
-    // optional broker-like rules
     execRules?: ExecRules;
   }) {
     const checkpointsMin = (this.cfg.checkpointsMin ?? [1, 3, 5, 10, 15, 30, 60]).slice();
@@ -72,15 +229,12 @@ export class OutcomeTracker {
     const entryRef = Number(args.entryRefPrice);
     const structure = Number(args.structureLevel);
 
-    // enable exec only if valid rules provided
-    let exec: ExecState | null = null;
-    if (args.execRules && isFiniteNum(entryRef) && entryRef > 0 && isFiniteNum(structure)) {
-      try {
-        exec = initExec(args.dir, args.entryTs, entryRef, structure, args.execRules);
-      } catch {
-        exec = null;
-      }
-    }
+    const exec = computeExecState({
+      dir: args.dir,
+      entry: entryRef,
+      structureLevel: structure,
+      execRules: args.execRules
+    });
 
     const s: ActiveSession = {
       alertId: args.alertId,
@@ -109,11 +263,6 @@ export class OutcomeTracker {
       checkpointsMin,
       returnsPct: {},
 
-      exitReason: null,
-      exitFill: null,
-      exitReturnPct: null,
-      stopMovedToBE: false,
-
       execRules: args.execRules,
       exec
     };
@@ -123,12 +272,6 @@ export class OutcomeTracker {
     this.sessionsBySymbol.get(args.symbol)!.add(args.alertId);
   }
 
-  /**
-   * 1-minute updates:
-   * - checkpoint returns (close-based)
-   * - broker-like execution (intrabar high/low stop/target + BE)
-   * - time-based completion fallback
-   */
   onMinuteBar(args: { symbol: string; ts: number; high: number; low: number; close: number }): string[] {
     const ids = this.sessionsBySymbol.get(args.symbol);
     if (!ids || !ids.size) return [];
@@ -142,7 +285,6 @@ export class OutcomeTracker {
       s.endTs = args.ts;
       s.bar1mCount += 1;
 
-      // update MFE/MAE tracking
       if (args.high > s.maxHigh) s.maxHigh = args.high;
       if (args.low < s.minLow) s.minLow = args.low;
 
@@ -163,7 +305,6 @@ export class OutcomeTracker {
       }
       if (maeAbs > s.maeAbs) s.maeAbs = maeAbs;
 
-      // checkpoint returns (close-based)
       const elapsedMin = (args.ts - s.entryTs) / 60_000;
       for (const m of s.checkpointsMin) {
         const key = `${m}m`;
@@ -173,58 +314,76 @@ export class OutcomeTracker {
         }
       }
 
-      // broker-like execution (intrabar using high/low)
-      if (s.exec && s.execRules) {
-        // persist whether BE was activated (for UI)
-        s.stopMovedToBE = Boolean(s.exec.beActivated);
-
-        const fill = onMinuteBarExec(
-          s.dir,
-          s.exec,
-          s.execRules,
-          args.ts,
-          args.high,
-          args.low,
-          args.close
-        );
-
-        if (fill) {
-          // record unified exit fields
-          s.exitReason = fill.exitReason;
-          s.exitFill = fill.exitPrice;
-          s.exitReturnPct = Number(fill.retPct);
-          s.returnsPct["exit"] = Number(fill.retPct);
-
-          if (fill.exitReason === "STOP") {
-            s.status = "STOPPED";
-            s.stoppedOut = true;
-            s.stopTs = fill.exitTs;
-            s.stopClose = fill.exitPrice;
-            s.barsToStop = s.bar1mCount;
+      if (s.exec.enabled) {
+        if (!s.exec.stopMovedToBE && s.exec.beTriggerPx != null) {
+          if (s.dir === "LONG") {
+            if (args.high >= s.exec.beTriggerPx) {
+              s.exec.stopPx = s.exec.entry;
+              s.exec.stopMovedToBE = true;
+            }
           } else {
-            s.status = "COMPLETED";
-            s.stoppedOut = false;
-            // Not a stop -> keep stop fields null
-            s.stopTs = null;
-            s.stopClose = null;
-            s.barsToStop = null;
+            if (args.low <= s.exec.beTriggerPx) {
+              s.exec.stopPx = s.exec.entry;
+              s.exec.stopMovedToBE = true;
+            }
           }
+        }
 
-          s.endTs = fill.exitTs;
+        let hitStop = false;
+        let hitTarget = false;
+
+        if (s.dir === "LONG") {
+          hitStop = args.low <= s.exec.stopPx;
+          hitTarget = args.high >= s.exec.targetPx;
+        } else {
+          hitStop = args.high >= s.exec.stopPx;
+          hitTarget = args.low <= s.exec.targetPx;
+        }
+
+        if (hitStop) {
+          s.status = "STOPPED";
+          s.stoppedOut = true;
+          s.stopTs = args.ts;
+          s.stopClose = s.exec.stopPx;
+          s.barsToStop = s.bar1mCount;
+
+          s.exec.exitReason = "STOP";
+          s.exec.exitTs = args.ts;
+          s.exec.exitFill = s.exec.stopPx;
+
+          s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, s.exec.stopPx);
+
+          completed.push(s.alertId);
+          continue;
+        }
+
+        if (hitTarget) {
+          s.status = "COMPLETED";
+          s.stoppedOut = false;
+          s.stopTs = null;
+          s.stopClose = null;
+          s.barsToStop = null;
+
+          s.exec.exitReason = "TARGET";
+          s.exec.exitTs = args.ts;
+          s.exec.exitFill = s.exec.targetPx;
+
+          s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, s.exec.targetPx);
+
           completed.push(s.alertId);
           continue;
         }
       }
 
-      // time-based completion fallback
       if (elapsedMin >= this.cfg.trackWindowMin) {
         s.status = "COMPLETED";
-        s.endTs = args.ts;
 
-        s.exitReason = "TIME";
-        s.exitFill = args.close;
-        s.exitReturnPct = computeReturnPct(s.dir, s.entryRefPrice, args.close);
-        s.returnsPct["exit"] = s.exitReturnPct;
+        // TIME exit fill = bar close
+        s.exec.exitReason = "TIME";
+        s.exec.exitTs = args.ts;
+        s.exec.exitFill = args.close;
+
+        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.close);
 
         completed.push(s.alertId);
       }
@@ -233,10 +392,6 @@ export class OutcomeTracker {
     return completed;
   }
 
-  /**
-   * Legacy stop-on-5m-close logic.
-   * If exec is enabled, this is intentionally a no-op (execution handled onMinuteBar).
-   */
   onBar5Close(args: { symbol: string; ts: number; close: number }): string[] {
     const ids = this.sessionsBySymbol.get(args.symbol);
     if (!ids || !ids.size) return [];
@@ -247,8 +402,7 @@ export class OutcomeTracker {
       const s = this.sessionsById.get(id);
       if (!s || s.status !== "LIVE") continue;
 
-      // broker mode: ignore 5m close logic
-      if (s.exec && s.execRules) continue;
+      if (s.exec.enabled) continue;
 
       const stopHit = s.dir === "LONG" ? args.close < s.structureLevel : args.close > s.structureLevel;
       if (stopHit) {
@@ -257,12 +411,12 @@ export class OutcomeTracker {
         s.stopTs = args.ts;
         s.stopClose = args.close;
         s.barsToStop = s.bar1mCount;
-        s.endTs = args.ts;
 
-        s.exitReason = "STOP_CLOSE";
-        s.exitFill = args.close;
-        s.exitReturnPct = computeReturnPct(s.dir, s.entryRefPrice, args.close);
-        s.returnsPct["exit"] = s.exitReturnPct;
+        s.exec.exitReason = "STOP_CLOSE";
+        s.exec.exitTs = args.ts;
+        s.exec.exitFill = args.close;
+
+        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.close);
 
         completed.push(s.alertId);
       }
@@ -282,9 +436,13 @@ export class OutcomeTracker {
     const timeToMfeSec = s.mfeTs != null ? Math.max(0, Math.round((s.mfeTs - s.entryTs) / 1000)) : null;
 
     const stopReturnPct =
-      s.stoppedOut && s.stopClose != null && isFiniteNum(s.stopClose)
-        ? computeReturnPct(s.dir, s.entryRefPrice, Number(s.stopClose))
-        : null;
+      s.stoppedOut && s.stopClose != null ? computeReturnPct(s.dir, s.entryRefPrice, s.stopClose) : null;
+
+    const exitReason = s.exec.exitReason ?? null;
+    const exitFill = s.exec.exitFill ?? null;
+
+    const exitReturnPct =
+      exitFill != null && isFiniteNum(exitFill) ? computeReturnPct(s.dir, s.entryRefPrice, exitFill) : null;
 
     const out: TradeOutcome = {
       alertId: s.alertId,
@@ -293,14 +451,13 @@ export class OutcomeTracker {
       structureLevel: s.structureLevel,
       entryTs: s.entryTs,
       entryRefPrice: s.entryRefPrice,
-
       status: s.status,
-      endTs: s.endTs,
+      endTs: s.stopTs ?? s.endTs,
 
-      exitReason: s.exitReason ?? null,
-      exitFill: s.exitFill,
-      exitReturnPct: s.exitReturnPct,
-      stopMovedToBE: s.stopMovedToBE,
+      exitReason,
+      exitFill,
+      exitReturnPct,
+      stopMovedToBE: Boolean(s.exec.stopMovedToBE),
 
       mfeAbs: Number(s.mfeAbs.toFixed(6)),
       maeAbs: Number(s.maeAbs.toFixed(6)),
@@ -317,7 +474,6 @@ export class OutcomeTracker {
       returnsPct: s.returnsPct
     };
 
-    // cleanup
     this.sessionsById.delete(alertId);
     const set = this.sessionsBySymbol.get(s.symbol);
     if (set) {

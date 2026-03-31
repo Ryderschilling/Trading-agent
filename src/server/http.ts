@@ -59,6 +59,8 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   getBrokers?: () => any[];
   getBrokerConfig?: () => any;
   saveBrokerConfig?: (cfg: any, changedBy?: string) => any;
+  getBrokerStatus?: () => Promise<any>;
+  getBrokerActivity?: (limit?: number) => any[];
 
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
 
@@ -188,6 +190,58 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
       res.status(500).json({ ok: false, error: e?.message || "failed" });
     }
   });
+
+  // -----------------------------
+// API: brokers
+// -----------------------------
+app.get("/api/brokers", (_req, res) => {
+  try {
+    const brokers = args.getBrokers ? args.getBrokers() : [];
+    res.json({ ok: true, brokers });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+app.get("/api/broker-config", (_req, res) => {
+  try {
+    const cfg = args.getBrokerConfig ? args.getBrokerConfig() : null;
+    res.json({ ok: true, config: cfg, brokerConfig: cfg });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+app.post("/api/broker-config", express.json(), (req, res) => {
+  try {
+    if (!args.saveBrokerConfig) return res.status(400).json({ ok: false, error: "broker config not enabled" });
+    const changedBy = String(req.header("x-changed-by") || req.body?.changedBy || "admin");
+    const out = args.saveBrokerConfig(req.body, changedBy);
+    res.json({ ok: true, result: out });
+  } catch (e: any) {
+    res.status(400).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+app.get("/api/broker/status", async (_req, res) => {
+  try {
+    if (!args.getBrokerStatus) return res.status(400).json({ ok: false, error: "broker status not enabled" });
+    const status = await args.getBrokerStatus();
+    res.json(status);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+app.get("/api/broker/activity", (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(100, Number(req.query.limit || 25)));
+    const activity = args.getBrokerActivity ? args.getBrokerActivity(limit) : [];
+    res.json({ ok: true, activity });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
 
   // -----------------------------
   // API: signals snapshot

@@ -43,6 +43,7 @@ trading-agent.db
 *.sqlite-wal
 *.sqlite-shm
 data/*.sqlite
+data/*.sqlite.bak*
 data/*.sqlite-wal
 data/*.sqlite-shm
 

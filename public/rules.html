@@ -2,14 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rules • Trading Agent</title>
 
     <link rel="stylesheet" href="/styles-v4.css" />
     <script src="/ui.js" defer></script>
   </head>
 
-  <body>
+  <body class="page-rules">
     <div class="bg-wash"></div>
 
     <header class="topbar">
@@ -25,6 +25,7 @@
           <a class="tab" href="/watch">Watch</a>
           <a class="tab active" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab" href="/brokers">Brokers</a>
         </nav>
       </div>
 
@@ -36,358 +37,351 @@
       </div>
     </header>
 
-    <main class="shell">
-      <section class="rules-layout">
-
-        <!-- Strategies (stays on top) -->
-        <section class="card strategies-card">
-          <div class="card-head">
-            <div>
-              <div class="card-title">Strategies</div>
-              <div class="small muted">Select a strategy to view/edit. Use Save Strategy to create a new version.</div>
-            </div>
-            <div class="card-actions"></div>
-          </div>
-
-          <div id="strategiesList" class="strategy-list"></div>
-        </section>
-
-        <!-- Editor (top → bottom) -->
-        <div id="rulesEditor" class="rules-editor">
-
-          <!-- Strategy name + Save (sticky within editor) -->
-          <section class="card rules-editorbar">
-            <div class="rules-topbar">
-              <div class="bar-field">
-                <input id="strategyName" class="input input-bar" placeholder="Strategy name (e.g. Break & Retest v3)" />
-                <span class="bar-caret">▾</span>
+    <main class="shell rules-main-shell">
+      <section class="rules-builder-layout">
+        <div class="rules-builder-main">
+          <section class="card strategies-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Saved Strategies</div>
+                <div class="small muted">Load an existing ruleset to edit it, enable it, or remove it.</div>
               </div>
-
-              <input
-                id="adminToken"
-                class="input"
-                placeholder="Admin token"
-                style="width:180px;"
-                autocomplete="off"
-              />
-
-              <button id="saveRulesBtn" class="btn btn-primary">Save Strategy</button>
             </div>
+            <div id="strategiesList" class="strategy-list"></div>
+          </section>
 
-            <div class="small muted rules-tip">
-              Tip: Use <b>New Strategy</b> to load defaults, then edit the rules below and click <b>Save Strategy</b> to create a new version.
+          <section class="card rules-builder-header">
+            <div class="rules-builder-header-row">
+              <div>
+                <div class="card-title">Strategy Builder</div>
+                <div class="small muted" id="builderContext">Create a focused Break &amp; Retest or MA Cross strategy.</div>
+              </div>
+              <div class="rules-builder-actions">
+                <button id="resetBuilderBtn" class="btn" title="Reset the builder to the default strategy template.">Reset</button>
+                <button id="saveRulesBtn" class="btn btn-primary" title="Save the current strategy as a new version.">Save New Version</button>
+                <button id="updateRulesBtn" class="btn" title="Update the currently loaded strategy version." disabled>Update Current</button>
+              </div>
             </div>
           </section>
 
-          <!-- 1) Scan -->
-          <details class="card rules-acc" open>
-            <summary class="rules-acc-summary">
-              <div class="rules-acc-left">
-                <div class="rules-acc-title">Scan</div>
-                <div id="sumScan" class="small muted rules-acc-sub">—</div>
+          <section class="card rules-section-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Setup</div>
+                <div class="small muted">Choose one setup family and configure only the fields that matter to that setup.</div>
               </div>
-              <div class="rules-acc-right small muted">Click to expand</div>
-            </summary>
+            </div>
+            <div class="rules-section-body">
+              <div class="rules-grid rules-grid-2">
+                <label class="rules-field">
+                  <span class="rules-label-row">Strategy Name <span class="field-help" title="Version label shown across Rules, Backtest, Broker activity, and saved runs.">i</span></span>
+                  <input id="strategyName" class="input" placeholder="PMH Break Retest v1" title="Version label shown across Rules, Backtest, Broker activity, and saved runs." />
+                </label>
 
-            <div class="rules-acc-body">
-              <div class="rules-grid">
-                <label class="small">
-                  Candle size
-                  <select id="timeframeMin" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
+                <label class="rules-field">
+                  <span class="rules-label-row">Setup Family <span class="field-help" title="Select the only two supported setup families for this v1 builder.">i</span></span>
+                  <select id="setupType" class="input" title="Select the only two supported setup families for this v1 builder.">
+                    <option value="break_retest">Break &amp; Retest</option>
+                    <option value="ma_cross">MA Cross</option>
+                  </select>
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Timeframe <span class="field-help" title="Primary execution timeframe in minutes. Backtest and live runner read the same saved timeframe.">i</span></span>
+                  <select id="timeframeMin" class="input" title="Primary execution timeframe in minutes. Backtest and live runner read the same saved timeframe.">
                     <option value="1">1 minute</option>
                     <option value="2">2 minute</option>
-                    <option value="5">5 minute</option>
+                    <option value="5" selected>5 minute</option>
                     <option value="15">15 minute</option>
                     <option value="30">30 minute</option>
                     <option value="60">1 hour</option>
                     <option value="240">4 hour</option>
-                    <option value="1440">1 day</option>
-                    <option value="10080">1 week</option>
                   </select>
                 </label>
 
-                <label class="small">
-                  Session
-                  <select id="scanSession" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="RTH">RTH (Regular hours)</option>
-                    <option value="ALL">Anytime (All sessions)</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  Universe
-                  <select id="scanUniverse" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="WATCHLIST">Watchlist</option>
-                    <option value="MAG7+INDEX">Mag 7 + Index</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  Premarket enabled (engine uses this)
-                  <select id="premarketEnabled" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="false">False</option>
-                    <option value="true">True</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  Market bias required
-                  <select id="marketBiasRequired" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
+                <label class="rules-field">
+                  <span class="rules-label-row">Direction <span class="field-help" title="Controls whether the strategy is allowed to take long setups, short setups, or both.">i</span></span>
+                  <select id="strategyDirection" class="input" title="Controls whether the strategy is allowed to take long setups, short setups, or both.">
+                    <option value="both">Both</option>
+                    <option value="long">Long</option>
+                    <option value="short">Short</option>
                   </select>
                 </label>
               </div>
-            </div>
-          </details>
 
-          <!-- 2) Trigger / Entry -->
-          <details class="card rules-acc" open>
-            <summary class="rules-acc-summary">
-              <div class="rules-acc-left">
-                <div class="rules-acc-title">Trigger / Entry</div>
-                <div id="sumTrigger" class="small muted rules-acc-sub">—</div>
-              </div>
-              <div class="rules-acc-right small muted">Click to expand</div>
-            </summary>
-
-            <div class="rules-acc-body">
-              <div class="rules-grid">
-                <label class="small">
-                  Trigger type (stored)
-                  <select id="triggerType" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="BREAK_RETEST">Break & Retest</option>
-                    <option value="ORB">Opening Range Breakout</option>
-                  </select>
-                </label>
-
-                <div class="small muted" style="align-self:end;">
-                  ORB settings appear only when Trigger type is ORB.
-                </div>
-              </div>
-
-              <!-- ORB fields -->
-              <div id="orbFields" class="rules-subcard" style="display:none;">
-                <div class="small muted" style="margin-bottom:8px;">
-                  ORB: defines the opening range, then triggers on breakout + retest.
-                </div>
-
-                <div class="rules-grid rules-grid-3">
-                  <label class="small">
-                    ORB range minutes
-                    <select id="orbRangeMin" class="input" style="width:100%; margin-top:6px;">
-                      <option value="" selected disabled>— Select —</option>
-                      <option value="5">5</option>
-                      <option value="10">10</option>
-                      <option value="15">15</option>
-                      <option value="30">30</option>
+              <div id="breakRetestFields" class="rules-setup-panel">
+                <div class="rules-subsection-title">Break &amp; Retest</div>
+                <div class="rules-grid rules-grid-2">
+                  <label class="rules-field">
+                    <span class="rules-label-row">Levels <span class="field-help" title="Choose the levels allowed to qualify a break and retest. Hold Command or Ctrl to select multiple values.">i</span></span>
+                    <select id="brLevels" class="input rules-multi-select" multiple title="Choose the levels allowed to qualify a break and retest. Hold Command or Ctrl to select multiple values.">
+                      <option value="pmh">PMH</option>
+                      <option value="pml">PML</option>
+                      <option value="vwap">VWAP</option>
+                      <option value="moving_average">Moving Average</option>
                     </select>
                   </label>
 
-                  <label class="small">
-                    ORB entry mode
-                    <select id="orbEntryMode" class="input" style="width:100%; margin-top:6px;">
-                      <option value="" selected disabled>— Select —</option>
-                      <option value="BREAK_RETEST">Break & Retest</option>
-                      <option value="BREAK">Break only</option>
-                      <option value="RETEST">Retest only</option>
-                    </select>
-                  </label>
+                  <div id="brMovingAverageFields" class="rules-inline-group">
+                    <label class="rules-field">
+                      <span class="rules-label-row">MA Type <span class="field-help" title="Used only when Moving Average is selected as a qualifying level.">i</span></span>
+                      <select id="brMaType" class="input" title="Used only when Moving Average is selected as a qualifying level.">
+                        <option value="EMA">EMA</option>
+                        <option value="SMA">SMA</option>
+                      </select>
+                    </label>
 
-                  <label class="small">
-                    ORB retest tolerance %
-                    <input id="orbTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
-                  </label>
-                </div>
-              </div>
-            </div>
-          </details>
-
-          <!-- 3) Setup & Filters -->
-          <details class="card rules-acc">
-            <summary class="rules-acc-summary">
-              <div class="rules-acc-left">
-                <div class="rules-acc-title">Setup & Filters</div>
-                <div id="sumFilters" class="small muted rules-acc-sub">—</div>
-              </div>
-              <div class="rules-acc-right small muted">Click to expand</div>
-            </summary>
-
-            <div class="rules-acc-body">
-              <div class="rules-grid">
-                <label class="small">
-                  Retest tolerance % (engine uses this)
-                  <input id="retestTolerancePct" class="input" placeholder="0.15" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  RS window (5m bars) (engine uses this)
-                  <input id="rsWindowBars5m" class="input" placeholder="24" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  Structure window (stored)
-                  <input id="structureWindow" class="input" placeholder="100" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  Sector alignment enabled (engine uses this)
-                  <select id="sectorAlignmentEnabled" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-
-                <label class="small">
-                  Long min bias score (0–100)
-                  <input id="longMinBiasScore" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
-                  <div class="card-hint" style="margin-top:6px;">Recommended: 50 neutral, 60+ bullish, 40− bearish.</div>
-                </label>
-
-                <label class="small">
-                  Short max bias score (0–100)
-                  <input id="shortMaxBiasScore" class="input" placeholder="40" style="width:100%; margin-top:6px;" />
-                  <div class="card-hint" style="margin-top:6px;">If bias score ≤ this, shorts allowed.</div>
-                </label>
-              </div>
-            </div>
-          </details>
-
-          <!-- 4) Indicators -->
-          <details class="card rules-acc" open>
-            <summary class="rules-acc-summary">
-              <div class="rules-acc-left">
-                <div class="rules-acc-title">Indicators</div>
-                <div id="sumIndicators" class="small muted rules-acc-sub">—</div>
-              </div>
-              <div class="rules-acc-right small muted">Click to expand</div>
-            </summary>
-
-            <div class="rules-acc-body">
-              <div class="small muted" style="margin-bottom:8px;">Indicators to scan (stored)</div>
-
-              <div class="rules-toggle-row">
-                <label class="small"><input id="indVwap" type="checkbox" /> VWAP</label>
-                <label class="small"><input id="indMa" type="checkbox" /> Moving Averages</label>
-                <label class="small"><input id="indRs" type="checkbox" /> Relative Strength</label>
-                <label class="small"><input id="indVol" type="checkbox" /> Volume</label>
-              </div>
-
-              <!-- EMA Settings (shows only when Moving Averages is enabled) -->
-              <div id="emaBlock" class="rules-subcard" style="display:none; margin-top:12px;">
-                <div class="small muted" style="margin-bottom:8px;">Moving Averages</div>
-
-                <div class="rules-grid">
-                  <label class="small">
-                    EMA periods (comma-separated, 1–500, max 50)
-                    <input id="emaPeriods" class="input" placeholder="9,20,50,200" style="width:100%; margin-top:6px;" />
-                    <div class="card-hint" style="margin-top:6px;">Example: <b>9,20,50,200</b></div>
-                  </label>
-
-                  <label class="small">
-                    EMA trigger
-                    <select id="emaTrigger" class="input" style="width:100%; margin-top:6px;">
-                      <option value="" selected disabled>— Select —</option>
-                      <option value="NONE">None (display only)</option>
-                      <option value="CROSS">Cross</option>
-                      <option value="BREAK">Break</option>
-                      <option value="RETEST">Retest</option>
-                      <option value="BREAK_RETEST">Break + Retest</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
-
-              <!-- legacy hook (kept for safety; JS no longer depends on it) -->
-              <div id="emaFields" style="display:none;"></div>
-            </div>
-          </details>
-
-          <!-- 5) Risk & Exits -->
-          <details class="card rules-acc" open>
-            <summary class="rules-acc-summary">
-              <div class="rules-acc-left">
-                <div class="rules-acc-title">Risk & Exits</div>
-                <div id="sumMgmt" class="small muted rules-acc-sub">—</div>
-              </div>
-              <div class="rules-acc-right small muted">Click to expand</div>
-            </summary>
-
-            <div class="rules-acc-body">
-              <div class="rules-grid">
-                <label class="small">
-                  Target (R) (stored)
-                  <input id="targetR" class="input" placeholder="2" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  Stop (R) (stored)
-                  <input id="stopR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  Max hold (bars) (stored)
-                  <input id="maxHoldBars" class="input" placeholder="60" style="width:100%; margin-top:6px;" />
-                </label>
-
-                <label class="small">
-                  Exit on market bias flip (stored)
-                  <select id="exitOnBiasFlip" class="input" style="width:100%; margin-top:6px;">
-                    <option value="" selected disabled>— Select —</option>
-                    <option value="false">False</option>
-                    <option value="true">True</option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="rules-subcard" style="margin-top:12px;">
-                <div class="small muted" style="margin-bottom:8px;">Trailing stop (stored)</div>
-
-                <div class="rules-toggle-row">
-                  <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
-                    <input id="moveBeEnabled" type="checkbox" />
-                    Move stop to breakeven
-                  </label>
-
-                  <label class="small" style="display:flex; gap:8px; align-items:center; margin:0;">
-                    <input id="trailEnabled" type="checkbox" />
-                    Trailing stop loss
-                  </label>
-                </div>
-
-                <div id="moveBeFields" style="display:none; margin-top:10px;">
-                  <div class="rules-grid rules-grid-3">
-                    <label class="small">
-                      Move to BE when profit reaches (R)
-                      <input id="moveBeAtR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
+                    <label class="rules-field">
+                      <span class="rules-label-row">MA Values <span class="field-help" title="Comma-separated moving average periods used as valid break and retest levels.">i</span></span>
+                      <input id="brMaValues" class="input" placeholder="9,20,50" title="Comma-separated moving average periods used as valid break and retest levels." />
                     </label>
                   </div>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Break Confirmation <span class="field-help" title="How the initial break through the selected level must confirm.">i</span></span>
+                    <select id="brBreakConfirmation" class="input" title="How the initial break through the selected level must confirm.">
+                      <option value="close_through">Close Through</option>
+                      <option value="wick_and_close">Wick and Close</option>
+                    </select>
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Retest Confirmation <span class="field-help" title="How the retest must prove the level is holding before entry is allowed.">i</span></span>
+                    <select id="brRetestConfirmation" class="input" title="How the retest must prove the level is holding before entry is allowed.">
+                      <option value="wick_hold">Wick Hold</option>
+                      <option value="reclaim_close">Reclaim Close</option>
+                      <option value="close_hold">Close Hold</option>
+                    </select>
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Max Retest Bars <span class="field-help" title="Maximum number of bars allowed between the break and the entry retest.">i</span></span>
+                    <input id="brMaxRetestBars" class="input" type="number" min="1" step="1" placeholder="3" title="Maximum number of bars allowed between the break and the entry retest." />
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Entry Trigger <span class="field-help" title="Controls whether entry happens on the retest close or on the next bar confirming the retest.">i</span></span>
+                    <select id="brEntryTrigger" class="input" title="Controls whether entry happens on the retest close or on the next bar confirming the retest.">
+                      <option value="retest_close">Retest Close</option>
+                      <option value="next_bar_break">Next Bar Break</option>
+                    </select>
+                  </label>
                 </div>
+              </div>
 
-                <div id="trailFields" style="display:none; margin-top:10px;">
-                  <div class="rules-grid rules-grid-3">
-                    <label class="small">
-                      Start trailing when profit reaches (R)
-                      <input id="trailStartR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                    </label>
+              <div id="maCrossFields" class="rules-setup-panel">
+                <div class="rules-subsection-title">MA Cross</div>
+                <div class="rules-grid rules-grid-2">
+                  <label class="rules-field">
+                    <span class="rules-label-row">MA Type <span class="field-help" title="Determines whether the fast and slow lines use EMA or SMA calculations.">i</span></span>
+                    <select id="maType" class="input" title="Determines whether the fast and slow lines use EMA or SMA calculations.">
+                      <option value="EMA">EMA</option>
+                      <option value="SMA">SMA</option>
+                    </select>
+                  </label>
 
-                    <label class="small">
-                      Trail stop by (R)
-                      <input id="trailByR" class="input" placeholder="1" style="width:100%; margin-top:6px;" />
-                    </label>
-                  </div>
+                  <label class="rules-field">
+                    <span class="rules-label-row">Fast MA Value <span class="field-help" title="The fast moving average period used for the primary cross.">i</span></span>
+                    <input id="maFastValue" class="input" type="number" min="1" step="1" placeholder="9" title="The fast moving average period used for the primary cross." />
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Slow MA Value <span class="field-help" title="The slow moving average period used for the primary cross.">i</span></span>
+                    <input id="maSlowValue" class="input" type="number" min="2" step="1" placeholder="20" title="The slow moving average period used for the primary cross." />
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Entry Reference <span class="field-help" title="Defines whether the setup enters on the cross itself or on a follow-up pullback.">i</span></span>
+                    <select id="maEntryReference" class="input" title="Defines whether the setup enters on the cross itself or on a follow-up pullback.">
+                      <option value="cross">Cross</option>
+                      <option value="fast_ma_pullback">Fast MA Pullback</option>
+                      <option value="slow_ma_pullback">Slow MA Pullback</option>
+                      <option value="vwap_pullback">VWAP Pullback</option>
+                      <option value="cross_zone_pullback">Cross Zone Pullback</option>
+                    </select>
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Require Close After Cross <span class="field-help" title="Requires the cross bar to close in the setup direction before it becomes valid.">i</span></span>
+                    <select id="maRequireCloseAfterCross" class="input" title="Requires the cross bar to close in the setup direction before it becomes valid.">
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Require Retest <span class="field-help" title="When enabled, the setup waits for a pullback or retest after the cross before entry.">i</span></span>
+                    <select id="maRequireRetest" class="input" title="When enabled, the setup waits for a pullback or retest after the cross before entry.">
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Max Entry Bars After Cross <span class="field-help" title="Maximum number of bars the setup can wait after the cross before the signal expires.">i</span></span>
+                    <input id="maMaxEntryBarsAfterCross" class="input" type="number" min="1" step="1" placeholder="3" title="Maximum number of bars the setup can wait after the cross before the signal expires." />
+                  </label>
+
+                  <label class="rules-field">
+                    <span class="rules-label-row">Require VWAP Agreement <span class="field-help" title="Requires price and the MA setup to agree with VWAP before entry.">i</span></span>
+                    <select id="maRequireVwapAgreement" class="input" title="Requires price and the MA setup to agree with VWAP before entry.">
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </div>
-          </details>
+          </section>
 
+          <section class="card rules-section-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Filters</div>
+                <div class="small muted">These filters apply to both setup families and keep the builder aligned with the current trading style.</div>
+              </div>
+            </div>
+            <div class="rules-section-body">
+              <div class="rules-grid rules-grid-2">
+                <label class="rules-field">
+                  <span class="rules-label-row">Session <span class="field-help" title="Controls whether the setup runs during regular hours, premarket, or both.">i</span></span>
+                  <select id="sessionMode" class="input" title="Controls whether the setup runs during regular hours, premarket, or both.">
+                    <option value="regular">Regular</option>
+                    <option value="premarket">Premarket</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
+
+                <div class="rules-static-pill">
+                  <div class="rules-inline-title">Universe</div>
+                  <div class="small muted">Watchlist only in this v1 builder.</div>
+                </div>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Minimum Volume <span class="field-help" title="Minimum share volume required before the symbol is considered tradable.">i</span></span>
+                  <input id="minVolume" class="input" type="number" min="0" step="1" placeholder="1000000" title="Minimum share volume required before the symbol is considered tradable." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Minimum Volatility % <span class="field-help" title="Minimum volatility filter used to avoid dead names that do not move enough.">i</span></span>
+                  <input id="minVolatilityPct" class="input" type="number" min="0" step="0.01" placeholder="0.75" title="Minimum volatility filter used to avoid dead names that do not move enough." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Require Market Bias <span class="field-help" title="Requires overall market bias to support the setup before entry.">i</span></span>
+                  <select id="requireMarketBias" class="input" title="Requires overall market bias to support the setup before entry.">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Require SPY/QQQ Alignment <span class="field-help" title="Requires SPY or QQQ to align with the trade direction before entry.">i</span></span>
+                  <select id="requireSpyQqqAlignment" class="input" title="Requires SPY or QQQ to align with the trade direction before entry.">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Require VWAP Agreement <span class="field-help" title="Requires price action to remain aligned with VWAP before entry is allowed.">i</span></span>
+                  <select id="requireVwapAgreement" class="input" title="Requires price action to remain aligned with VWAP before entry is allowed.">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Require Relative Strength Context <span class="field-help" title="Requires relative strength context to agree with the setup before entry.">i</span></span>
+                  <select id="requireRelativeStrength" class="input" title="Requires relative strength context to agree with the setup before entry.">
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rules-section-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Risk / Exits</div>
+                <div class="small muted">Shared sizing and exit logic used by both setup families.</div>
+              </div>
+            </div>
+            <div class="rules-section-body">
+              <div class="rules-grid rules-grid-2">
+                <label class="rules-field">
+                  <span class="rules-label-row">Risk Mode <span class="field-help" title="Choose whether risk is sized as a percent of account or a fixed dollar amount.">i</span></span>
+                  <select id="riskMode" class="input" title="Choose whether risk is sized as a percent of account or a fixed dollar amount.">
+                    <option value="percent_account">Percent of Account</option>
+                    <option value="fixed_dollars">Fixed Dollars</option>
+                  </select>
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Risk Value <span class="field-help" title="Risk value used by the selected sizing mode.">i</span></span>
+                  <input id="riskValue" class="input" type="number" min="0.01" step="0.01" placeholder="1" title="Risk value used by the selected sizing mode." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Stop Mode <span class="field-help" title="Choose whether the stop is structure-based, MA-fail based, or defined by a fixed R multiple.">i</span></span>
+                  <select id="stopMode" class="input" title="Choose whether the stop is structure-based, MA-fail based, or defined by a fixed R multiple.">
+                    <option value="structure_close">Structure Close</option>
+                    <option value="ma_fail_close">MA Fail Close</option>
+                    <option value="r_multiple">R Multiple</option>
+                  </select>
+                </label>
+
+                <label class="rules-field" id="stopValueRWrap">
+                  <span class="rules-label-row">Stop R Value <span class="field-help" title="Used only when Stop Mode is set to R Multiple.">i</span></span>
+                  <input id="stopValueR" class="input" type="number" min="0.1" step="0.1" placeholder="1" title="Used only when Stop Mode is set to R Multiple." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Profit Target R <span class="field-help" title="Profit target expressed in R multiples.">i</span></span>
+                  <input id="profitTargetR" class="input" type="number" min="0.1" step="0.1" placeholder="2" title="Profit target expressed in R multiples." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Move to Breakeven at R <span class="field-help" title="Optional R threshold where the stop should move to breakeven. Leave blank to disable.">i</span></span>
+                  <input id="moveToBreakevenAtR" class="input" type="number" min="0.1" step="0.1" placeholder="1" title="Optional R threshold where the stop should move to breakeven. Leave blank to disable." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Time Exit Bars <span class="field-help" title="Maximum number of bars the trade may stay open before forcing an exit.">i</span></span>
+                  <input id="timeExitBars" class="input" type="number" min="1" step="1" placeholder="20" title="Maximum number of bars the trade may stay open before forcing an exit." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Max Open Positions <span class="field-help" title="Maximum number of simultaneous open positions this strategy can hold.">i</span></span>
+                  <input id="maxOpenPositions" class="input" type="number" min="1" step="1" placeholder="3" title="Maximum number of simultaneous open positions this strategy can hold." />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rules-section-card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Broker Caps</div>
+                <div class="small muted">These are the only fields the broker should read directly from the strategy definition.</div>
+              </div>
+            </div>
+            <div class="rules-section-body">
+              <div class="rules-grid rules-grid-2">
+                <label class="rules-field">
+                  <span class="rules-label-row">Max Trades per Day <span class="field-help" title="Daily trade cap enforced per strategy once alerts reach the broker.">i</span></span>
+                  <input id="brokerMaxTradesPerDay" class="input" type="number" min="0" step="1" placeholder="4" title="Daily trade cap enforced per strategy once alerts reach the broker." />
+                </label>
+
+                <label class="rules-field">
+                  <span class="rules-label-row">Max Capital <span class="field-help" title="Daily capital cap enforced per strategy by the broker execution layer.">i</span></span>
+                  <input id="brokerMaxCapital" class="input" type="number" min="0" step="0.01" placeholder="10000" title="Daily capital cap enforced per strategy by the broker execution layer." />
+                </label>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
     </main>
