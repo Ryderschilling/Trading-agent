@@ -21,6 +21,7 @@ const indexStatusEl = document.getElementById("indexStatus");
 const strongListEl = document.getElementById("strongList");
 const weakListEl = document.getElementById("weakList");
 const formingListEl = document.getElementById("formingList");
+const formingEmptyEl = document.getElementById("formingEmpty");
 
 const enableSoundBtn = document.getElementById("enableSound");
 
@@ -468,6 +469,7 @@ function renderSignals(s) {
     if (strongListEl) strongListEl.innerHTML = "";
     if (weakListEl) weakListEl.innerHTML = "";
     if (formingListEl) formingListEl.innerHTML = "";
+    if (formingEmptyEl) formingEmptyEl.style.display = "block";
     return;
   }
 
@@ -518,15 +520,19 @@ function renderSignals(s) {
     formingListEl.innerHTML = "";
     const arr = s.forming || [];
     if (!arr.length) {
-      formingListEl.innerHTML = `<div class="small">No armed A+ setups right now.</div>`;
+      if (formingEmptyEl) formingEmptyEl.style.display = "block";
     } else {
+      if (formingEmptyEl) formingEmptyEl.style.display = "none";
       for (const it of arr) {
         const div = document.createElement("div");
         div.className = "item";
         div.innerHTML = `
           <div>
-            <div><b>${escapeHtml(it.symbol)}</b> — ${escapeHtml(it.dir)} • ${escapeHtml(it.level)} ${fmt2(it.levelPrice)}</div>
-            <div class="small">Last ${it.lastPrice != null ? fmt2(it.lastPrice) : "—"} • Dist ${it.distancePct != null ? fmt2(it.distancePct) + "%" : "—"} • Score ${fmt2(it.score)} • RS ${escapeHtml(it.rs)}</div>
+            <div><b>${escapeHtml(it.symbol)}</b> — ${escapeHtml(it.dir)} • ${escapeHtml(it.stage || "forming")} • ${escapeHtml(it.level)} ${fmt2(it.levelPrice)}</div>
+            <div class="small">Last ${it.lastPrice != null ? fmt2(it.lastPrice) : "—"} • Dist ${it.distanceToTriggerPct != null ? fmt2(it.distanceToTriggerPct) + "%" : "—"} • Score ${fmt2(it.readinessScore)} • RS ${escapeHtml(it.rs)}</div>
+            <div class="small">Passed: ${escapeHtml((it.passedConditions || []).join(", ") || "—")}</div>
+            <div class="small">Missing: ${escapeHtml((it.missingConditions || []).join(", ") || "—")}</div>
+            <div class="small">Next: ${escapeHtml(it.nextCatalyst || "—")}</div>
           </div>
           <div class="badge amber">FORMING</div>
         `;

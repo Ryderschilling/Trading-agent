@@ -1,8 +1,5 @@
 /* global io */
 
-// -----------------------
-// Safe Socket.IO init
-// -----------------------
 let socket = null;
 try {
   if (typeof io === "function") socket = io();
@@ -21,7 +18,6 @@ const dbStoppedOnlyEl = document.getElementById("dbStoppedOnly");
 const refreshBtn = document.getElementById("refreshBtn");
 const dbStrategyEl = document.getElementById("dbStrategy");
 
-// Modal
 const modalEl = document.getElementById("modal");
 const modalCloseEl = document.getElementById("modalClose");
 const modalSubEl = document.getElementById("modalSub");
@@ -29,10 +25,13 @@ const modalBodyEl = document.getElementById("modalBody");
 
 let dbRowsRaw = [];
 let allAlerts = [];
+let modalCleanup = null;
+let activeModalToken = 0;
+const DISPLAY_TIMEFRAME_STEPS = [1, 2, 3, 5];
+const DISPLAY_BAR_TARGET_MIN = 80;
+const DISPLAY_BAR_TARGET_MAX = 180;
+const DISPLAY_BAR_TARGET_IDEAL = 140;
 
-// -----------------------
-// helpers
-// -----------------------
 function fmtTime(ts) {
   try {
     const d = new Date(ts);
@@ -45,28 +44,33 @@ function fmtTime(ts) {
   }
 }
 
+function fmtDateTime(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return new Date(n).toLocaleString();
+}
+
 function fmt2(x) {
   if (x == null || x === "" || Number.isNaN(Number(x))) return "—";
   return Number(x).toFixed(2);
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[m]));
+  return String(s).replace(/[&<>"']/g, (m) =>
+    ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    })[m]
+  );
 }
 
 function findAlertById(id) {
   return (allAlerts || []).find((a) => String(a.id) === String(id)) || null;
 }
 
-// -----------------------
-// DATA LIVE dot
-// -----------------------
 async function refreshDataLiveDot() {
   try {
     const r = await fetch("/api/health", { cache: "no-store" });
@@ -85,9 +89,6 @@ async function refreshDataLiveDot() {
   }
 }
 
-// -----------------------
-// strategies dropdown
-// -----------------------
 async function loadStrategies() {
   if (!dbStrategyEl) return;
   try {
@@ -112,86 +113,64 @@ async function loadStrategies() {
   }
 }
 
-// -----------------------
-// modal helpers
-// -----------------------
+function clearModalCleanup() {
+  if (typeof modalCleanup === "function") modalCleanup();
+  modalCleanup = null;
+}
+
 function modalOpen() {
   if (!modalEl) return;
-  modalEl.style.display = "block";
+  modalEl.style.display = "flex";
 }
+
 function modalClose() {
+  activeModalToken += 1;
+  clearModalCleanup();
   if (!modalEl) return;
   modalEl.style.display = "none";
 }
+
 modalCloseEl?.addEventListener("click", modalClose);
 modalEl?.addEventListener("click", (e) => {
   if (e.target === modalEl) modalClose();
 });
 
-// -----------------------
-// Candle aggregation + indicators
-// -----------------------
-function aggregateBars(bars1m, timeframeMin) {
-  const tf = Math.max(1, Math.floor(Number(timeframeMin || 1)));
-  if (!Array.isArray(bars1m) || !bars1m.length || tf === 1) {
-    return (bars1m || []).map((b) => ({
+function normalizeBars(bars1m) {
+  return (bars1m || [])
+    .map((b) => ({
       ts: Number(b.ts),
       o: Number(b.o),
       h: Number(b.h),
       l: Number(b.l),
       c: Number(b.c),
-      v: Number(b.v || 0)
-    }));
-  }
+      v: Number(b.v || 0),
+    }))
+    .filter((b) => Number.isFinite(b.ts) && [b.o, b.h, b.l, b.c].every(Number.isFinite))
+    .sort((a, b) => a.ts - b.ts);
+}
+
+function aggregateBars(bars1m, timeframeMin) {
+  const tf = Math.max(1, Math.floor(Number(timeframeMin || 1)));
+  if (!bars1m.length || tf === 1) return bars1m.slice();
 
   const out = [];
   let cur = null;
-
   const bucketOf = (ts) => Math.floor(ts / (tf * 60_000)) * (tf * 60_000);
 
   for (const b of bars1m) {
-    const ts = Number(b.ts);
-    const o = Number(b.o);
-    const h = Number(b.h);
-    const l = Number(b.l);
-    const c = Number(b.c);
-    const v = Number(b.v || 0);
-    if (!Number.isFinite(ts) || ![o, h, l, c].every(Number.isFinite)) continue;
-
-    const bucket = bucketOf(ts);
-
+    const bucket = bucketOf(b.ts);
     if (!cur || cur.bucket !== bucket) {
       if (cur) out.push({ ts: cur.bucket, o: cur.o, h: cur.h, l: cur.l, c: cur.c, v: cur.v });
-      cur = { bucket, o, h, l, c, v };
+      cur = { bucket, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v };
     } else {
-      cur.h = Math.max(cur.h, h);
-      cur.l = Math.min(cur.l, l);
-      cur.c = c;
-      cur.v += v;
+      cur.h = Math.max(cur.h, b.h);
+      cur.l = Math.min(cur.l, b.l);
+      cur.c = b.c;
+      cur.v += b.v;
     }
   }
 
   if (cur) out.push({ ts: cur.bucket, o: cur.o, h: cur.h, l: cur.l, c: cur.c, v: cur.v });
-
-  return out;
-}
-
-function emaSeries(closes, period) {
-  const p = Math.max(1, Math.floor(Number(period || 0)));
-  if (!p || !Array.isArray(closes) || closes.length === 0) return [];
-  const k = 2 / (p + 1);
-  const out = [];
-  let ema = null;
-  for (const x of closes) {
-    const c = Number(x);
-    if (!Number.isFinite(c)) {
-      out.push(null);
-      continue;
-    }
-    if (ema == null) ema = c;
-    else ema = c * k + ema * (1 - k);
-    out.push(ema);
-  }
   return out;
 }
 
@@ -199,108 +178,166 @@ function vwapSeries(bars) {
   let pv = 0;
   let v = 0;
   const out = [];
+
   for (const b of bars) {
-    const h = Number(b.h), l = Number(b.l), c = Number(b.c), vol = Number(b.v || 0);
-    const typical = (h + l + c) / 3;
+    const typical = (Number(b.h) + Number(b.l) + Number(b.c)) / 3;
+    const vol = Number(b.v || 0);
     if (Number.isFinite(typical) && Number.isFinite(vol) && vol > 0) {
       pv += typical * vol;
       v += vol;
-      out.push(v ? (pv / v) : null);
-    } else {
-      out.push(v ? (pv / v) : null);
     }
+    out.push(v > 0 ? pv / v : null);
   }
+
   return out;
 }
 
-// -----------------------
-// Chart render (canvas)
-// -----------------------
+function closestIdxByTs(bars, ts) {
+  if (!Array.isArray(bars) || !bars.length || !Number.isFinite(Number(ts)) || Number(ts) <= 0) return null;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < bars.length; i++) {
+    const d = Math.abs(Number(bars[i].ts) - Number(ts));
+    if (d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function syncCanvasSize(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(320, Math.round(rect.width || 1100));
+  const height = Math.max(260, Math.round(rect.height || 440));
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+
+  if (canvas.width !== width * ratio || canvas.height !== height * ratio) {
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  return { ctx, width, height };
+}
+
+function drawRoundedLabel(ctx, x, y, text, fillStyle, textStyle) {
+  ctx.save();
+  ctx.font = "10px system-ui";
+  const padX = 6;
+  const padY = 3;
+  const w = ctx.measureText(text).width + padX * 2;
+  const h = 18;
+  const r = 8;
+
+  ctx.fillStyle = fillStyle;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = textStyle;
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + padX, y + h / 2);
+  ctx.restore();
+}
+
 function drawChart(canvas, bars, opts) {
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
 
-  const w = canvas.width;
-  const h = canvas.height;
-
+  const { ctx, width: w, height: h } = syncCanvasSize(canvas);
   ctx.clearRect(0, 0, w, h);
 
-  ctx.fillStyle = "#0b0f1a";
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#0a1220");
+  bg.addColorStop(1, "#0d1626");
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
 
   if (!Array.isArray(bars) || !bars.length) {
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillStyle = "rgba(231, 237, 246, 0.78)";
     ctx.font = "14px system-ui";
-    ctx.fillText("No candles found for this window.", 18, 28);
+    ctx.fillText("No candles found for this snapshot.", 18, 28);
     return;
   }
 
-  const pad = 18;
-  const volH = 70;
-  const chartH = h - pad * 2 - volH - 10;
+  const padTop = 24;
+  const padRight = 62;
+  const padBottom = 32;
+  const padLeft = 14;
+  const plotW = Math.max(40, w - padLeft - padRight);
+  const plotH = Math.max(40, h - padTop - padBottom);
 
-  let lo = Infinity, hi = -Infinity, vmax = 0;
+  let lo = Infinity;
+  let hi = -Infinity;
   for (const b of bars) {
     lo = Math.min(lo, Number(b.l));
     hi = Math.max(hi, Number(b.h));
-    vmax = Math.max(vmax, Number(b.v || 0));
   }
-  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+  if (hi === lo) {
+    hi += 1;
+    lo -= 1;
+  }
 
-  const plotW = w - pad * 2;
-  const n = bars.length;
-  const candleW = Math.max(3, Math.floor(plotW / n));
+  const padPct = (hi - lo) * 0.05;
+  lo -= padPct;
+  hi += padPct;
 
-  const yOf = (price) => {
-    const t = (Number(price) - lo) / (hi - lo);
-    return pad + (1 - t) * chartH;
-  };
+  const slotW = plotW / Math.max(1, bars.length);
+  const xOf = (idx) => padLeft + slotW * idx + slotW / 2;
+  const wickXOf = (idx) => Math.round(xOf(idx)) + 0.5;
+  const yOf = (price) => padTop + ((hi - Number(price)) / Math.max(0.0001, hi - lo)) * plotH;
 
-  const xOf = (i) => pad + i * candleW + Math.floor(candleW / 2);
-
-  const entryTs = Number(opts?.entryTs || 0);
-  const exitTs = Number(opts?.exitTs || 0);
-
-  const closestIdx = (ts) => {
-    if (!Number.isFinite(ts) || ts <= 0) return null;
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < n; i++) {
-      const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return best;
-  };
-
-  const entryIdx = closestIdx(entryTs);
-  const exitIdx = closestIdx(exitTs);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.06)";
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (chartH * i) / 4;
+  const gridLevels = 4;
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 8]);
+  ctx.font = "11px system-ui";
+  ctx.fillStyle = "rgba(154, 166, 187, 0.82)";
+  for (let i = 0; i < gridLevels; i++) {
+    const t = i / Math.max(1, gridLevels - 1);
+    const y = padTop + plotH * t;
+    const price = hi - (hi - lo) * t;
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(w - padRight + 10, y);
     ctx.stroke();
+    ctx.fillText(fmt2(price), w - padRight + 14, y + 4);
+  }
+  ctx.setLineDash([]);
+
+  const entryIdx = closestIdxByTs(bars, opts?.entryTs);
+  const exitIdx = closestIdxByTs(bars, opts?.exitTs);
+
+  if (entryIdx != null && exitIdx != null && entryIdx !== exitIdx) {
+    const firstIdx = Math.min(entryIdx, exitIdx);
+    const lastIdx = Math.max(entryIdx, exitIdx);
+    const left = padLeft + slotW * firstIdx;
+    const right = padLeft + slotW * (lastIdx + 1);
+    ctx.fillStyle = "rgba(93, 169, 255, 0.05)";
+    ctx.fillRect(left, padTop, Math.max(2, right - left), plotH);
   }
 
-  const closes = bars.map((b) => Number(b.c));
-  const emaPeriods = Array.isArray(opts?.emaPeriods) ? opts.emaPeriods : [];
-  const emaMap = {};
-  for (const p of emaPeriods) emaMap[p] = emaSeries(closes, p);
-
-  const vwap = opts?.showVwap ? vwapSeries(bars) : [];
-
-  if (vwap.length) {
-    ctx.strokeStyle = "rgba(120,180,255,0.85)";
-    ctx.lineWidth = 2;
+  if (opts?.showVwap) {
+    const vwap = vwapSeries(bars);
+    ctx.strokeStyle = "rgba(125, 191, 255, 0.82)";
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     let started = false;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < vwap.length; i++) {
       const v = vwap[i];
       if (v == null) continue;
       const x = xOf(i);
@@ -308,151 +345,202 @@ function drawChart(canvas, bars, opts) {
       if (!started) {
         ctx.moveTo(x, y);
         started = true;
-      } else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.lineWidth = 1;
-  }
-
-  const emaColors = [
-    "rgba(255,255,255,0.75)",
-    "rgba(255,220,120,0.85)",
-    "rgba(180,255,180,0.75)",
-    "rgba(255,140,200,0.75)"
-  ];
-  let ci = 0;
-  for (const p of emaPeriods) {
-    const s = emaMap[p] || [];
-    ctx.strokeStyle = emaColors[ci % emaColors.length];
-    ci++;
-    ctx.beginPath();
-    let started = false;
-    for (let i = 0; i < n; i++) {
-      const v = s[i];
-      if (v == null) continue;
-      const x = xOf(i);
-      const y = yOf(v);
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else ctx.lineTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
     }
     ctx.stroke();
   }
 
-  for (let i = 0; i < n; i++) {
+  const widthScale =
+    bars.length >= 160 ? 0.5 : bars.length >= 120 ? 0.54 : bars.length >= 90 ? 0.58 : 0.62;
+  const bodyW = Math.max(1.8, Math.min(7.5, slotW * widthScale));
+
+  for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
-    const o = Number(b.o), c = Number(b.c), hh = Number(b.h), ll = Number(b.l);
-    const vol = Number(b.v || 0);
-
     const x = xOf(i);
+    const wickX = wickXOf(i);
+    const yH = yOf(b.h);
+    const yL = yOf(b.l);
+    const yO = yOf(b.o);
+    const yC = yOf(b.c);
+    const up = b.c >= b.o;
 
-    ctx.strokeStyle = "rgba(255,255,255,0.50)";
+    ctx.strokeStyle = up ? "rgba(74, 222, 128, 0.75)" : "rgba(248, 113, 113, 0.78)";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x, yOf(hh));
-    ctx.lineTo(x, yOf(ll));
+    ctx.moveTo(wickX, yH);
+    ctx.lineTo(wickX, yL);
     ctx.stroke();
 
-    const up = c >= o;
-    ctx.fillStyle = up ? "rgba(80,200,120,0.85)" : "rgba(255,120,80,0.85)";
-    const bodyTop = Math.min(yOf(o), yOf(c));
-    const bodyBot = Math.max(yOf(o), yOf(c));
-    const bw = Math.max(2, candleW - 2);
-    ctx.fillRect(x - Math.floor(bw / 2), bodyTop, bw, Math.max(2, bodyBot - bodyTop));
-
-    const vh = vmax ? Math.round((vol / vmax) * volH) : 0;
-    ctx.fillStyle = up ? "rgba(80,200,120,0.35)" : "rgba(255,120,80,0.35)";
-    ctx.fillRect(x - Math.floor(bw / 2), pad + chartH + 10 + (volH - vh), bw, vh);
+    ctx.fillStyle = up ? "rgba(74, 222, 128, 0.92)" : "rgba(248, 113, 113, 0.92)";
+    const top = Math.min(yO, yC);
+    const height = Math.max(1.5, Math.abs(yC - yO));
+    const bodyLeft = Math.round((x - bodyW / 2) * 2) / 2;
+    ctx.fillRect(bodyLeft, top, bodyW, height);
   }
 
-  const levelPrice = opts?.levelPrice;
-  const structureLevel = opts?.structureLevel;
+  const markerY = padTop + 8;
+  const markers = [
+    {
+      idx: entryIdx,
+      label: "Entry",
+      lineColor: "rgba(45, 212, 255, 0.88)",
+      pillFill: "rgba(45, 212, 255, 0.16)",
+      pillText: "#96ecff",
+    },
+    {
+      idx: exitIdx,
+      label: "Exit",
+      lineColor: "rgba(251, 113, 133, 0.88)",
+      pillFill: "rgba(251, 113, 133, 0.16)",
+      pillText: "#ffb0bf",
+    },
+  ];
 
-  const drawHLine = (price, color) => {
-    if (price == null || !Number.isFinite(Number(price))) return;
-    const y = yOf(price);
-    ctx.strokeStyle = color;
+  for (const marker of markers) {
+    if (marker.idx == null) continue;
+    const x = wickXOf(marker.idx);
+    ctx.strokeStyle = marker.lineColor;
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(w - pad, y);
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, padTop + plotH);
     ctx.stroke();
-  };
-
-  drawHLine(levelPrice, "rgba(255,255,255,0.25)");
-  drawHLine(structureLevel, "rgba(255,255,0,0.35)");
-
-  if (entryIdx != null && exitIdx != null && exitIdx !== entryIdx) {
-    const leftIdx = Math.min(entryIdx, exitIdx);
-    const rightIdx = Math.max(entryIdx, exitIdx);
-
-    const xL = xOf(leftIdx);
-    const xR = xOf(rightIdx);
-
-    const topY = pad;
-    const botY = pad + chartH;
 
     ctx.save();
-
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(pad, topY, Math.max(0, xL - pad), botY - topY);
-    ctx.fillRect(xR, topY, Math.max(0, (w - pad) - xR), botY - topY);
-
-    const feather = 28;
-
-    const gradL = ctx.createLinearGradient(xL - feather, 0, xL + feather, 0);
-    gradL.addColorStop(0, "rgba(0,0,0,0.55)");
-    gradL.addColorStop(0.5, "rgba(0,0,0,0.25)");
-    gradL.addColorStop(1, "rgba(0,0,0,0.00)");
-    ctx.fillStyle = gradL;
-    ctx.fillRect(xL - feather, topY, feather * 2, botY - topY);
-
-    const gradR = ctx.createLinearGradient(xR - feather, 0, xR + feather, 0);
-    gradR.addColorStop(0, "rgba(0,0,0,0.00)");
-    gradR.addColorStop(0.5, "rgba(0,0,0,0.25)");
-    gradR.addColorStop(1, "rgba(0,0,0,0.55)");
-    ctx.fillStyle = gradR;
-    ctx.fillRect(xR - feather, topY, feather * 2, botY - topY);
-
-    ctx.strokeStyle = "rgba(255,255,255,0.10)";
-    ctx.strokeRect(xL, topY, Math.max(1, xR - xL), botY - topY);
-
+    ctx.font = "10px system-ui";
+    const labelWidth = ctx.measureText(marker.label).width + 14;
     ctx.restore();
+    const clampedX = Math.max(6, Math.min(x - labelWidth / 2, w - labelWidth - 6));
+    drawRoundedLabel(ctx, clampedX, markerY, marker.label, marker.pillFill, marker.pillText);
   }
 
-  if (entryIdx != null) {
-    const x = xOf(entryIdx);
-    ctx.strokeStyle = "rgba(0,200,255,0.95)";
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, pad + chartH);
-    ctx.stroke();
+  const labelIndices = [0, Math.floor((bars.length - 1) / 2), bars.length - 1];
+  const seen = new Set();
+  ctx.fillStyle = "rgba(154, 166, 187, 0.84)";
+  ctx.font = "11px system-ui";
+  for (const idx of labelIndices) {
+    if (seen.has(idx) || bars[idx] == null) continue;
+    seen.add(idx);
+    const x = xOf(idx);
+    const ts = Number(bars[idx].ts);
+    const text = bars.length > 120 ? fmtTime(ts) : fmtDateTime(ts);
+    const measured = ctx.measureText(text).width;
+    const clampedX = Math.max(6, Math.min(x - measured / 2, w - measured - 6));
+    ctx.fillText(text, clampedX, h - 10);
   }
-
-  if (exitIdx != null) {
-    const x = xOf(exitIdx);
-    ctx.strokeStyle = "rgba(255,80,80,0.95)";
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, pad + chartH);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = "rgba(255,255,255,0.78)";
-  ctx.font = "12px system-ui";
-  const legend = [
-    opts?.tfLabel ? `TF: ${opts.tfLabel}` : null,
-    opts?.builtFrom ? opts.builtFrom : null,
-    opts?.showVwap ? "VWAP" : null,
-    emaPeriods.length ? `EMA: ${emaPeriods.join(",")}` : null
-  ].filter(Boolean).join(" • ");
-  if (legend) ctx.fillText(legend, pad, h - pad);
 }
 
-// -----------------------
-// Smooth pan/zoom viewport
-// -----------------------
+function localDayWindow(ts) {
+  const d = new Date(Number(ts || Date.now()));
+  const start = new Date(d);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(d);
+  end.setHours(23, 59, 59, 999);
+  return { start: start.getTime(), end: end.getTime() };
+}
+
+async function requestCandles(symbol, endTs, minutes) {
+  const res = await fetch(
+    `/api/candles?symbol=${encodeURIComponent(symbol)}&end=${encodeURIComponent(endTs)}&minutes=${encodeURIComponent(
+      minutes
+    )}`,
+    { cache: "no-store" }
+  );
+  const j = await res.json().catch(() => null);
+  return normalizeBars(Array.isArray(j?.bars) ? j.bars : []);
+}
+
+function scoreRange(bars, entryTs, exitTs, preferenceWeight) {
+  if (!bars.length) return -Infinity;
+  const first = Number(bars[0].ts);
+  const last = Number(bars[bars.length - 1].ts) + 60_000;
+  const coversEntry = Number(entryTs) >= first && Number(entryTs) <= last;
+  const coversExit = !Number(exitTs) || (Number(exitTs) >= first && Number(exitTs) <= last);
+  return bars.length + (coversEntry ? 20_000 : 0) + (coversExit ? 10_000 : 0) + preferenceWeight;
+}
+
+async function fetchSnapshotBars(symbol, entryTs, exitTs) {
+  const dayWindow = localDayWindow(entryTs || Date.now());
+  const fullDayMinutes = Math.min(2000, Math.max(390, Math.ceil((dayWindow.end - dayWindow.start) / 60_000)));
+  const widestEnd = Math.max(Number(entryTs || 0), Number(exitTs || 0), Date.now() - 60_000) + 180 * 60_000;
+  const candidates = [
+    { label: "trade day", end: dayWindow.end, minutes: fullDayMinutes, weight: 30_000 },
+    { label: "extended context", end: widestEnd, minutes: 2000, weight: 20_000 },
+    { label: "widest available context", end: Number(entryTs || Date.now()), minutes: 2000, weight: 10_000 },
+  ];
+
+  let best = { bars1m: [], label: "No data" };
+
+  for (const candidate of candidates) {
+    try {
+      const bars1m = await requestCandles(symbol, candidate.end, candidate.minutes);
+      const score = scoreRange(bars1m, entryTs, exitTs, candidate.weight);
+      const bestScore = scoreRange(best.bars1m, entryTs, exitTs, 0);
+      if (score > bestScore) {
+        best = { bars1m, label: candidate.label };
+      }
+      if (candidate.label === "trade day" && bars1m.length) {
+        const first = Number(bars1m[0].ts);
+        const last = Number(bars1m[bars1m.length - 1].ts) + 60_000;
+        if (Number(entryTs) >= first && Number(entryTs) <= last) {
+          best = { bars1m, label: candidate.label };
+          break;
+        }
+      }
+    } catch {
+      // ignore and fall through
+    }
+  }
+
+  return best;
+}
+
+function chooseDisplayTimeframe(baseTfMin, bars1mLength) {
+  void baseTfMin;
+  const totalBars = Math.max(0, Math.floor(Number(bars1mLength || 0)));
+  if (totalBars <= 0 || totalBars <= DISPLAY_BAR_TARGET_MAX) return 1;
+
+  const candidates = DISPLAY_TIMEFRAME_STEPS.map((tf) => ({
+    tf,
+    count: Math.max(1, Math.ceil(totalBars / tf)),
+  }));
+  const preferred = candidates
+    .filter((candidate) => candidate.count >= DISPLAY_BAR_TARGET_MIN && candidate.count <= DISPLAY_BAR_TARGET_MAX)
+    .sort((a, b) => Math.abs(a.count - DISPLAY_BAR_TARGET_IDEAL) - Math.abs(b.count - DISPLAY_BAR_TARGET_IDEAL) || a.tf - b.tf);
+  if (preferred.length) return preferred[0].tf;
+
+  const capped = candidates
+    .filter((candidate) => candidate.count <= DISPLAY_BAR_TARGET_MAX)
+    .sort((a, b) => b.count - a.count || a.tf - b.tf);
+  if (capped.length) return capped[0].tf;
+
+  return DISPLAY_TIMEFRAME_STEPS[DISPLAY_TIMEFRAME_STEPS.length - 1];
+}
+
+function buildMetric(label, value) {
+  return `
+    <div class="outcome-metric">
+      <div class="outcome-metric-label">${label}</div>
+      <div class="outcome-metric-value">${value}</div>
+    </div>
+  `;
+}
+
+function buildDetailItem(label, value) {
+  return `
+    <div class="outcome-detail-item">
+      <div class="outcome-detail-label">${label}</div>
+      <div class="outcome-detail-value">${value}</div>
+    </div>
+  `;
+}
+
 async function openModalForRow(r) {
   if (!modalEl || !modalBodyEl || !modalSubEl) return;
+  clearModalCleanup();
+  const modalToken = ++activeModalToken;
 
   const strat = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "—");
   modalSubEl.textContent = `${r.symbol || ""} • ${strat}`;
@@ -467,175 +555,107 @@ async function openModalForRow(r) {
       ? Number(r.endTs)
       : 0;
 
-  const tfMin = Math.max(1, Math.floor(Number(r.timeframeMin || 1)));
-  const tfLabel = `${tfMin}m`;
-
-  const emaPeriods = Array.isArray(r.emaPeriods) ? r.emaPeriods : [];
+  const strategyTfMin = Math.max(1, Math.floor(Number(r.timeframeMin || 1)));
   const showVwap = Boolean(r.showVwap);
+  const statusText = escapeHtml(r.status || "—");
+  const pnlText = r.pnlPct != null ? `${fmt2(r.pnlPct)}%` : "—";
 
-  const detailHtml = `
-    <div style="margin-bottom:12px;">
-      <div><b>Details</b></div>
-      <div>Strategy: <b>${escapeHtml(strat)}</b></div>
-      <div>Time: ${escapeHtml(fmtTime(r.ts))}</div>
-      <div>Symbol: <b>${escapeHtml(r.symbol || "")}</b></div>
-      <div>Market: ${escapeHtml(r.market || "—")} • RS: ${escapeHtml(r.rs || "—")}</div>
-      <div>Level: ${escapeHtml(r.level || "—")} • Structure: ${r.structureLevel != null ? fmt2(r.structureLevel) : "—"}</div>
-      <div>Status: <b>${escapeHtml(r.status || "—")}</b> • Stopped: <b>${r.stoppedOut ? "YES" : "NO"}</b> • PnL: <b>${r.pnlPct != null ? fmt2(r.pnlPct) + "%" : "—"}</b></div>
-    </div>
-
-    <div class="small muted" style="margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-      <div>
-        Chart snapshot (${escapeHtml(tfLabel)} candles built from 1m source) • Entry (cyan) • Exit (red)
-        <span class="small" style="opacity:0.7;">(wheel = zoom, drag = pan)</span>
+  modalBodyEl.innerHTML = `
+    <div class="outcome-detail">
+      <div class="outcome-metrics">
+        ${buildMetric("Symbol", `<b>${escapeHtml(r.symbol || "—")}</b>`)}
+        ${buildMetric("Strategy", escapeHtml(strat))}
+        ${buildMetric("Status", `<b>${statusText}</b>`)}
+        ${buildMetric("PnL", `<b>${escapeHtml(pnlText)}</b>`)}
+        ${buildMetric("Entry", escapeHtml(fmtDateTime(entryTs)))}
+        ${buildMetric("Exit", escapeHtml(exitTs ? fmtDateTime(exitTs) : "Still open / checkpoint"))}
       </div>
-      <button id="recenterBtn" class="btn small">Recenter</button>
-    </div>
 
-    <canvas id="outcomeChart"
-      width="1100"
-      height="440"
-      style="width:100%; border-radius:12px; border:1px solid rgba(255,255,255,0.10);"></canvas>
+      <section class="outcome-chart-panel">
+        <div class="outcome-chart-head">
+          <div>
+            <div class="outcome-chart-title">Trade Context Snapshot</div>
+            <div class="outcome-chart-caption" id="outcomeChartContext">
+              Loading broader ticker context for this trade…
+            </div>
+          </div>
+
+          <div class="outcome-chart-legend">
+            <span class="outcome-chip">Entry</span>
+            <span class="outcome-chip">Exit</span>
+            ${showVwap ? `<span class="outcome-chip">VWAP</span>` : ""}
+          </div>
+        </div>
+
+        <div class="outcome-chart-stage">
+          <canvas id="outcomeChart"></canvas>
+        </div>
+      </section>
+
+      <div class="outcome-detail-grid">
+        ${buildDetailItem("Market / RS", `${escapeHtml(r.market || "—")} • ${escapeHtml(r.rs || "—")}`)}
+        ${buildDetailItem("Level / Structure", `${escapeHtml(r.level || "—")} • ${r.structureLevel != null ? fmt2(r.structureLevel) : "—"}`)}
+        ${buildDetailItem("Stopped Out", r.stoppedOut ? "YES" : "NO")}
+        ${buildDetailItem("Timeframe", `${strategyTfMin}m strategy timeframe`)}
+        ${buildDetailItem("Trade Window", exitTs ? `${fmtTime(entryTs)} → ${fmtTime(exitTs)}` : `${fmtTime(entryTs)} → open`)}
+        ${buildDetailItem("Alert ID", escapeHtml(r.alertId || "—"))}
+      </div>
+    </div>
   `;
 
-  modalBodyEl.innerHTML = detailHtml;
-
-  function closestIdxByTs(bars, ts) {
-    if (!Array.isArray(bars) || !bars.length) return 0;
-    let best = 0;
-    let bestD = Infinity;
-    for (let i = 0; i < bars.length; i++) {
-      const d = Math.abs(Number(bars[i].ts) - ts);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    }
-    return best;
-  }
-
-  let barsTfAll = [];
-  try {
-    const minutes = 2000;
-    const res = await fetch(
-      `/api/candles?symbol=${encodeURIComponent(r.symbol)}&end=${encodeURIComponent(entryTs)}&minutes=${minutes}`,
-      { cache: "no-store" }
-    );
-    const j = await res.json().catch(() => null);
-    const bars1m = Array.isArray(j?.bars) ? j.bars : [];
-    barsTfAll = aggregateBars(bars1m, tfMin);
-  } catch {
-    barsTfAll = [];
-  }
-
+  const chartContextEl = document.getElementById("outcomeChartContext");
   const canvas = document.getElementById("outcomeChart");
-  if (!canvas || !canvas.getContext) return;
+  if (!canvas) return;
 
-  const total = barsTfAll.length;
-  let visible = total ? Math.max(30, Math.min(90, total)) : 30;
+  try {
+    const snapshot = await fetchSnapshotBars(r.symbol, entryTs, exitTs);
+    if (modalToken !== activeModalToken) return;
+    const displayTfMin = chooseDisplayTimeframe(strategyTfMin, snapshot.bars1m.length);
+    const barsDisplay = aggregateBars(snapshot.bars1m, displayTfMin);
 
-  const entryIdxAll = total ? closestIdxByTs(barsTfAll, entryTs) : 0;
-  let start = total ? Math.max(0, Math.min(entryIdxAll - Math.floor(visible * 0.6), Math.max(0, total - visible))) : 0;
+    drawChart(canvas, barsDisplay, {
+      entryTs,
+      exitTs,
+      showVwap,
+    });
 
-  const initialVisible = visible;
-  const initialStart = start;
+    if (chartContextEl) {
+      const rangeStart = barsDisplay.length ? fmtDateTime(barsDisplay[0].ts) : "—";
+      const rangeEnd = barsDisplay.length ? fmtDateTime(barsDisplay[barsDisplay.length - 1].ts) : "—";
+      chartContextEl.textContent =
+        `Snapshot range: ${snapshot.label}. Showing ${displayTfMin}m candles built from 1m source so the broader move stays visible. ` +
+        `Range ${rangeStart} to ${rangeEnd}.`;
+    }
 
-  let raf = 0;
-  const redraw = () => {
-    if (raf) return;
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      if (!total) return;
-
-      start = Math.max(0, Math.min(start, Math.max(0, total - visible)));
-      const end = Math.max(0, Math.min(start + visible, total));
-      const slice = barsTfAll.slice(start, end);
-
-      drawChart(canvas, slice, {
+    const onResize = () => {
+      drawChart(canvas, barsDisplay, {
         entryTs,
         exitTs,
-        tfLabel,
-        emaPeriods,
         showVwap,
-        levelPrice: r.levelPrice != null && r.levelPrice !== "" ? Number(r.levelPrice) : null,
-        structureLevel: r.structureLevel != null && r.structureLevel !== "" ? Number(r.structureLevel) : null
       });
-    });
-  };
-
-  if (total) redraw();
-
-  document.getElementById("recenterBtn")?.addEventListener("click", () => {
-    visible = initialVisible;
-    start = initialStart;
-    redraw();
-  });
-
-  canvas.style.cursor = "grab";
-
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
-      if (!total) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const mx = Math.max(0, Math.min((e.clientX - rect.left) / Math.max(1, rect.width), 1));
-      const anchor = start + Math.floor(visible * mx);
-
-      const factor = e.deltaY < 0 ? 0.98 : 1.02;
-      const nextVisible = Math.max(30, Math.min(Math.round(visible * factor), Math.max(30, total)));
-      const nextStart = Math.max(0, Math.min(anchor - Math.floor(nextVisible * mx), Math.max(0, total - nextVisible)));
-
-      visible = nextVisible;
-      start = nextStart;
-
-      redraw();
-    },
-    { passive: false }
-  );
-
-  let dragging = false;
-  let dragStartX = 0;
-  let dragStartStart = 0;
-
-  canvas.addEventListener("mousedown", (e) => {
-    if (!total) return;
-    dragging = true;
-    dragStartX = e.clientX;
-    dragStartStart = start;
-    canvas.style.cursor = "grabbing";
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (!dragging) return;
-    dragging = false;
-    canvas.style.cursor = "grab";
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging || !total) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const dx = e.clientX - dragStartX;
-
-    const barsPerPx = visible / Math.max(1, rect.width);
-    const PAN_MULT = 0.6;
-    const deltaBars = Math.round(dx * barsPerPx * PAN_MULT);
-    start = Math.max(0, Math.min(dragStartStart - deltaBars, Math.max(0, total - visible)));
-    redraw();
-  });
+    };
+    window.addEventListener("resize", onResize);
+    modalCleanup = () => window.removeEventListener("resize", onResize);
+  } catch {
+    if (modalToken !== activeModalToken) return;
+    drawChart(canvas, [], {});
+    if (chartContextEl) {
+      chartContextEl.textContent = "Unable to load chart candles for this outcome snapshot.";
+    }
+  }
 
   const a = findAlertById(r.alertId);
   if (a) {
-    const msg = escapeHtml(String(a.message || ""));
-    modalBodyEl.insertAdjacentHTML("beforeend", `<div style="margin-top:10px;"><b>Raw message:</b> ${msg}</div>`);
+    const raw = document.createElement("div");
+    raw.className = "outcome-raw";
+    raw.innerHTML = `
+      <div class="outcome-detail-label">Raw Message</div>
+      <div class="outcome-raw-body">${escapeHtml(String(a.message || ""))}</div>
+    `;
+    modalBodyEl.querySelector(".outcome-detail")?.appendChild(raw);
   }
 }
 
-// -----------------------
-// DB filters + render
-// -----------------------
 function applyDbFilters(rows) {
   const sym = String(dbSymEl?.value || "").trim().toUpperCase();
   const status = String(dbStatusEl?.value || "").trim().toUpperCase();
@@ -649,7 +669,6 @@ function applyDbFilters(rows) {
   else if (range === "week") cutoff = now - 7 * 24 * 60 * 60_000;
   else if (range === "month") cutoff = now - 30 * 24 * 60 * 60_000;
   else if (range === "year") cutoff = now - 365 * 24 * 60 * 60_000;
-  else cutoff = 0;
 
   return (rows || []).filter((r) => {
     if (sym && String(r.symbol || "").toUpperCase() !== sym) return false;
@@ -662,22 +681,18 @@ function applyDbFilters(rows) {
 }
 
 function computePnlPct(row) {
-  // Prefer explicit exit return if present (DB-native)
   if (row?.exitReturnPct !== "" && row?.exitReturnPct != null && Number.isFinite(Number(row.exitReturnPct))) {
     return Number(row.exitReturnPct);
   }
 
-  // STOP is authoritative
   if (row?.stoppedOut && row?.stopReturnPct !== "" && row?.stopReturnPct != null && Number.isFinite(Number(row.stopReturnPct))) {
     return Number(row.stopReturnPct);
   }
 
-  // Legacy broker-like exit stored inside returns_json
   if (!row?.stoppedOut && row?.retExit !== "" && row?.retExit != null && Number.isFinite(Number(row.retExit))) {
     return Number(row.retExit);
   }
 
-  // Fallback to checkpoint returns
   const candidates = [row?.ret60m, row?.ret30m, row?.ret15m, row?.ret5m];
   for (const v of candidates) {
     if (v !== "" && v != null && Number.isFinite(Number(v))) return Number(v);
@@ -710,7 +725,6 @@ function renderDbTable() {
 
     const stratLabel = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "");
     const pnl = computePnlPct(r);
-
     r.pnlPct = pnl;
 
     tr.appendChild(td(stratLabel));
@@ -746,7 +760,6 @@ async function fetchDbRowsStable() {
   }
 }
 
-// filters
 dbSymEl?.addEventListener("input", renderDbTable);
 dbStatusEl?.addEventListener("change", renderDbTable);
 dbRangeEl?.addEventListener("change", renderDbTable);
@@ -754,7 +767,6 @@ dbStoppedOnlyEl?.addEventListener("change", renderDbTable);
 dbStrategyEl?.addEventListener("change", renderDbTable);
 refreshBtn?.addEventListener("click", fetchDbRowsStable);
 
-// socket wiring
 if (socket) {
   socket.on("init", (payload) => {
     allAlerts = Array.isArray(payload.alerts) ? payload.alerts : [];
@@ -769,9 +781,8 @@ if (socket) {
   socketDot?.classList.remove("live");
 }
 
-// boot
 loadStrategies().then(() => fetchDbRowsStable());
-setInterval(fetchDbRowsStable, 6000);
+window.setInterval(fetchDbRowsStable, 6000);
 
 refreshDataLiveDot();
-setInterval(refreshDataLiveDot, 5000);
+window.setInterval(refreshDataLiveDot, 5000);

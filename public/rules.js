@@ -1,182 +1,95 @@
 /* global fetch */
 
-let modalVersion = null;
-
 (() => {
   const $ = (id) => document.getElementById(id);
+  const STRATEGY_SCHEMA_VERSION = 3;
+  const ADMIN_TOKEN_STORAGE_KEY = "ADMIN_TOKEN";
 
-  // Elements
-  const strategiesList = $("strategiesList");
+  const els = {
+    strategiesList: $("strategiesList"),
+    builderContext: $("builderContext"),
+    saveRulesBtn: $("saveRulesBtn"),
+    updateRulesBtn: $("updateRulesBtn"),
+    resetBuilderBtn: $("resetBuilderBtn"),
 
-  const strategyName = $("strategyName");
-  const saveRulesBtn = $("saveRulesBtn");
+    strategyName: $("strategyName"),
+    setupType: $("setupType"),
+    timeframeMin: $("timeframeMin"),
+    strategyDirection: $("strategyDirection"),
 
-  // Form fields
-  const timeframeMin = $("timeframeMin");
-  const scanSession = $("scanSession");
-  const scanUniverse = $("scanUniverse");
-  const premarketEnabled = $("premarketEnabled");
-  const marketBiasRequired = $("marketBiasRequired");
+    breakRetestFields: $("breakRetestFields"),
+    maCrossFields: $("maCrossFields"),
+    brLevels: $("brLevels"),
+    brMovingAverageFields: $("brMovingAverageFields"),
+    brMaType: $("brMaType"),
+    brMaValues: $("brMaValues"),
+    brBreakConfirmation: $("brBreakConfirmation"),
+    brRetestConfirmation: $("brRetestConfirmation"),
+    brMaxRetestBars: $("brMaxRetestBars"),
+    brEntryTrigger: $("brEntryTrigger"),
 
-  const retestTolerancePct = $("retestTolerancePct");
-  const rsWindowBars5m = $("rsWindowBars5m");
-  const structureWindow = $("structureWindow");
+    maType: $("maType"),
+    maFastValue: $("maFastValue"),
+    maSlowValue: $("maSlowValue"),
+    maEntryReference: $("maEntryReference"),
+    maRequireCloseAfterCross: $("maRequireCloseAfterCross"),
+    maRequireRetest: $("maRequireRetest"),
+    maMaxEntryBarsAfterCross: $("maMaxEntryBarsAfterCross"),
+    maRequireVwapAgreement: $("maRequireVwapAgreement"),
 
-  const sectorAlignmentEnabled = $("sectorAlignmentEnabled");
-  const triggerType = $("triggerType");
-  const longMinBiasScore = $("longMinBiasScore");
-  const shortMaxBiasScore = $("shortMaxBiasScore");
+    sessionMode: $("sessionMode"),
+    minVolume: $("minVolume"),
+    minVolatilityPct: $("minVolatilityPct"),
+    requireMarketBias: $("requireMarketBias"),
+    requireSpyQqqAlignment: $("requireSpyQqqAlignment"),
+    requireVwapAgreement: $("requireVwapAgreement"),
+    requireRelativeStrength: $("requireRelativeStrength"),
 
-  const indVwap = $("indVwap");
-  const indMa = $("indMa");
-  const emaBlock = $("emaBlock");
-  const emaPeriods = $("emaPeriods");
-  const emaTrigger = $("emaTrigger");
-  const indRs = $("indRs");
-  const indVol = $("indVol");
+    riskMode: $("riskMode"),
+    riskValue: $("riskValue"),
+    stopMode: $("stopMode"),
+    stopValueRWrap: $("stopValueRWrap"),
+    stopValueR: $("stopValueR"),
+    profitTargetR: $("profitTargetR"),
+    moveToBreakevenAtR: $("moveToBreakevenAtR"),
+    timeExitBars: $("timeExitBars"),
+    maxOpenPositions: $("maxOpenPositions"),
 
-  const targetR = $("targetR");
-  const stopR = $("stopR");
-  const maxHoldBars = $("maxHoldBars");
-  const exitOnBiasFlip = $("exitOnBiasFlip");
-  const brokerExecEnabled = $("brokerExecEnabled");
-  const brokerExecAllowLong = $("brokerExecAllowLong");
-  const brokerExecAllowShort = $("brokerExecAllowShort");
-  const brokerExecMode = $("brokerExecMode");
-  const brokerExecSessionFilter = $("brokerExecSessionFilter");
-  const brokerExecSizingMode = $("brokerExecSizingMode");
-  const brokerExecDefaultNotional = $("brokerExecDefaultNotional");
-  const brokerExecDefaultQty = $("brokerExecDefaultQty");
-  const brokerExecDuplicatePolicy = $("brokerExecDuplicatePolicy");
-  const brokerExecStopModel = $("brokerExecStopModel");
-  const brokerExecStopLossPct = $("brokerExecStopLossPct");
-  const brokerExecTakeProfitPct = $("brokerExecTakeProfitPct");
-  const brokerExecMaxOpenPositions = $("brokerExecMaxOpenPositions");
-  const brokerExecMaxOrdersPerSymbolPerDay = $("brokerExecMaxOrdersPerSymbolPerDay");
-  const brokerExecEntryPolicy = $("brokerExecEntryPolicy");
-  const brokerExecNotes = $("brokerExecNotes");
-
-  // ORB fields
-  const orbFields = $("orbFields");
-  const orbRangeMin = $("orbRangeMin");
-  const orbEntryMode = $("orbEntryMode");
-  const orbTolerancePct = $("orbTolerancePct");
-
-  // trailing controls
-  const moveBeEnabled = $("moveBeEnabled");
-  const trailEnabled = $("trailEnabled");
-  const moveBeFields = $("moveBeFields");
-  const trailFields = $("trailFields");
-  const moveBeAtR = $("moveBeAtR");
-  const trailStartR = $("trailStartR");
-  const trailByR = $("trailByR");
-
-  // Section summaries
-  const sumScan = $("sumScan");
-  const sumTrigger = $("sumTrigger");
-  const sumFilters = $("sumFilters");
-  const sumIndicators = $("sumIndicators");
-  const sumMgmt = $("sumMgmt");
-  const sumExecution = $("sumExecution");
-
-  // State
-  let lastLoadedVersion = null;
-
-  // Defaults (safe) - used only for modal fallback / parsing
-  const DEFAULT_RULES = {
-    timeframeMin: 1,
-    scanSession: "RTH",
-    scanUniverse: "WATCHLIST",
-    premarketEnabled: false,
-    marketBiasRequired: true,
-
-    retestTolerancePct: 0.15,
-    rsWindowBars5m: 24,
-    structureWindow: 100,
-
-    sectorAlignmentEnabled: true,
-    triggerType: "BREAK_RETEST",
-
-    longMinBiasScore: 60,
-    shortMaxBiasScore: 40,
-
-    indicators: {
-      vwap: true,
-      movingAverages: false,
-      relativeStrength: true,
-      volume: false
-    },
-
-    emaPeriods: [],
-    emaTrigger: "NONE",
-
-    orb: {
-      rangeMin: 15,
-      entryMode: "BREAK_RETEST",
-      tolerancePct: 0.15
-    },
-
-    post: {
-      targetR: 2,
-      stopR: 1,
-      maxHoldBars: 60,
-      exitOnBiasFlip: false,
-
-      moveBeEnabled: false,
-      moveBeAtR: 1,
-
-      trailEnabled: false,
-      trailStartR: 1,
-      trailByR: 1
-    },
-
-    brokerExecution: {
-      enabled: true,
-      mode: "inherit",
-      sizingMode: "inherit",
-      defaultNotional: null,
-      defaultQty: null,
-      allowLong: true,
-      allowShort: true,
-      sessionFilter: "inherit",
-      entryPolicy: "confirmed_only",
-      stopModel: "inherit",
-      stopLossPct: null,
-      takeProfitPct: null,
-      maxOpenPositionsForStrategy: null,
-      maxOrdersPerSymbolPerDay: null,
-      duplicatePolicy: "inherit",
-      notes: null
-    }
+    brokerMaxTradesPerDay: $("brokerMaxTradesPerDay"),
+    brokerMaxCapital: $("brokerMaxCapital"),
   };
 
-  // ---------- helpers ----------
-  function asBool(v) {
-    if (typeof v === "boolean") return v;
-    const s = String(v).toLowerCase();
-    return s === "true" || s === "1" || s === "yes" || s === "on";
+  const EMPTY_STRATEGIES_HTML = `<div class="rules-empty-state">No saved strategies yet.</div>`;
+
+  const state = {
+    currentVersion: null,
+    strategies: [],
+    form: defaultStrategy("break_retest"),
+  };
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
   }
 
-  function asNum(v, fallback) {
-    if (typeof v === "string" && v.trim() === "") return fallback;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : fallback;
+  function numberOrNull(value) {
+    if (value == null || String(value).trim() === "") return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
   }
 
-  function asPositiveInt(v, fallback) {
-    if (typeof v === "string" && v.trim() === "") return fallback;
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+  function integerOrNull(value) {
+    const n = numberOrNull(value);
+    return n == null ? null : Math.floor(n);
   }
 
-  function clamp(n, lo, hi) {
-    const x = Number(n);
-    if (!Number.isFinite(x)) return lo;
-    return Math.max(lo, Math.min(hi, x));
+  function boolFromString(value, fallback) {
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return fallback;
   }
 
-  function escapeHtml(s) {
-    return String(s || "")
+  function escapeHtml(value) {
+    return String(value || "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
@@ -184,920 +97,672 @@ let modalVersion = null;
       .replaceAll("'", "&#39;");
   }
 
-  function parseEmaPeriods(s) {
-    const out = String(s || "")
-      .split(",")
-      .map((x) => parseInt(x.trim(), 10))
-      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 500);
-
-    return Array.from(new Set(out)).sort((a, b) => a - b).slice(0, 50);
+  function getStoredAdminToken() {
+    try {
+      return String(localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || "").trim();
+    } catch {
+      return "";
+    }
   }
 
-  function fmtTs(ms) {
-    const x = Number(ms);
-    if (!Number.isFinite(x) || x <= 0) return "—";
-    const d = new Date(x);
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    }).format(d);
+  function storeAdminToken(token) {
+    try {
+      const next = String(token || "").trim();
+      if (next) {
+        localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, next);
+      } else {
+        localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+      }
+    } catch {}
   }
 
-  // ---------- admin headers ----------
-  function getAdminHeaders() {
-    const tok = String(document.getElementById("adminToken")?.value || "").trim();
-    return tok ? { "x-admin-token": tok } : {};
+  function promptForAdminToken(message) {
+    const entered = window.prompt(message, getStoredAdminToken());
+    if (entered == null) return null;
+    const token = String(entered || "").trim();
+    storeAdminToken(token);
+    return token;
+  }
+
+  function getAdminHeaders(token = getStoredAdminToken()) {
+    return token ? { "x-admin-token": token } : {};
+  }
+
+  function selectedValues(select) {
+    return Array.from(select?.selectedOptions || []).map((option) => String(option.value || ""));
+  }
+
+  function setMultiSelectValues(select, values) {
+    const wanted = new Set((values || []).map((value) => String(value)));
+    Array.from(select?.options || []).forEach((option) => {
+      option.selected = wanted.has(String(option.value || ""));
+    });
+  }
+
+  function parseMaValues(value) {
+    return Array.from(
+      new Set(
+        String(value || "")
+          .split(",")
+          .map((part) => integerOrNull(part.trim()))
+          .filter((item) => item != null && item > 0 && item <= 500)
+      )
+    ).sort((a, b) => a - b);
+  }
+
+  function defaultStrategy(setupType) {
+    if (setupType === "ma_cross") {
+      return {
+        version: STRATEGY_SCHEMA_VERSION,
+        name: "",
+        description: null,
+        setupType,
+        timeframeMin: 5,
+        direction: "both",
+        setup: {
+          maType: "EMA",
+          fastValue: 9,
+          slowValue: 20,
+          entryReference: "cross",
+          requireCloseAfterCross: true,
+          requireRetest: false,
+          maxEntryBarsAfterCross: 3,
+          requireVwapAgreement: true,
+        },
+        filters: defaultFilters(),
+        risk: defaultRisk("ma_cross"),
+        brokerCaps: defaultBrokerCaps(),
+      };
+    }
+
+    return {
+      version: STRATEGY_SCHEMA_VERSION,
+      name: "",
+      description: null,
+      setupType: "break_retest",
+      timeframeMin: 5,
+      direction: "both",
+      setup: {
+        levels: ["pmh", "pml", "vwap"],
+        movingAverage: null,
+        breakConfirmation: "close_through",
+        retestConfirmation: "reclaim_close",
+        maxRetestBars: 3,
+        entryTrigger: "retest_close",
+      },
+      filters: defaultFilters(),
+      risk: defaultRisk("break_retest"),
+      brokerCaps: defaultBrokerCaps(),
+    };
+  }
+
+  function defaultFilters() {
+    return {
+      session: "regular",
+      universe: "watchlist",
+      minVolume: 1000000,
+      minVolatilityPct: 0.75,
+      requireMarketBias: true,
+      requireSpyQqqAlignment: true,
+      requireVwapAgreement: true,
+      requireRelativeStrength: true,
+    };
+  }
+
+  function defaultRisk(setupType) {
+    return {
+      riskMode: "percent_account",
+      riskValue: 1,
+      stopMode: setupType === "ma_cross" ? "ma_fail_close" : "structure_close",
+      stopValueR: 1,
+      profitTargetR: 2,
+      moveToBreakevenAtR: 1,
+      timeExitBars: 20,
+      maxOpenPositions: 3,
+    };
+  }
+
+  function defaultBrokerCaps() {
+    return {
+      maxTradesPerDay: 4,
+      maxCapital: 10000,
+    };
+  }
+
+  function normalizeLoadedStrategy(config, name) {
+    const src = config && typeof config === "object" ? clone(config) : {};
+    const setupType = src.setupType === "ma_cross" ? "ma_cross" : "break_retest";
+    const base = defaultStrategy(setupType);
+    const setup = src.setup && typeof src.setup === "object" ? src.setup : {};
+    const filters = src.filters && typeof src.filters === "object" ? src.filters : {};
+    const risk = src.risk && typeof src.risk === "object" ? src.risk : {};
+    const brokerCaps = src.brokerCaps && typeof src.brokerCaps === "object" ? src.brokerCaps : {};
+
+    const normalized = {
+      version: STRATEGY_SCHEMA_VERSION,
+      name: String(src.name || name || "").trim(),
+      description: typeof src.description === "string" ? src.description : null,
+      setupType,
+      timeframeMin: integerOrNull(src.timeframeMin) || base.timeframeMin,
+      direction: src.direction === "long" || src.direction === "short" || src.direction === "both" ? src.direction : base.direction,
+      setup:
+        setupType === "ma_cross"
+          ? {
+              maType: setup.maType === "SMA" ? "SMA" : "EMA",
+              fastValue: integerOrNull(setup.fastValue) || 9,
+              slowValue: Math.max(integerOrNull(setup.slowValue) || 20, (integerOrNull(setup.fastValue) || 9) + 1),
+              entryReference:
+                ["cross", "fast_ma_pullback", "slow_ma_pullback", "vwap_pullback", "cross_zone_pullback"].includes(setup.entryReference)
+                  ? setup.entryReference
+                  : "cross",
+              requireCloseAfterCross: Boolean(setup.requireCloseAfterCross),
+              requireRetest: Boolean(setup.requireRetest),
+              maxEntryBarsAfterCross: integerOrNull(setup.maxEntryBarsAfterCross) || 3,
+              requireVwapAgreement: setup.requireVwapAgreement !== false,
+            }
+          : {
+              levels: Array.isArray(setup.levels) && setup.levels.length ? setup.levels : base.setup.levels,
+              movingAverage:
+                Array.isArray(setup?.movingAverage?.values) || typeof setup?.movingAverage?.values === "string"
+                  ? {
+                      type: setup?.movingAverage?.type === "SMA" ? "SMA" : "EMA",
+                      values: parseMaValues(setup?.movingAverage?.values || "").length ? parseMaValues(setup?.movingAverage?.values || "") : [9, 20],
+                    }
+                  : null,
+              breakConfirmation: setup.breakConfirmation === "wick_and_close" ? "wick_and_close" : "close_through",
+              retestConfirmation:
+                setup.retestConfirmation === "wick_hold" || setup.retestConfirmation === "close_hold"
+                  ? setup.retestConfirmation
+                  : "reclaim_close",
+              maxRetestBars: integerOrNull(setup.maxRetestBars) || 3,
+              entryTrigger: setup.entryTrigger === "next_bar_break" ? "next_bar_break" : "retest_close",
+            },
+      filters: {
+        session: ["regular", "premarket", "both"].includes(filters.session) ? filters.session : base.filters.session,
+        universe: "watchlist",
+        minVolume: numberOrNull(filters.minVolume),
+        minVolatilityPct: numberOrNull(filters.minVolatilityPct),
+        requireMarketBias: filters.requireMarketBias !== false,
+        requireSpyQqqAlignment: filters.requireSpyQqqAlignment !== false,
+        requireVwapAgreement: filters.requireVwapAgreement !== false,
+        requireRelativeStrength: filters.requireRelativeStrength !== false,
+      },
+      risk: {
+        riskMode: risk.riskMode === "fixed_dollars" ? "fixed_dollars" : "percent_account",
+        riskValue: numberOrNull(risk.riskValue) || 1,
+        stopMode: ["structure_close", "ma_fail_close", "r_multiple"].includes(risk.stopMode) ? risk.stopMode : base.risk.stopMode,
+        stopValueR: numberOrNull(risk.stopValueR),
+        profitTargetR: numberOrNull(risk.profitTargetR) || 2,
+        moveToBreakevenAtR: numberOrNull(risk.moveToBreakevenAtR),
+        timeExitBars: integerOrNull(risk.timeExitBars),
+        maxOpenPositions: integerOrNull(risk.maxOpenPositions) || 3,
+      },
+      brokerCaps: {
+        maxTradesPerDay: integerOrNull(brokerCaps.maxTradesPerDay),
+        maxCapital: numberOrNull(brokerCaps.maxCapital),
+      },
+    };
+
+    if (normalized.setupType === "break_retest") {
+      const levels = Array.isArray(normalized.setup.levels) ? normalized.setup.levels.filter(Boolean) : [];
+      normalized.setup.levels = levels.length ? Array.from(new Set(levels)) : ["pmh", "pml", "vwap"];
+      if (!normalized.setup.levels.includes("moving_average")) {
+        normalized.setup.movingAverage = null;
+      }
+    }
+
+    if (normalized.risk.stopMode !== "r_multiple") {
+      normalized.risk.stopValueR = null;
+    } else if (!normalized.risk.stopValueR) {
+      normalized.risk.stopValueR = 1;
+    }
+
+    return normalized;
   }
 
   async function jget(url) {
-    const res = await fetch(url, { headers: { ...getAdminHeaders() } });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`${url} ${res.status} ${txt}`.trim());
-    }
-    return res.json();
+    const res = await fetch(url);
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+    return json;
   }
 
-  async function jpost(url, body) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAdminHeaders()
-      },
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`${url} ${res.status} ${txt}`.trim());
-    }
-    return res.json();
-  }
+  async function adminRequest(url, { method = "POST", body = null, promptMessage = "Enter admin token to continue." } = {}) {
+    let token = getStoredAdminToken();
 
-  // ---------- conditional UI ----------
-  function applyConditionalUI() {
-    // IMPORTANT: allow truly blank triggerType in builder
-    const trig = String(triggerType?.value || "");
-    if (orbFields) orbFields.style.display = trig === "ORB" ? "block" : "none";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const headers = {
+        ...getAdminHeaders(token),
+      };
 
-    const maOn = Boolean(indMa?.checked);
-    if (emaBlock) emaBlock.style.display = maOn ? "block" : "none";
-
-    const mbe = Boolean(moveBeEnabled?.checked);
-    const trl = Boolean(trailEnabled?.checked);
-    if (moveBeFields) moveBeFields.style.display = mbe ? "block" : "none";
-    if (trailFields) trailFields.style.display = trl ? "block" : "none";
-  }
-
-  // ---------- summaries ----------
-  function updateSummaries() {
-    const tf = String(timeframeMin?.value || "—");
-    const sess = String(scanSession?.value || "—");
-    const uni = String(scanUniverse?.value || "—");
-    const pm = String(premarketEnabled?.value || "—");
-    const biasReq = String(marketBiasRequired?.value || "—");
-
-    if (sumScan) {
-      sumScan.textContent = `${tf ? `${tf}m` : "—"} • ${sess || "—"} • ${uni || "—"} • Premarket: ${pm || "—"} • Bias required: ${biasReq || "—"}`;
-    }
-
-    const trig = String(triggerType?.value || "—");
-    if (sumTrigger) {
-      if (trig === "ORB") {
-        const r = String(orbRangeMin?.value || "—");
-        const m = String(orbEntryMode?.value || "—");
-        const t = String(orbTolerancePct?.value || "—");
-        sumTrigger.textContent = `ORB • Range ${r}m • Mode ${m} • Tol ${t}%`;
-      } else if (trig === "BREAK_RETEST") {
-        sumTrigger.textContent = `Break & Retest`;
-      } else {
-        sumTrigger.textContent = `—`;
+      if (body != null) {
+        headers["Content-Type"] = "application/json";
       }
-    }
 
-    const rt = String(retestTolerancePct?.value || "—");
-    const rs = String(rsWindowBars5m?.value || "—");
-    const sw = String(structureWindow?.value || "—");
-    const sec = String(sectorAlignmentEnabled?.value || "—");
-    const lb = String(longMinBiasScore?.value || "—");
-    const sb = String(shortMaxBiasScore?.value || "—");
-
-    if (sumFilters) {
-      sumFilters.textContent = `Retest ${rt}% • RS ${rs} • Structure ${sw} • Sector align: ${sec} • Bias L≥${lb} / S≤${sb}`;
-    }
-
-    const inds = [];
-    if (indVwap?.checked) inds.push("VWAP");
-    if (indMa?.checked) inds.push("MAs");
-    if (indRs?.checked) inds.push("RS");
-    if (indVol?.checked) inds.push("Volume");
-
-    if (sumIndicators) {
-      if (!inds.length) sumIndicators.textContent = "None";
-      else {
-        const maExtra = indMa?.checked
-          ? ` • EMA: ${String(emaPeriods?.value || "—")} • Trigger: ${String(emaTrigger?.value || "—")}`
-          : "";
-        sumIndicators.textContent = `${inds.join(", ")}${maExtra}`;
-      }
-    }
-
-    const tr = String(targetR?.value || "—");
-    const sr = String(stopR?.value || "—");
-    const mh = String(maxHoldBars?.value || "—");
-    const flip = String(exitOnBiasFlip?.value || "—");
-
-    const mbe = Boolean(moveBeEnabled?.checked);
-    const trl = Boolean(trailEnabled?.checked);
-
-    const parts = [`${tr}R target`, `${sr}R stop`, `Max hold ${mh}`, `Bias flip: ${flip}`];
-    if (mbe) parts.push(`Move BE @ ${String(moveBeAtR?.value || "—")}R`);
-    if (trl) parts.push(`Trail start ${String(trailStartR?.value || "—")}R by ${String(trailByR?.value || "—")}R`);
-
-    if (sumMgmt) sumMgmt.textContent = parts.join(" • ");
-
-    const exec = DEFAULT_RULES.brokerExecution;
-    const execEnabled = brokerExecEnabled ? Boolean(brokerExecEnabled.checked) : exec.enabled;
-    const execMode = String(brokerExecMode?.value || exec.mode);
-    const execSizing = String(brokerExecSizingMode?.value || exec.sizingMode);
-    const dup = String(brokerExecDuplicatePolicy?.value || exec.duplicatePolicy);
-    const dirs = [
-      brokerExecAllowLong?.checked ? "CALL" : null,
-      brokerExecAllowShort?.checked ? "PUT" : null,
-    ].filter(Boolean);
-    const dirText = dirs.length ? dirs.join("/") : "No directions";
-
-    if (sumExecution) {
-      sumExecution.textContent = [
-        execEnabled ? "Execution on" : "Execution off",
-        `Mode ${execMode}`,
-        `Size ${execSizing}`,
-        dirText,
-        `Duplicate ${dup}`,
-      ].join(" • ");
-    }
-  }
-
-  // ---------- form IO ----------
-  function fill(cfg) {
-    const c = cfg || DEFAULT_RULES;
-
-    if (timeframeMin) timeframeMin.value = String(c.timeframeMin ?? "");
-    const sess = String(c.scanSession ?? "");
-    if (scanSession) scanSession.value = (sess === "PREMARKET") ? "ALL" : sess;
-
-    if (scanUniverse) scanUniverse.value = String(c.scanUniverse ?? "");
-    if (premarketEnabled) premarketEnabled.value = String(c.premarketEnabled ?? "");
-    if (marketBiasRequired) marketBiasRequired.value = String(c.marketBiasRequired ?? "");
-
-    if (retestTolerancePct) retestTolerancePct.value = String(c.retestTolerancePct ?? "");
-    if (rsWindowBars5m) rsWindowBars5m.value = String(c.rsWindowBars5m ?? "");
-    if (structureWindow) structureWindow.value = String(c.structureWindow ?? "");
-
-    if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = String(c.sectorAlignmentEnabled ?? "");
-    if (triggerType) triggerType.value = String(c.triggerType ?? "");
-
-    if (longMinBiasScore) longMinBiasScore.value = String(c.longMinBiasScore ?? "");
-    if (shortMaxBiasScore) shortMaxBiasScore.value = String(c.shortMaxBiasScore ?? "");
-
-    const inds = c.indicators || {};
-    if (indVwap) indVwap.checked = Boolean(inds.vwap);
-    if (indMa) indMa.checked = Boolean(inds.movingAverages);
-    if (indRs) indRs.checked = Boolean(inds.relativeStrength);
-    if (indVol) indVol.checked = Boolean(inds.volume);
-
-    if (emaPeriods) {
-      const arr = Array.isArray(c.emaPeriods) ? c.emaPeriods : [];
-      emaPeriods.value = arr.length ? arr.join(",") : "";
-    }
-    if (emaTrigger) emaTrigger.value = String(c.emaTrigger ?? "");
-
-    const orb = c.orb || {};
-    if (orbRangeMin) orbRangeMin.value = String(orb.rangeMin ?? "");
-    if (orbEntryMode) orbEntryMode.value = String(orb.entryMode ?? "");
-    if (orbTolerancePct) orbTolerancePct.value = String(orb.tolerancePct ?? "");
-
-    const post = c.post || {};
-    if (targetR) targetR.value = String(post.targetR ?? "");
-    if (stopR) stopR.value = String(post.stopR ?? "");
-    if (maxHoldBars) maxHoldBars.value = String(post.maxHoldBars ?? "");
-    if (exitOnBiasFlip) exitOnBiasFlip.value = String(post.exitOnBiasFlip ?? "");
-
-    if (moveBeEnabled) moveBeEnabled.checked = Boolean(post.moveBeEnabled);
-    if (trailEnabled) trailEnabled.checked = Boolean(post.trailEnabled);
-
-    if (moveBeAtR) moveBeAtR.value = String(post.moveBeAtR ?? "");
-    if (trailStartR) trailStartR.value = String(post.trailStartR ?? "");
-    if (trailByR) trailByR.value = String(post.trailByR ?? "");
-
-    const brokerExecution = c.brokerExecution || DEFAULT_RULES.brokerExecution;
-    if (brokerExecEnabled) brokerExecEnabled.checked = brokerExecution.enabled !== false;
-    if (brokerExecAllowLong) brokerExecAllowLong.checked = brokerExecution.allowLong !== false;
-    if (brokerExecAllowShort) brokerExecAllowShort.checked = brokerExecution.allowShort !== false;
-    if (brokerExecMode) brokerExecMode.value = String(brokerExecution.mode ?? DEFAULT_RULES.brokerExecution.mode);
-    if (brokerExecSessionFilter) brokerExecSessionFilter.value = String(brokerExecution.sessionFilter ?? DEFAULT_RULES.brokerExecution.sessionFilter);
-    if (brokerExecSizingMode) brokerExecSizingMode.value = String(brokerExecution.sizingMode ?? DEFAULT_RULES.brokerExecution.sizingMode);
-    if (brokerExecDefaultNotional) {
-      brokerExecDefaultNotional.value =
-        brokerExecution.defaultNotional != null ? String(brokerExecution.defaultNotional) : "";
-    }
-    if (brokerExecDefaultQty) brokerExecDefaultQty.value = brokerExecution.defaultQty != null ? String(brokerExecution.defaultQty) : "";
-    if (brokerExecDuplicatePolicy) {
-      brokerExecDuplicatePolicy.value = String(brokerExecution.duplicatePolicy ?? DEFAULT_RULES.brokerExecution.duplicatePolicy);
-    }
-    if (brokerExecStopModel) brokerExecStopModel.value = String(brokerExecution.stopModel ?? DEFAULT_RULES.brokerExecution.stopModel);
-    if (brokerExecStopLossPct) {
-      brokerExecStopLossPct.value = brokerExecution.stopLossPct != null ? String(brokerExecution.stopLossPct) : "";
-    }
-    if (brokerExecTakeProfitPct) {
-      brokerExecTakeProfitPct.value = brokerExecution.takeProfitPct != null ? String(brokerExecution.takeProfitPct) : "";
-    }
-    if (brokerExecMaxOpenPositions) {
-      brokerExecMaxOpenPositions.value =
-        brokerExecution.maxOpenPositionsForStrategy != null ? String(brokerExecution.maxOpenPositionsForStrategy) : "";
-    }
-    if (brokerExecMaxOrdersPerSymbolPerDay) {
-      brokerExecMaxOrdersPerSymbolPerDay.value =
-        brokerExecution.maxOrdersPerSymbolPerDay != null ? String(brokerExecution.maxOrdersPerSymbolPerDay) : "";
-    }
-    if (brokerExecEntryPolicy) {
-      brokerExecEntryPolicy.value = String(brokerExecution.entryPolicy ?? DEFAULT_RULES.brokerExecution.entryPolicy);
-    }
-    if (brokerExecNotes) brokerExecNotes.value = brokerExecution.notes != null ? String(brokerExecution.notes) : "";
-
-    applyConditionalUI();
-    updateSummaries();
-  }
-
-  function readForm() {
-    // Save-time defaults if user leaves blank (builder can be blank, save cannot)
-    const tfRaw = String(timeframeMin?.value || "").trim();
-    const sessRaw = String(scanSession?.value || "").trim();
-    const uniRaw = String(scanUniverse?.value || "").trim();
-    const trigRaw = String(triggerType?.value || "").trim();
-
-    const tf = Math.max(1, Math.floor(asNum(tfRaw, DEFAULT_RULES.timeframeMin)));
-    const trig = trigRaw || DEFAULT_RULES.triggerType;
-
-    let orbRange = asNum(orbRangeMin?.value, DEFAULT_RULES.orb.rangeMin);
-    orbRange = Math.max(1, Math.floor(orbRange));
-
-    // If ORB, force orb.rangeMin == timeframeMin so live/backtest can’t drift
-    if (trig === "ORB") orbRange = tf;
-
-    const maOn = Boolean(indMa?.checked);
-    const emaArr = maOn ? parseEmaPeriods(emaPeriods?.value) : undefined;
-    const emaTrig = maOn ? String(emaTrigger?.value || "NONE") : "NONE";
-
-    const config = {
-      timeframeMin: tf,
-      scanSession: sessRaw || DEFAULT_RULES.scanSession,
-      scanUniverse: uniRaw || DEFAULT_RULES.scanUniverse,
-      premarketEnabled: asBool(premarketEnabled?.value ?? DEFAULT_RULES.premarketEnabled),
-      marketBiasRequired: asBool(marketBiasRequired?.value ?? DEFAULT_RULES.marketBiasRequired),
-
-      retestTolerancePct: asNum(retestTolerancePct?.value, DEFAULT_RULES.retestTolerancePct),
-      rsWindowBars5m: asPositiveInt(rsWindowBars5m?.value, DEFAULT_RULES.rsWindowBars5m),
-      structureWindow: asNum(structureWindow?.value, DEFAULT_RULES.structureWindow),
-
-      sectorAlignmentEnabled: asBool(sectorAlignmentEnabled?.value ?? DEFAULT_RULES.sectorAlignmentEnabled),
-      triggerType: trig,
-
-      longMinBiasScore: clamp(asNum(longMinBiasScore?.value, DEFAULT_RULES.longMinBiasScore), 0, 100),
-      shortMaxBiasScore: clamp(asNum(shortMaxBiasScore?.value, DEFAULT_RULES.shortMaxBiasScore), 0, 100),
-
-      indicators: {
-        vwap: Boolean(indVwap?.checked),
-        movingAverages: maOn,
-        relativeStrength: Boolean(indRs?.checked),
-        volume: Boolean(indVol?.checked)
-      },
-
-      orb: {
-        rangeMin: orbRange,
-        entryMode: String(orbEntryMode?.value || DEFAULT_RULES.orb.entryMode),
-        tolerancePct: asNum(orbTolerancePct?.value, DEFAULT_RULES.orb.tolerancePct)
-      },
-
-      post: {
-        targetR: asNum(targetR?.value, DEFAULT_RULES.post.targetR),
-        stopR: asNum(stopR?.value, DEFAULT_RULES.post.stopR),
-        maxHoldBars: asNum(maxHoldBars?.value, DEFAULT_RULES.post.maxHoldBars),
-        exitOnBiasFlip: asBool(exitOnBiasFlip?.value ?? DEFAULT_RULES.post.exitOnBiasFlip),
-
-        moveBeEnabled: Boolean(moveBeEnabled?.checked),
-        moveBeAtR: asNum(moveBeAtR?.value, DEFAULT_RULES.post.moveBeAtR),
-
-        trailEnabled: Boolean(trailEnabled?.checked),
-        trailStartR: asNum(trailStartR?.value, DEFAULT_RULES.post.trailStartR),
-        trailByR: asNum(trailByR?.value, DEFAULT_RULES.post.trailByR)
-      },
-
-      brokerExecution: {
-        enabled: brokerExecEnabled ? Boolean(brokerExecEnabled.checked) : DEFAULT_RULES.brokerExecution.enabled,
-        mode: String(brokerExecMode?.value || DEFAULT_RULES.brokerExecution.mode),
-        sizingMode: String(brokerExecSizingMode?.value || DEFAULT_RULES.brokerExecution.sizingMode),
-        defaultNotional:
-          brokerExecDefaultNotional?.value === "" ? null : asNum(brokerExecDefaultNotional?.value, DEFAULT_RULES.brokerExecution.defaultNotional),
-        defaultQty: brokerExecDefaultQty?.value === "" ? null : asNum(brokerExecDefaultQty?.value, DEFAULT_RULES.brokerExecution.defaultQty),
-        allowLong: brokerExecAllowLong ? Boolean(brokerExecAllowLong.checked) : DEFAULT_RULES.brokerExecution.allowLong,
-        allowShort: brokerExecAllowShort ? Boolean(brokerExecAllowShort.checked) : DEFAULT_RULES.brokerExecution.allowShort,
-        sessionFilter: String(brokerExecSessionFilter?.value || DEFAULT_RULES.brokerExecution.sessionFilter),
-        entryPolicy: "confirmed_only",
-        stopModel: String(brokerExecStopModel?.value || DEFAULT_RULES.brokerExecution.stopModel),
-        stopLossPct: brokerExecStopLossPct?.value === "" ? null : asNum(brokerExecStopLossPct?.value, 0),
-        takeProfitPct: brokerExecTakeProfitPct?.value === "" ? null : asNum(brokerExecTakeProfitPct?.value, 0),
-        maxOpenPositionsForStrategy:
-          brokerExecMaxOpenPositions?.value === "" ? null : Math.max(0, Math.floor(asNum(brokerExecMaxOpenPositions?.value, 0))),
-        maxOrdersPerSymbolPerDay:
-          brokerExecMaxOrdersPerSymbolPerDay?.value === ""
-            ? null
-            : Math.max(0, Math.floor(asNum(brokerExecMaxOrdersPerSymbolPerDay?.value, 0))),
-        duplicatePolicy: String(brokerExecDuplicatePolicy?.value || DEFAULT_RULES.brokerExecution.duplicatePolicy),
-        notes: String(brokerExecNotes?.value || "").trim() || null
-      }
-    };
-
-    // Only include emaPeriods/emaTrigger when MA is enabled.
-    // Backend throws if emaPeriods exists but is empty.
-    if (maOn) {
-      const arr = Array.isArray(emaArr) ? emaArr : [];
-      config.emaPeriods = arr.length ? arr : [9, 20, 50, 200];
-      config.emaTrigger = emaTrig || "NONE";
-    } else {
-      delete config.emaPeriods;
-      delete config.emaTrigger;
-    }
-
-    return config;
-  }
-
-  // ---------- summaries live events ----------
-  function bindLiveSummaryListeners() {
-    const els = [
-      timeframeMin, scanSession, scanUniverse, premarketEnabled, marketBiasRequired,
-      triggerType, orbRangeMin, orbEntryMode, orbTolerancePct,
-      retestTolerancePct, rsWindowBars5m, structureWindow, sectorAlignmentEnabled, longMinBiasScore, shortMaxBiasScore,
-      indVwap, indMa, indRs, indVol, emaPeriods, emaTrigger,
-      targetR, stopR, maxHoldBars, exitOnBiasFlip,
-      moveBeEnabled, moveBeAtR, trailEnabled, trailStartR, trailByR,
-      brokerExecEnabled, brokerExecAllowLong, brokerExecAllowShort, brokerExecMode, brokerExecSessionFilter,
-      brokerExecSizingMode, brokerExecDefaultNotional, brokerExecDefaultQty, brokerExecDuplicatePolicy,
-      brokerExecStopModel, brokerExecStopLossPct, brokerExecTakeProfitPct, brokerExecMaxOpenPositions,
-      brokerExecMaxOrdersPerSymbolPerDay, brokerExecEntryPolicy, brokerExecNotes
-    ].filter(Boolean);
-
-    els.forEach((el) => {
-      el.addEventListener("input", () => { applyConditionalUI(); updateSummaries(); });
-      el.addEventListener("change", () => { applyConditionalUI(); updateSummaries(); });
-    });
-  }
-
-  // ---------- builder reset (TRULY blank) ----------
-  function clearEditor() {
-    if (strategyName) strategyName.value = "";
-    lastLoadedVersion = null;
-
-    // selects truly blank
-    if (timeframeMin) timeframeMin.value = "";
-    if (scanSession) scanSession.value = "";
-    if (scanUniverse) scanUniverse.value = "";
-    if (premarketEnabled) premarketEnabled.value = "";
-    if (marketBiasRequired) marketBiasRequired.value = "";
-
-    if (sectorAlignmentEnabled) sectorAlignmentEnabled.value = "";
-    if (triggerType) triggerType.value = "";
-
-    if (orbRangeMin) orbRangeMin.value = "";
-    if (orbEntryMode) orbEntryMode.value = "";
-
-    if (emaTrigger) emaTrigger.value = "";
-    if (exitOnBiasFlip) exitOnBiasFlip.value = "";
-
-    // inputs blank
-    if (retestTolerancePct) retestTolerancePct.value = "";
-    if (rsWindowBars5m) rsWindowBars5m.value = "";
-    if (structureWindow) structureWindow.value = "";
-
-    if (longMinBiasScore) longMinBiasScore.value = "";
-    if (shortMaxBiasScore) shortMaxBiasScore.value = "";
-
-    if (orbTolerancePct) orbTolerancePct.value = "";
-
-    if (targetR) targetR.value = "";
-    if (stopR) stopR.value = "";
-    if (maxHoldBars) maxHoldBars.value = "";
-
-    if (emaPeriods) emaPeriods.value = "";
-
-    // checkboxes off
-    if (indVwap) indVwap.checked = false;
-    if (indMa) indMa.checked = false;
-    if (indRs) indRs.checked = false;
-    if (indVol) indVol.checked = false;
-
-    if (moveBeEnabled) moveBeEnabled.checked = false;
-    if (trailEnabled) trailEnabled.checked = false;
-
-    if (moveBeAtR) moveBeAtR.value = "";
-    if (trailStartR) trailStartR.value = "";
-    if (trailByR) trailByR.value = "";
-
-    if (brokerExecEnabled) brokerExecEnabled.checked = true;
-    if (brokerExecAllowLong) brokerExecAllowLong.checked = true;
-    if (brokerExecAllowShort) brokerExecAllowShort.checked = true;
-    if (brokerExecMode) brokerExecMode.value = DEFAULT_RULES.brokerExecution.mode;
-    if (brokerExecSessionFilter) brokerExecSessionFilter.value = DEFAULT_RULES.brokerExecution.sessionFilter;
-    if (brokerExecSizingMode) brokerExecSizingMode.value = DEFAULT_RULES.brokerExecution.sizingMode;
-    if (brokerExecDefaultNotional) brokerExecDefaultNotional.value = "";
-    if (brokerExecDefaultQty) brokerExecDefaultQty.value = "";
-    if (brokerExecDuplicatePolicy) brokerExecDuplicatePolicy.value = DEFAULT_RULES.brokerExecution.duplicatePolicy;
-    if (brokerExecStopModel) brokerExecStopModel.value = DEFAULT_RULES.brokerExecution.stopModel;
-    if (brokerExecStopLossPct) brokerExecStopLossPct.value = "";
-    if (brokerExecTakeProfitPct) brokerExecTakeProfitPct.value = "";
-    if (brokerExecMaxOpenPositions) brokerExecMaxOpenPositions.value = "";
-    if (brokerExecMaxOrdersPerSymbolPerDay) brokerExecMaxOrdersPerSymbolPerDay.value = "";
-    if (brokerExecEntryPolicy) brokerExecEntryPolicy.value = DEFAULT_RULES.brokerExecution.entryPolicy;
-    if (brokerExecNotes) brokerExecNotes.value = "";
-
-    applyConditionalUI();
-    updateSummaries();
-  }
-
-  // ---------- strategies modal (View) ----------
-  async function fetchRulesetByVersion(version) {
-    const out = await jget(`/api/rulesets/${encodeURIComponent(version)}`);
-    if (!out || !out.ok || !out.ruleset) throw new Error("ruleset fetch failed");
-    return out.ruleset;
-  }
-
-  async function fetchRecentBacktests(strategyVersion, limit = 5) {
-    const res = await jget(`/api/backtests?limit=${encodeURIComponent(limit)}&strategyVersion=${encodeURIComponent(strategyVersion)}`);
-    const runs = Array.isArray(res?.runs) ? res.runs : [];
-    return runs;
-  }
-
-  function buildOverviewKVs(cfg) {
-    const c = cfg || {};
-    const inds = c.indicators || {};
-    const post = c.post || {};
-    const orb = c.orb || {};
-    const brokerExecution = c.brokerExecution || DEFAULT_RULES.brokerExecution;
-
-    const enabledInds = [];
-    if (inds.vwap) enabledInds.push("VWAP");
-    if (inds.movingAverages) enabledInds.push("MAs");
-    if (inds.relativeStrength) enabledInds.push("RS");
-    if (inds.volume) enabledInds.push("Volume");
-
-    const kv = [
-      ["Trigger", c.triggerType ?? "—"],
-      ["Timeframe", c.timeframeMin != null ? `${c.timeframeMin}m` : "—"],
-      ["Session", c.scanSession ?? "—"],
-      ["Universe", c.scanUniverse ?? "—"],
-      ["Retest tol", c.retestTolerancePct != null ? `${c.retestTolerancePct}%` : "—"],
-      ["Indicators", enabledInds.length ? enabledInds.join(", ") : "None"],
-      ["Long bias min", c.longMinBiasScore != null ? String(c.longMinBiasScore) : "—"],
-      ["Short bias max", c.shortMaxBiasScore != null ? String(c.shortMaxBiasScore) : "—"],
-      ["Target (R)", post.targetR != null ? String(post.targetR) : "—"],
-      ["Stop (R)", post.stopR != null ? String(post.stopR) : "—"],
-      ["Max hold (bars)", post.maxHoldBars != null ? String(post.maxHoldBars) : "—"],
-      ["Exit on bias flip", post.exitOnBiasFlip ? "Yes" : "No"]
-    ];
-
-    if (String(c.triggerType) === "ORB") {
-      kv.push(["ORB range", orb.rangeMin != null ? `${orb.rangeMin}m` : "—"]);
-      kv.push(["ORB entry", orb.entryMode ?? "—"]);
-      kv.push(["ORB tol", orb.tolerancePct != null ? `${orb.tolerancePct}%` : "—"]);
-    }
-
-    if (inds.movingAverages) {
-      kv.push(["EMA periods", Array.isArray(c.emaPeriods) ? c.emaPeriods.join(",") : "—"]);
-      kv.push(["EMA trigger", c.emaTrigger ?? "NONE"]);
-    }
-
-    if (post.moveBeEnabled) kv.push(["Move BE @", post.moveBeAtR != null ? `${post.moveBeAtR}R` : "—"]);
-    if (post.trailEnabled) kv.push(["Trail", `start ${post.trailStartR ?? "—"}R by ${post.trailByR ?? "—"}R`]);
-
-    kv.push(["Broker execution", brokerExecution.enabled === false ? "Disabled" : "Enabled"]);
-    kv.push(["Execution mode", brokerExecution.mode ?? "inherit"]);
-    kv.push(["Sizing", brokerExecution.sizingMode ?? "inherit"]);
-    kv.push([
-      "Directions",
-      [brokerExecution.allowLong ? "CALL" : null, brokerExecution.allowShort ? "PUT" : null].filter(Boolean).join("/") || "None",
-    ]);
-    kv.push(["Duplicate policy", brokerExecution.duplicatePolicy ?? "inherit"]);
-    kv.push(["Stop model", brokerExecution.stopModel ?? "inherit"]);
-    if (brokerExecution.stopLossPct != null) kv.push(["Stop loss %", String(brokerExecution.stopLossPct)]);
-    if (brokerExecution.takeProfitPct != null) kv.push(["Take profit %", String(brokerExecution.takeProfitPct)]);
-    if (brokerExecution.maxOpenPositionsForStrategy != null) {
-      kv.push(["Max open positions", String(brokerExecution.maxOpenPositionsForStrategy)]);
-    }
-    if (brokerExecution.maxOrdersPerSymbolPerDay != null) {
-      kv.push(["Max symbol/day", String(brokerExecution.maxOrdersPerSymbolPerDay)]);
-    }
-    if (brokerExecution.notes) kv.push(["Execution notes", brokerExecution.notes]);
-
-    return kv;
-  }
-
-  let editorHome = null;
-  let editorBarEl = null;
-
-  function setEditorPopupMode(on) {
-    if (!editorBarEl) editorBarEl = document.querySelector(".rules-editorbar");
-    if (editorBarEl) editorBarEl.style.display = on ? "none" : "";
-  }
-
-  function moveEditorIntoModal() {
-    const editor = document.getElementById("rulesEditor");
-    const mount = document.getElementById("rsModalEditMount");
-    if (!editor || !mount) return false;
-
-    if (!editorHome) {
-      editorHome = { editor, parent: editor.parentNode, next: editor.nextSibling };
-    }
-
-    mount.appendChild(editor);
-    setEditorPopupMode(true);
-    return true;
-  }
-
-  function restoreEditorFromModal() {
-    if (!editorHome) return;
-    const { editor, parent, next } = editorHome;
-    try {
-      if (parent) parent.insertBefore(editor, next || null);
-    } finally {
-      editorHome = null;
-      setEditorPopupMode(false);
-      clearEditor();
-    }
-  }
-
-  function showModalView(mode) {
-    const view = document.getElementById("rsModalView");
-    const edit = document.getElementById("rsModalEditView");
-    if (!view || !edit) return;
-
-    if (mode === "edit") {
-      view.style.display = "none";
-      edit.style.display = "block";
-    } else {
-      edit.style.display = "none";
-      view.style.display = "block";
-    }
-  }
-
-  function ensureModal() {
-    let wrap = document.getElementById("rsModalWrap");
-    if (wrap) return wrap;
-
-    wrap = document.createElement("div");
-    wrap.id = "rsModalWrap";
-    wrap.style.position = "fixed";
-    wrap.style.inset = "0";
-    wrap.style.background = "rgba(0,0,0,0.35)";
-    wrap.style.display = "none";
-    wrap.style.alignItems = "center";
-    wrap.style.justifyContent = "center";
-    wrap.style.zIndex = "9999";
-    wrap.innerHTML = `
-    <div class="card rs-modal-card" style="width:min(980px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow:auto;">
-      <div class="card-head">
-        <div style="min-width:0;">
-          <div class="card-title" id="rsModalTitle">Strategy</div>
-          <div class="small muted" id="rsModalSub"></div>
-        </div>
-        <div class="card-actions">
-          <button class="btn" id="rsModalClose">Close</button>
-        </div>
-      </div>
-
-      <div class="rs-modal-body" id="rsModalView">
-        <div class="small muted" style="margin-bottom:8px;">Overview</div>
-        <div id="rsModalOverview" class="rs-kv"></div>
-
-        <div class="rs-divider"></div>
-
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-          <button class="btn btn-primary" id="rsModalEdit">Edit</button>
-          <button class="btn" id="rsModalToggle">Enable</button>
-        </div>
-
-        <div class="small muted" style="margin-bottom:8px;">Recent backtests</div>
-        <div id="rsModalBacktests" class="small"></div>
-      </div>
-
-      <div class="rs-modal-body" id="rsModalEditView" style="display:none;">
-        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;">
-          <div class="small muted">Editing in popup</div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button class="btn" id="rsModalDelete">Delete</button>
-            <button class="btn" id="rsModalDone">Save</button>
-          </div>
-        </div>
-        <div id="rsModalEditMount" class="rs-edit-mount"></div>
-      </div>
-    </div>
-  `;
-    document.body.appendChild(wrap);
-
-    const doneBtn = document.getElementById("rsModalDone");
-    const delBtn = document.getElementById("rsModalDelete");
-
-    doneBtn.addEventListener("click", async () => {
-      try {
-        if (!modalVersion) return;
-
-        const name = String(strategyName?.value || "").trim() || `v${modalVersion}`;
-        const config = readForm();
-
-        await jpost(`/api/rulesets/${modalVersion}/update`, { name, config, changedBy: "ui" });
-
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-        await boot();
-      } catch (e) {
-        alert(`Save failed: ${String(e?.message || e)}`);
-      }
-    });
-
-    delBtn.addEventListener("click", async () => {
-      try {
-        if (!modalVersion) return;
-        const ok = confirm(`Delete strategy v${modalVersion}? This cannot be undone.`);
-        if (!ok) return;
-
-        const res = await fetch(`/api/rulesets/${modalVersion}`, { method: "DELETE", headers: { ...getAdminHeaders() } });
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.ok) throw new Error(json?.error || `Delete failed (HTTP ${res.status})`);
-
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-        await boot();
-      } catch (e) {
-        alert(`Delete failed: ${String(e?.message || e)}`);
-      }
-    });
-
-    const closeBtn = document.getElementById("rsModalClose");
-    closeBtn.addEventListener("click", () => {
-      restoreEditorFromModal();
-      showModalView("view");
-      wrap.style.display = "none";
-    });
-
-    wrap.addEventListener("click", (ev) => {
-      if (ev.target === wrap) {
-        restoreEditorFromModal();
-        showModalView("view");
-        wrap.style.display = "none";
-      }
-    });
-
-    return wrap;
-  }
-
-  async function openViewModal(rsRow) {
-    const version = Number(rsRow?.version);
-    if (!Number.isFinite(version)) throw new Error("bad version");
-    modalVersion = version;
-
-    const wrap = ensureModal();
-    wrap.style.display = "flex";
-
-    const titleEl = document.getElementById("rsModalTitle");
-    const subEl = document.getElementById("rsModalSub");
-    const ovEl = document.getElementById("rsModalOverview");
-    const btEl = document.getElementById("rsModalBacktests");
-    const editBtn = document.getElementById("rsModalEdit");
-    const toggleBtn = document.getElementById("rsModalToggle");
-
-    titleEl.textContent = rsRow?.name ? String(rsRow.name) : `Strategy v${version}`;
-    subEl.textContent = `v${version}${rsRow?.created_ts ? ` • ${new Date(Number(rsRow.created_ts)).toLocaleString()}` : ""}`;
-
-    let ruleset = null;
-    try {
-      ruleset = await fetchRulesetByVersion(version);
-    } catch {
-      if (ovEl) ovEl.innerHTML = `<span class="small muted">Couldn’t load this strategy.</span>`;
-      if (btEl) btEl.innerHTML = `<span class="small muted">Backtests unavailable.</span>`;
-      if (editBtn) editBtn.disabled = true;
-      if (toggleBtn) toggleBtn.disabled = true;
-      return;
-    }
-
-    let cfg =
-      ruleset?.config ??
-      ruleset?.config_json ??
-      ruleset?.configJson ??
-      ruleset?.configJsonStr ??
-      null;
-
-    if (typeof cfg === "string") {
-      try { cfg = JSON.parse(cfg); } catch { cfg = null; }
-    }
-
-    const cfgObj = (cfg && typeof cfg === "object") ? cfg : DEFAULT_RULES;
-
-    if (ovEl) {
-      const kv = buildOverviewKVs(cfgObj);
-      ovEl.innerHTML = kv.map(([k, v]) => `
-        <div>
-          <div class="rs-k">${escapeHtml(k)}</div>
-          <div class="rs-v">${escapeHtml(String(v))}</div>
-        </div>
-      `).join("");
-    }
-
-    btEl.innerHTML = `<span class="small muted">Loading…</span>`;
-    try {
-      const runs = await fetchRecentBacktests(version, 5);
-      const done = runs
-        .filter((r) => String(r?.status || "").toUpperCase() === "DONE")
-        .slice(0, 5);
-
-      if (!done.length) {
-        btEl.innerHTML = `<span class="small muted">No completed runs found for this strategy.</span>`;
-      } else {
-        btEl.innerHTML = done.map((r) => {
-          const m = r?.metrics?.meta ? r.metrics : r?.metrics;
-          const meta = m?.meta || r?.meta || {};
-          const ticker =
-            meta?.ticker || meta?.symbol || r?.ticker || r?.symbol || r?.request?.ticker || r?.request?.symbol || "—";
-
-          const winRate = m?.winRate ?? m?.metrics?.winRate ?? null;
-          const avgWin =
-            m?.avgWin ?? m?.avgWinningTrade ?? m?.avgWinner ?? m?.avgWinR ?? m?.metrics?.avgWin ?? m?.metrics?.avgWinningTrade ?? null;
-
-          const wr = winRate != null ? `${(Number(winRate) * 100).toFixed(1)}%` : "—";
-          const aw = avgWin != null ? (Number.isFinite(Number(avgWin)) ? Number(avgWin).toFixed(2) : String(avgWin)) : "—";
-
-          return `
-            <div style="padding:10px; border:1px solid rgba(0,0,0,0.08); border-radius:10px; margin-bottom:8px;">
-              <div class="small">
-                Ticker: <b>${escapeHtml(String(ticker))}</b> • Win: <b>${escapeHtml(wr)}</b> • Avg win: <b>${escapeHtml(aw)}</b>
-              </div>
-              <div class="small muted" style="margin-top:4px;">Finished: ${escapeHtml(fmtTs(r?.finishedTs))}</div>
-            </div>
-          `;
-        }).join("");
-      }
-    } catch {
-      btEl.innerHTML = `<span class="small muted">Backtest listing endpoint missing or failed.</span>`;
-    }
-
-    editBtn.disabled = false;
-    editBtn.onclick = () => {
-      fill(cfgObj);
-      moveEditorIntoModal();
-      showModalView("edit");
-    };
-
-    toggleBtn.disabled = false;
-    toggleBtn.textContent = rsRow?.active ? "Disable" : "Enable";
-    toggleBtn.onclick = async () => {
-      try {
-        const to = !Boolean(rsRow?.active);
-        await jpost(`/api/rules/toggle/${version}`, { active: to });
-        wrap.style.display = "none";
-        restoreEditorFromModal();
-        showModalView("view");
-        await boot();
-      } catch (e) {
-        alert(`Toggle failed: ${String(e?.message || e)}`);
-      }
-    };
-  }
-
-  // ---------- strategies list rendering ----------
-  function renderStrategies(list) {
-    if (!strategiesList) return;
-    const rows = Array.isArray(list) ? list : [];
-
-    strategiesList.innerHTML = rows.map((r) => {
-      const name = r?.name ? escapeHtml(String(r.name)) : `v${escapeHtml(String(r?.version ?? "—"))}`;
-      const v = escapeHtml(String(r?.version ?? "—"));
-      const enabled = Boolean(r?.active);
-
-      return `
-        <div class="strategy-row">
-          <div style="min-width:0;">
-            <div class="strategy-title">${name}</div>
-            <div class="small muted">v${v}${r?.created_ts ? ` • ${escapeHtml(new Date(Number(r.created_ts)).toLocaleString())}` : ""}</div>
-          </div>
-          <div class="strategy-actions">
-            <button class="btn" data-act="view" data-v="${v}">View</button>
-            <button class="btn strategy-enable-btn ${enabled ? "is-enabled" : ""}" data-act="toggle" data-v="${v}">
-              ${enabled ? "Enabled" : "Enable"}
-            </button>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    strategiesList.querySelectorAll("button[data-act]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const act = btn.getAttribute("data-act");
-        const v = Number(btn.getAttribute("data-v"));
-
-        const row = rows.find((x) => Number(x?.version) === v) || null;
-
-        if (act === "view") {
-          try { await openViewModal(row); } catch (e) { alert(String(e?.message || e)); }
-          return;
-        }
-
-        if (act === "toggle") {
-          try {
-            const to = !Boolean(row?.active);
-            await jpost(`/api/rules/toggle/${v}`, { active: to });
-            await boot();
-          } catch (e) {
-            alert(`Toggle failed: ${String(e?.message || e)}`);
-          }
-        }
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: body != null ? JSON.stringify(body) : undefined,
       });
+      const json = await res.json().catch(() => null);
+
+      if (res.ok) return json;
+
+      if (res.status === 401 && attempt === 0) {
+        const prompted = promptForAdminToken(promptMessage);
+        if (prompted == null) throw new Error("Action canceled.");
+        token = prompted;
+        continue;
+      }
+
+      if (res.status === 401) {
+        storeAdminToken("");
+      }
+
+      throw new Error(json?.error || `HTTP ${res.status}`);
+    }
+
+    throw new Error("Admin request failed.");
+  }
+
+  function enhanceTooltips(scope = document) {
+    scope.querySelectorAll(".field-help").forEach((node) => {
+      const tip = String(node.getAttribute("data-tooltip") || node.getAttribute("title") || "").trim();
+      if (!tip) return;
+      node.setAttribute("data-tooltip", tip);
+      node.setAttribute("aria-label", tip);
+      node.setAttribute("tabindex", "0");
+      node.removeAttribute("title");
     });
   }
 
-  // ---------- load + save ----------
-  async function boot() {
-    const res = await jget("/api/rulesets");
-    const rows = Array.isArray(res?.rulesets) ? res.rulesets : [];
-    renderStrategies(rows);
+  function collectFormFromDom() {
+    const setupType = els.setupType.value === "ma_cross" ? "ma_cross" : "break_retest";
+    const base = defaultStrategy(setupType);
 
-    // Never auto-load any strategy into the builder.
-    clearEditor();
+    const next = {
+      version: STRATEGY_SCHEMA_VERSION,
+      name: String(els.strategyName.value || "").trim(),
+      description: null,
+      setupType,
+      timeframeMin: integerOrNull(els.timeframeMin.value) || 5,
+      direction: ["both", "long", "short"].includes(els.strategyDirection.value) ? els.strategyDirection.value : "both",
+      setup:
+        setupType === "ma_cross"
+          ? {
+              maType: els.maType.value === "SMA" ? "SMA" : "EMA",
+              fastValue: integerOrNull(els.maFastValue.value) || 9,
+              slowValue: Math.max(integerOrNull(els.maSlowValue.value) || 20, (integerOrNull(els.maFastValue.value) || 9) + 1),
+              entryReference: els.maEntryReference.value,
+              requireCloseAfterCross: boolFromString(els.maRequireCloseAfterCross.value, true),
+              requireRetest: boolFromString(els.maRequireRetest.value, false),
+              maxEntryBarsAfterCross: integerOrNull(els.maMaxEntryBarsAfterCross.value) || 3,
+              requireVwapAgreement: boolFromString(els.maRequireVwapAgreement.value, true),
+            }
+          : {
+              levels: selectedValues(els.brLevels),
+              movingAverage: selectedValues(els.brLevels).includes("moving_average")
+                ? {
+                    type: els.brMaType.value === "SMA" ? "SMA" : "EMA",
+                    values: parseMaValues(els.brMaValues.value).length ? parseMaValues(els.brMaValues.value) : [9, 20],
+                  }
+                : null,
+              breakConfirmation: els.brBreakConfirmation.value === "wick_and_close" ? "wick_and_close" : "close_through",
+              retestConfirmation: ["wick_hold", "reclaim_close", "close_hold"].includes(els.brRetestConfirmation.value)
+                ? els.brRetestConfirmation.value
+                : "reclaim_close",
+              maxRetestBars: integerOrNull(els.brMaxRetestBars.value) || 3,
+              entryTrigger: els.brEntryTrigger.value === "next_bar_break" ? "next_bar_break" : "retest_close",
+            },
+      filters: {
+        session: ["regular", "premarket", "both"].includes(els.sessionMode.value) ? els.sessionMode.value : "regular",
+        universe: "watchlist",
+        minVolume: numberOrNull(els.minVolume.value),
+        minVolatilityPct: numberOrNull(els.minVolatilityPct.value),
+        requireMarketBias: boolFromString(els.requireMarketBias.value, true),
+        requireSpyQqqAlignment: boolFromString(els.requireSpyQqqAlignment.value, true),
+        requireVwapAgreement: boolFromString(els.requireVwapAgreement.value, true),
+        requireRelativeStrength: boolFromString(els.requireRelativeStrength.value, true),
+      },
+      risk: {
+        riskMode: els.riskMode.value === "fixed_dollars" ? "fixed_dollars" : "percent_account",
+        riskValue: numberOrNull(els.riskValue.value) || 1,
+        stopMode: ["structure_close", "ma_fail_close", "r_multiple"].includes(els.stopMode.value) ? els.stopMode.value : base.risk.stopMode,
+        stopValueR: els.stopMode.value === "r_multiple" ? numberOrNull(els.stopValueR.value) || 1 : null,
+        profitTargetR: numberOrNull(els.profitTargetR.value),
+        moveToBreakevenAtR: numberOrNull(els.moveToBreakevenAtR.value),
+        timeExitBars: integerOrNull(els.timeExitBars.value),
+        maxOpenPositions: integerOrNull(els.maxOpenPositions.value) || 1,
+      },
+      brokerCaps: {
+        maxTradesPerDay: integerOrNull(els.brokerMaxTradesPerDay.value),
+        maxCapital: numberOrNull(els.brokerMaxCapital.value),
+      },
+    };
+
+    if (next.setupType === "break_retest" && next.setup.levels.length <= 0) {
+      next.setup.levels = clone(base.setup.levels);
+    }
+
+    state.form = next;
+    return next;
+  }
+
+  function applyFormToDom() {
+    const form = state.form;
+    els.strategyName.value = form.name || "";
+    els.setupType.value = form.setupType;
+    els.timeframeMin.value = String(form.timeframeMin || 5);
+    els.strategyDirection.value = form.direction;
+
+    if (form.setupType === "break_retest") {
+      setMultiSelectValues(els.brLevels, form.setup.levels || []);
+      els.brMaType.value = form.setup.movingAverage?.type || "EMA";
+      els.brMaValues.value = Array.isArray(form.setup.movingAverage?.values) ? form.setup.movingAverage.values.join(",") : "";
+      els.brBreakConfirmation.value = form.setup.breakConfirmation;
+      els.brRetestConfirmation.value = form.setup.retestConfirmation;
+      els.brMaxRetestBars.value = form.setup.maxRetestBars ?? "";
+      els.brEntryTrigger.value = form.setup.entryTrigger;
+    } else {
+      els.maType.value = form.setup.maType;
+      els.maFastValue.value = form.setup.fastValue ?? "";
+      els.maSlowValue.value = form.setup.slowValue ?? "";
+      els.maEntryReference.value = form.setup.entryReference;
+      els.maRequireCloseAfterCross.value = String(Boolean(form.setup.requireCloseAfterCross));
+      els.maRequireRetest.value = String(Boolean(form.setup.requireRetest));
+      els.maMaxEntryBarsAfterCross.value = form.setup.maxEntryBarsAfterCross ?? "";
+      els.maRequireVwapAgreement.value = String(Boolean(form.setup.requireVwapAgreement));
+    }
+
+    els.sessionMode.value = form.filters.session;
+    els.minVolume.value = form.filters.minVolume ?? "";
+    els.minVolatilityPct.value = form.filters.minVolatilityPct ?? "";
+    els.requireMarketBias.value = String(Boolean(form.filters.requireMarketBias));
+    els.requireSpyQqqAlignment.value = String(Boolean(form.filters.requireSpyQqqAlignment));
+    els.requireVwapAgreement.value = String(Boolean(form.filters.requireVwapAgreement));
+    els.requireRelativeStrength.value = String(Boolean(form.filters.requireRelativeStrength));
+
+    els.riskMode.value = form.risk.riskMode;
+    els.riskValue.value = form.risk.riskValue ?? "";
+    els.stopMode.value = form.risk.stopMode;
+    els.stopValueR.value = form.risk.stopValueR ?? "";
+    els.profitTargetR.value = form.risk.profitTargetR ?? "";
+    els.moveToBreakevenAtR.value = form.risk.moveToBreakevenAtR ?? "";
+    els.timeExitBars.value = form.risk.timeExitBars ?? "";
+    els.maxOpenPositions.value = form.risk.maxOpenPositions ?? "";
+
+    els.brokerMaxTradesPerDay.value = form.brokerCaps.maxTradesPerDay ?? "";
+    els.brokerMaxCapital.value = form.brokerCaps.maxCapital ?? "";
+
+    syncVisibility();
+    updateContext();
+    updateSummary();
+  }
+
+  function syncVisibility() {
+    const setupType = els.setupType.value === "ma_cross" ? "ma_cross" : "break_retest";
+    els.breakRetestFields.hidden = setupType !== "break_retest";
+    els.maCrossFields.hidden = setupType !== "ma_cross";
+    els.brMovingAverageFields.hidden = !selectedValues(els.brLevels).includes("moving_average");
+    els.stopValueRWrap.hidden = els.stopMode.value !== "r_multiple";
+  }
+
+  function updateContext() {
+    const setupLabel = state.form.setupType === "ma_cross" ? "MA Cross" : "Break & Retest";
+    const versionText = state.currentVersion ? `Editing strategy v${state.currentVersion}` : "Creating a new strategy version";
+    if (els.builderContext) {
+      els.builderContext.textContent = `${versionText}. Current setup family: ${setupLabel}. Save New Version creates a fresh ruleset; Update Current modifies the selected one.`;
+    }
+    if (els.updateRulesBtn) {
+      els.updateRulesBtn.disabled = !state.currentVersion;
+    }
+  }
+
+  function updateSummary() {
+    collectFormFromDom();
+  }
+
+  function reportActionError(error) {
+    const message = String(error?.message || error || "");
+    if (!message || message === "Action canceled.") return;
+    alert(message);
+  }
+
+  function validateForm() {
+    const form = collectFormFromDom();
+    if (!form.name) throw new Error("Strategy name is required.");
+    if (form.setupType === "break_retest" && form.setup.levels.length <= 0) throw new Error("Select at least one break and retest level.");
+    if (form.setupType === "ma_cross" && form.setup.fastValue >= form.setup.slowValue) throw new Error("Fast MA must be smaller than Slow MA.");
+    if (form.risk.riskValue == null || form.risk.riskValue <= 0) throw new Error("Risk value must be greater than zero.");
+    if (form.risk.stopMode === "r_multiple" && (form.risk.stopValueR == null || form.risk.stopValueR <= 0)) {
+      throw new Error("Stop R value is required when Stop Mode is R Multiple.");
+    }
+    if (form.risk.maxOpenPositions == null || form.risk.maxOpenPositions < 1) throw new Error("Max open positions must be at least 1.");
+    return form;
+  }
+
+  async function loadStrategy(version) {
+    const result = await jget(`/api/rulesets/${encodeURIComponent(version)}`);
+    const ruleset = result?.ruleset;
+    if (!ruleset) throw new Error("Strategy not found.");
+    state.currentVersion = Number(ruleset.version);
+    state.form = normalizeLoadedStrategy(ruleset.config, ruleset.name);
+    applyFormToDom();
   }
 
   async function saveNewVersion() {
-    // minimal required selects
-    if (!timeframeMin?.value) return alert("Select a candle size.");
-    if (!scanSession?.value) return alert("Select a session.");
-    if (!scanUniverse?.value) return alert("Select a universe.");
-    if (!triggerType?.value) return alert("Select a trigger type.");
-    if (!premarketEnabled?.value) return alert("Select premarket enabled.");
-    if (!marketBiasRequired?.value) return alert("Select market bias required.");
-    if (!sectorAlignmentEnabled?.value) return alert("Select sector alignment enabled.");
-    if (!exitOnBiasFlip?.value) return alert("Select exit on bias flip.");
-
-    // ORB required fields if ORB
-    if (triggerType?.value === "ORB") {
-      if (!orbRangeMin?.value) return alert("Select ORB range minutes.");
-      if (!orbEntryMode?.value) return alert("Select ORB entry mode.");
-    }
-
-    // MA required trigger if MA enabled
-    if (indMa?.checked && !emaTrigger?.value) return alert("Select EMA trigger (or disable Moving Averages).");
-
-    const name = String(strategyName?.value || "").trim() || "Strategy";
-    const config = readForm();
-
-    const out = await jpost("/api/rules", { name, config, changedBy: "ui" });
-    if (!out?.ok) throw new Error(out?.error || "save failed");
-
+    const payload = clone(validateForm());
+    await adminRequest("/api/rules", {
+      body: { name: payload.name, config: payload, changedBy: "ui" },
+      promptMessage: "Enter admin token to save a new strategy version.",
+    });
+    state.currentVersion = null;
     await boot();
-    clearEditor();
   }
 
-  // ---------- init ----------
-  function init() {
-    bindLiveSummaryListeners();
-    applyConditionalUI();
-    updateSummaries();
+  async function updateCurrent() {
+    if (!state.currentVersion) throw new Error("Load a strategy before updating it.");
+    const payload = clone(validateForm());
+    await adminRequest(`/api/rulesets/${encodeURIComponent(state.currentVersion)}/update`, {
+      body: { name: payload.name, config: payload, changedBy: "ui" },
+      promptMessage: "Enter admin token to update this strategy version.",
+    });
+    await boot();
+    await loadStrategy(state.currentVersion);
+  }
 
-    // persist admin token
-    const adminEl = document.getElementById("adminToken");
-    if (adminEl) {
-      adminEl.value = localStorage.getItem("ADMIN_TOKEN") || "";
-      adminEl.addEventListener("input", () => {
-        localStorage.setItem("ADMIN_TOKEN", adminEl.value || "");
+  async function deleteStrategy(version) {
+    const ok = window.confirm(`Delete strategy v${version}? This cannot be undone.`);
+    if (!ok) return;
+    await adminRequest(`/api/rulesets/${encodeURIComponent(version)}`, {
+      method: "DELETE",
+      promptMessage: `Enter admin token to delete strategy v${version}.`,
+    });
+    if (state.currentVersion === version) {
+      state.currentVersion = null;
+      state.form = defaultStrategy(state.form.setupType);
+      applyFormToDom();
+    }
+    await boot();
+  }
+
+  function renderStrategies() {
+    if (!els.strategiesList) return;
+    const rows = Array.isArray(state.strategies) ? state.strategies : [];
+    if (!rows.length) {
+      els.strategiesList.innerHTML = EMPTY_STRATEGIES_HTML;
+      return;
+    }
+
+    els.strategiesList.innerHTML = rows
+      .map((row) => `
+        <div class="strategy-row">
+          <div class="strategy-row-main">
+            <div class="strategy-title">${escapeHtml(String(row.name || `Strategy v${row.version}`))}</div>
+            <div class="small muted">v${escapeHtml(row.version)}${row.created_ts ? ` • ${escapeHtml(new Date(Number(row.created_ts)).toLocaleString())}` : ""}</div>
+          </div>
+          <div class="strategy-actions">
+            <button class="btn" data-act="edit" data-v="${escapeHtml(row.version)}">Edit</button>
+            <button class="btn" data-act="toggle" data-v="${escapeHtml(row.version)}">${row.active ? "Enabled" : "Enable"}</button>
+            <button class="btn" data-act="delete" data-v="${escapeHtml(row.version)}">Delete</button>
+          </div>
+        </div>
+      `)
+      .join("");
+
+    els.strategiesList.querySelectorAll("[data-act]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const version = Number(button.getAttribute("data-v"));
+        const action = button.getAttribute("data-act");
+        const row = rows.find((item) => Number(item.version) === version);
+
+        try {
+          if (action === "edit") {
+            await loadStrategy(version);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            return;
+          }
+          if (action === "toggle") {
+            await adminRequest(`/api/rules/toggle/${encodeURIComponent(version)}`, {
+              body: { active: !Boolean(row?.active) },
+              promptMessage: `Enter admin token to ${row?.active ? "disable" : "enable"} strategy v${version}.`,
+            });
+            await boot();
+            return;
+          }
+          if (action === "delete") {
+            await deleteStrategy(version);
+          }
+        } catch (error) {
+          reportActionError(error);
+        }
+      });
+    });
+  }
+
+  async function boot() {
+    const data = await jget("/api/rulesets");
+    state.strategies = Array.isArray(data?.rulesets) ? data.rulesets : [];
+    renderStrategies();
+    updateContext();
+    updateSummary();
+  }
+
+  function switchSetupType(nextType) {
+    const current = collectFormFromDom();
+    if (current.setupType === nextType) return;
+    const fresh = defaultStrategy(nextType);
+    state.form = {
+      ...fresh,
+      name: current.name,
+      description: current.description,
+      timeframeMin: current.timeframeMin,
+      direction: current.direction,
+      filters: clone(current.filters),
+      risk: {
+        ...clone(current.risk),
+        stopMode: nextType === "ma_cross" && current.risk.stopMode === "structure_close" ? "ma_fail_close" : current.risk.stopMode,
+      },
+      brokerCaps: clone(current.brokerCaps),
+    };
+    applyFormToDom();
+  }
+
+  function bindInputs() {
+    [
+      els.strategyName,
+      els.setupType,
+      els.timeframeMin,
+      els.strategyDirection,
+      els.brLevels,
+      els.brMaType,
+      els.brMaValues,
+      els.brBreakConfirmation,
+      els.brRetestConfirmation,
+      els.brMaxRetestBars,
+      els.brEntryTrigger,
+      els.maType,
+      els.maFastValue,
+      els.maSlowValue,
+      els.maEntryReference,
+      els.maRequireCloseAfterCross,
+      els.maRequireRetest,
+      els.maMaxEntryBarsAfterCross,
+      els.maRequireVwapAgreement,
+      els.sessionMode,
+      els.minVolume,
+      els.minVolatilityPct,
+      els.requireMarketBias,
+      els.requireSpyQqqAlignment,
+      els.requireVwapAgreement,
+      els.requireRelativeStrength,
+      els.riskMode,
+      els.riskValue,
+      els.stopMode,
+      els.stopValueR,
+      els.profitTargetR,
+      els.moveToBreakevenAtR,
+      els.timeExitBars,
+      els.maxOpenPositions,
+      els.brokerMaxTradesPerDay,
+      els.brokerMaxCapital,
+    ]
+      .filter(Boolean)
+      .forEach((el) => {
+        el.addEventListener("input", () => {
+          syncVisibility();
+          updateSummary();
+        });
+        el.addEventListener("change", () => {
+          if (el === els.setupType) {
+            switchSetupType(els.setupType.value === "ma_cross" ? "ma_cross" : "break_retest");
+            return;
+          }
+          syncVisibility();
+          updateSummary();
+        });
+      });
+  }
+
+  function initButtons() {
+    if (els.resetBuilderBtn) {
+      els.resetBuilderBtn.addEventListener("click", () => {
+        state.currentVersion = null;
+        state.form = defaultStrategy(els.setupType.value === "ma_cross" ? "ma_cross" : "break_retest");
+        applyFormToDom();
       });
     }
 
-    if (saveRulesBtn) {
-      saveRulesBtn.addEventListener("click", async () => {
+    if (els.saveRulesBtn) {
+      els.saveRulesBtn.addEventListener("click", async () => {
         try {
           await saveNewVersion();
-        } catch (e) {
-          alert(`Save failed: ${String(e?.message || e)}`);
+        } catch (error) {
+          reportActionError(error);
         }
       });
     }
 
-    boot().catch((e) => {
-      console.error(e);
-      alert(`Rules boot failed: ${String(e?.message || e)}`);
-      clearEditor();
+    if (els.updateRulesBtn) {
+      els.updateRulesBtn.addEventListener("click", async () => {
+        try {
+          await updateCurrent();
+        } catch (error) {
+          reportActionError(error);
+        }
+      });
+    }
+
+  }
+
+  function init() {
+    enhanceTooltips(document);
+    bindInputs();
+    initButtons();
+    applyFormToDom();
+    boot().catch((error) => {
+      console.error(error);
+      alert(`Rules boot failed: ${String(error?.message || error)}`);
     });
   }
 

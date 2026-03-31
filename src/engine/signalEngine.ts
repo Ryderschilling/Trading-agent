@@ -38,13 +38,17 @@ export type SymbolContext = {
 export type FormingCandidate = {
   symbol: string;
   dir: Direction;
+  stage: "prebreak" | "retest";
   levelType: LevelType;
   levelPrice: number;
   lastPrice: number | null;
-  distancePct: number | null;
+  distanceToTriggerPct: number | null;
   rs: RelativeStrength;
   market: MarketDirection;
-  score: number;
+  readinessScore: number;
+  passedConditions: string[];
+  missingConditions: string[];
+  nextCatalyst: string;
 };
 
 function clampInt(n: any, lo: number, hi: number): number | null {
@@ -87,27 +91,109 @@ export class SignalEngine {
   getFormingCandidates(args: { lastPrice: (symbol: string) => number | null }): FormingCandidate[] {
     const out: FormingCandidate[] = [];
     for (const [symbol, ctx] of this.ctx.entries()) {
-      if (ctx.state.state !== "BROKEN") continue;
-      const s = ctx.state;
       const p = args.lastPrice(symbol);
-      const distPct = p != null && s.levelPrice !== 0 ? Math.abs(p - s.levelPrice) / Math.abs(s.levelPrice) : null;
-      const score = distPct == null ? 0 : Math.max(0, Math.min(100, 100 - distPct * 5000));
+      const retest = this.buildRetestCandidate(symbol, ctx, p);
+      if (retest) out.push(retest);
 
-      out.push({
-        symbol,
-        dir: s.dir,
-        levelType: s.levelType,
-        levelPrice: s.levelPrice,
-        lastPrice: p,
-        distancePct: distPct != null ? Number((distPct * 100).toFixed(3)) : null,
-        rs: ctx.lastRS ?? "NONE",
-        market: ctx.lastMarket ?? "NEUTRAL",
-        score: Number(score.toFixed(1))
-      });
+      const prebreak = this.buildPrebreakCandidate(symbol, ctx, p);
+      if (prebreak) out.push(prebreak);
     }
 
-    out.sort((a, b) => (b.score - a.score) || ((a.distancePct ?? 1e9) - (b.distancePct ?? 1e9)));
+    out.sort(
+      (a, b) =>
+        (b.readinessScore - a.readinessScore) ||
+        ((a.distanceToTriggerPct ?? 1e9) - (b.distanceToTriggerPct ?? 1e9))
+    );
     return out;
+  }
+
+  private buildRetestCandidate(symbol: string, ctx: SymbolContext, lastPrice: number | null): FormingCandidate | null {
+    if (ctx.state.state !== "BROKEN") return null;
+    if (ctx.lastMarket === "NEUTRAL") return null;
+    if (ctx.state.dir === "CALL" && ctx.lastRS !== "STRONG") return null;
+    if (ctx.state.dir === "PUT" && ctx.lastRS !== "WEAK") return null;
+
+    const distPct = lastPrice != null && ctx.state.levelPrice !== 0
+      ? Math.abs(lastPrice - ctx.state.levelPrice) / Math.abs(ctx.state.levelPrice)
+      : null;
+    const proximityScore = distPct == null ? 0 : Math.max(0, Math.min(18, 18 - distPct * 1800));
+
+    return {
+      symbol,
+      dir: ctx.state.dir,
+      stage: "retest",
+      levelType: ctx.state.levelType,
+      levelPrice: ctx.state.levelPrice,
+      lastPrice,
+      distanceToTriggerPct: distPct != null ? Number((distPct * 100).toFixed(3)) : null,
+      rs: ctx.lastRS ?? "NONE",
+      market: ctx.lastMarket ?? "NEUTRAL",
+      readinessScore: Number((82 + proximityScore).toFixed(1)),
+      passedConditions: [
+        `Market aligned ${ctx.lastMarket}`,
+        `Relative strength ${ctx.lastRS ?? "NONE"}`,
+        `${ctx.state.levelType} break confirmed`,
+        "Setup waiting for retest entry",
+      ],
+      missingConditions: ["1m retest touch at structure"],
+      nextCatalyst: `Retest ${ctx.state.levelType} ${ctx.state.levelPrice.toFixed(2)} and hold`,
+    };
+  }
+
+  private buildPrebreakCandidate(symbol: string, ctx: SymbolContext, lastPrice: number | null): FormingCandidate | null {
+    if (ctx.state.state !== "IDLE") return null;
+    const last = ctx.bars5.at(-1);
+    if (!last) return null;
+    if (ctx.lastMarket === "NEUTRAL") return null;
+
+    const dir: Direction = ctx.lastMarket === "BULLISH" ? "CALL" : "PUT";
+    const rsNeeded: RelativeStrength = dir === "CALL" ? "STRONG" : "WEAK";
+    if (ctx.lastRS !== rsNeeded) return null;
+
+    const candidates: LevelType[] = dir === "CALL" ? ["PMH", "PDH"] : ["PML", "PDL"];
+    const nearBreakPct = Math.max(this.cfg.retestTolerancePct * 4, 0.0035);
+
+    let best: { levelType: LevelType; levelPrice: number; distPct: number } | null = null;
+    for (const levelType of candidates) {
+      const levelPrice = getLevelPrice(ctx.levels, levelType);
+      if (levelPrice == null || !Number.isFinite(levelPrice) || levelPrice === 0) continue;
+
+      const ref = lastPrice ?? last.c;
+      if (!Number.isFinite(ref)) continue;
+
+      if (dir === "CALL" && ref > levelPrice) continue;
+      if (dir === "PUT" && ref < levelPrice) continue;
+
+      const distPct = Math.abs(ref - levelPrice) / Math.abs(levelPrice);
+      if (distPct > nearBreakPct) continue;
+
+      if (!best || distPct < best.distPct) best = { levelType, levelPrice, distPct };
+    }
+
+    if (!best) return null;
+
+    const readiness = Math.max(55, Math.min(84, 84 - best.distPct * 4000));
+    const nextMove = dir === "CALL" ? "5m close through" : "5m close below";
+
+    return {
+      symbol,
+      dir,
+      stage: "prebreak",
+      levelType: best.levelType,
+      levelPrice: best.levelPrice,
+      lastPrice,
+      distanceToTriggerPct: Number((best.distPct * 100).toFixed(3)),
+      rs: ctx.lastRS ?? "NONE",
+      market: ctx.lastMarket ?? "NEUTRAL",
+      readinessScore: Number(readiness.toFixed(1)),
+      passedConditions: [
+        `Market aligned ${ctx.lastMarket}`,
+        `Relative strength ${ctx.lastRS ?? "NONE"}`,
+        `${best.levelType} level defined`,
+      ],
+      missingConditions: [`${nextMove} ${best.levelType}`],
+      nextCatalyst: `${nextMove} ${best.levelType} ${best.levelPrice.toFixed(2)}`,
+    };
   }
 
   ensureSymbol(symbol: string, levels: Levels) {

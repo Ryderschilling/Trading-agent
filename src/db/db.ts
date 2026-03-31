@@ -291,7 +291,7 @@ export function loadActiveRuleset(db: Database.Database) {
   return {
     version: Number(row.version),
     name: String(row.name || `v${row.version}`),
-    config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+    config: normalizeRulesetConfig(cfg, { name: String(row.name || `v${row.version}`) })
   };
 }
 
@@ -335,7 +335,7 @@ export function getRulesetByVersion(db: Database.Database, version: number) {
     version: Number(row.version),
     name: String(row.name || `v${row.version}`),
     active: Boolean(row.active),
-    config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+    config: normalizeRulesetConfig(cfg, { name: String(row.name || `v${row.version}`) })
   };
 }
 
@@ -523,6 +523,17 @@ export function countBrokerOrdersForStrategySymbolDay(
   return Number(row?.c || 0);
 }
 
+export function countBrokerOrdersForStrategyDay(db: Database.Database, dayKey: string, strategyVersion: number) {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c
+       FROM broker_orders
+       WHERE day_key=? AND strategy_version=? AND status='SUBMITTED'`
+    )
+    .get(dayKey, strategyVersion) as any;
+  return Number(row?.c || 0);
+}
+
 export function sumSubmittedBrokerNotionalForDay(db: Database.Database, dayKey: string) {
   const row = db
     .prepare(
@@ -531,6 +542,17 @@ export function sumSubmittedBrokerNotionalForDay(db: Database.Database, dayKey: 
        WHERE day_key=? AND status='SUBMITTED'`
     )
     .get(dayKey) as any;
+  return Number(row?.total || 0);
+}
+
+export function sumSubmittedBrokerNotionalForStrategyDay(db: Database.Database, dayKey: string, strategyVersion: number) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(notional), 0) AS total
+       FROM broker_orders
+       WHERE day_key=? AND strategy_version=? AND status='SUBMITTED'`
+    )
+    .get(dayKey, strategyVersion) as any;
   return Number(row?.total || 0);
 }
 

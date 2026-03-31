@@ -20,11 +20,12 @@
         </div>
     
         <nav class="tabs">
-          <a class="tab active" href="/index.html">Workspace</a>
-          <a class="tab" href="/outcomes.html">Outcomes</a>
-          <a class="tab" href="/watchlist.html">Watch</a>
-          <a class="tab" href="/rules.html">Rules</a>
-          <a class="tab" href="/backtest.html">Backtest</a>
+          <a class="tab active" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab" href="/brokers">Brokers</a>
         </nav>
       </div>
     
@@ -66,16 +67,28 @@
           </div>
         </div>
 
-        <!-- ROW 2: Forming (full width) -->
-        <div class="card" style="margin-top:16px;">
-          <div class="card-head">
-            <div>
-              <div class="card-title">Forming</div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-top:16px;">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Confirmed A+</div>
+              </div>
             </div>
+
+            <div id="aPlusEmpty" class="small" style="padding: 12px;">No confirmed A+ entries yet.</div>
+            <div class="list" id="aPlusList"></div>
           </div>
 
-          <div id="aPlusEmpty" class="small" style="padding: 12px;">No A+ entries yet.</div>
-          <div class="list" id="aPlusList"></div>
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Forming Candidates</div>
+ </div>
+            </div>
+
+            <div id="formingEmpty" class="small" style="padding: 12px;">No forming candidates right now.</div>
+            <div class="list" id="formingList"></div>
+          </div>
         </div>
 
       </section>

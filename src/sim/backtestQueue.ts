@@ -3,6 +3,7 @@ import https from "https";
 import type Database from "better-sqlite3";
 
 import { runBacktest, BacktestConfig, Candle } from "./backtestEngine";
+import { getStrategyTimeframeMin, normalizeStrategyDefinition } from "../rules/schema";
 
 export type BacktestRunStatus = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
 
@@ -239,9 +240,9 @@ try {
   if (Number.isFinite(sv) && sv > 0) {
     const row = this.db.prepare(`SELECT config_json FROM rulesets WHERE version=?`).get(sv) as any;
     const parsed = row?.config_json ? safeJson(String(row.config_json)) : null;
-    const tfMin = Number(parsed?.timeframeMin);
+    const tfMin = parsed ? getStrategyTimeframeMin(normalizeStrategyDefinition(parsed)) : 0;
     if (Number.isFinite(tfMin) && tfMin > 0) {
-      cfg.timeframe = tfFromMinutes(tfMin);
+      cfg.timeframe = tfFromMinutes(Number(tfMin));
     }
   }
 } catch {

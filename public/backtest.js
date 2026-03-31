@@ -227,6 +227,10 @@ if (rollingWinMeta) rollingWinMeta.textContent = "";
       for (const opt of Array.from(tickerSelect.options || [])) opt.selected = false;
     }
 
+    function readTimeframeMinFromStrategy(rules) {
+      return Number(rules?.general?.defaultTimeframeMin ?? rules?.timeframeMin);
+    }
+
     async function resolveTimeframeFromSelectedStrategy() {
       const sel = String(strategySelect?.value || "active");
     
@@ -238,7 +242,7 @@ if (rollingWinMeta) rollingWinMeta.textContent = "";
         const rules = json?.rules?.config || json?.rules || null;
     
         // Expecting timeframeMin in minutes (your rules system)
-        const tfMin = Number(rules?.timeframeMin);
+        const tfMin = readTimeframeMinFromStrategy(rules);
         if (!Number.isFinite(tfMin) || tfMin <= 0) return "1m";
     
         // map minutes to backtest timeframe string
@@ -270,7 +274,7 @@ if (typeof cfg === "string") {
   try { cfg = JSON.parse(cfg); } catch { cfg = null; }
 }
     
-      const tfMin = Number(cfg?.timeframeMin);
+      const tfMin = readTimeframeMinFromStrategy(cfg);
       if (!Number.isFinite(tfMin) || tfMin <= 0) return "1m";
     
       if (tfMin === 1) return "1m";

@@ -32,6 +32,18 @@ import { BrokerExecutionService } from "./broker/service";
 import { maskSecretConfig, mergeSecretConfig, normalizeExecutionPolicy } from "./broker/config";
 import { BrokerConfig } from "./broker/types";
 import { normalizeRulesetConfig } from "./rules/executionPolicy";
+import {
+  buildOutcomeExecRules,
+  getStrategyEmaPeriods,
+  getStrategyLookbackWindowBars,
+  getStrategyRetestTolerancePct,
+  getStrategyShowVwap,
+  getStrategyStructureLookbackBars,
+  getStrategyTimeframeMin,
+  normalizeStrategyDefinition,
+  strategyAllowsDirection,
+  StrategyDefinition,
+} from "./rules/schema";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -175,14 +187,10 @@ function loadRulesetNames() {
       let cfg: any = {};
       try { cfg = JSON.parse(String(r?.config_json || "{}")); } catch { cfg = {}; }
 
-      const tf = Number(cfg?.timeframeMin);
-      const timeframeMin = Number.isFinite(tf) && tf >= 1 ? Math.floor(tf) : 1;
-
-      const emaPeriods = Array.isArray(cfg?.emaPeriods)
-        ? cfg.emaPeriods.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n) && n >= 1 && n <= 500)
-        : [];
-
-      const showVwap = Boolean(cfg?.indicators?.vwap);
+      const strategy = normalizeStrategyDefinition(cfg, { name: String(r?.name ?? "") });
+      const timeframeMin = getStrategyTimeframeMin(strategy);
+      const emaPeriods = getStrategyEmaPeriods(strategy);
+      const showVwap = getStrategyShowVwap(strategy);
 
       rulesetMetaMap[v] = { timeframeMin, emaPeriods, showVwap };
     }
@@ -209,7 +217,7 @@ type Agg = { bucketStart: number; o: number; h: number; l: number; c: number; la
 type StrategyRunner = {
   version: number;
   name: string;
-  cfg: any;
+  cfg: StrategyDefinition;
   timeframeMin: number;
 
   engine: SignalEngine;
@@ -239,7 +247,7 @@ function floorBucket(ms: number, minutes: number): number {
   return Math.floor(ms / size) * size;
 }
 
-function listEnabledRulesets(): Array<{ version: number; name: string; active: boolean; config: any }> {
+function listEnabledRulesets(): Array<{ version: number; name: string; active: boolean; config: StrategyDefinition }> {
   const rows = db
     .prepare(`SELECT version, name, active, config_json FROM rulesets WHERE active=1 ORDER BY version DESC`)
     .all() as any[];
@@ -248,25 +256,21 @@ function listEnabledRulesets(): Array<{ version: number; name: string; active: b
     .map((r) => {
       let cfg: any = {};
       try { cfg = JSON.parse(String(r.config_json || "{}")); } catch { cfg = {}; }
+      const normalized = normalizeStrategyDefinition(cfg, { name: String(r.name || `v${r.version}`) });
       return {
         version: Number(r.version),
         name: String(r.name || `v${r.version}`),
         active: Boolean(r.active),
-        config: normalizeRulesetConfig(cfg, { ensureBrokerExecution: true })
+        config: normalized
       };
     })
     .filter((x) => Number.isFinite(x.version) && x.version > 0);
 }
 
-function buildRunner(rs: { version: number; name: string; config: any }): StrategyRunner {
-  const tfMinRaw = Number(rs.config?.timeframeMin ?? DEFAULT_TIMEFRAME_MIN);
-  const timeframeMin = Number.isFinite(tfMinRaw) && tfMinRaw >= 1 ? Math.floor(tfMinRaw) : DEFAULT_TIMEFRAME_MIN;
-
-  const retestTolRaw = Number(rs.config?.retestTolerancePct ?? RETEST_TOL);
-  const rsWinRaw = Number(rs.config?.rsWindowBars5m ?? RS_WINDOW_BARS);
-
-  const retestTolerancePct = Number.isFinite(retestTolRaw) && retestTolRaw >= 0 ? retestTolRaw : RETEST_TOL;
-  const rsWindowBars5m = Number.isFinite(rsWinRaw) && rsWinRaw >= 1 ? Math.floor(rsWinRaw) : RS_WINDOW_BARS;
+function buildRunner(rs: { version: number; name: string; config: StrategyDefinition }): StrategyRunner {
+  const timeframeMin = getStrategyTimeframeMin(rs.config) || DEFAULT_TIMEFRAME_MIN;
+  const retestTolerancePct = getStrategyRetestTolerancePct(rs.config) || RETEST_TOL;
+  const rsWindowBars5m = getStrategyLookbackWindowBars(rs.config) || RS_WINDOW_BARS;
 
   return {
     version: rs.version,
@@ -278,7 +282,7 @@ function buildRunner(rs: { version: number; name: string; config: any }): Strate
       timeframeMin,
       retestTolerancePct,
       rsWindowBars5m,
-      emaPeriods: Array.isArray(rs.config?.emaPeriods) ? rs.config.emaPeriods : undefined
+      emaPeriods: getStrategyEmaPeriods(rs.config)
     }),
 
     outcomeTracker: new OutcomeTracker({
@@ -313,44 +317,34 @@ refreshRunners();
 // -----------------------------
 // Rules mutations
 // -----------------------------
-function normalizePositiveInt(value: unknown, fallback: number) {
-  const raw = typeof value === "string" ? value.trim() : value;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
-}
-
-function normalizeRulesConfigForStorage(config: any) {
+function normalizeRulesConfigForStorage(config: unknown, name?: string | null): StrategyDefinition {
   if (!config || typeof config !== "object") throw new Error("config required");
-  const normalized = normalizeRulesetConfig(config, { ensureBrokerExecution: true });
-  normalized.rsWindowBars5m = normalizePositiveInt((normalized as any).rsWindowBars5m, RS_WINDOW_BARS);
+  const normalized = normalizeRulesetConfig(config, { name: name ?? null });
+
+  if (getStrategyTimeframeMin(normalized) < 1) throw new Error("bad timeframeMin");
+  if (getStrategyRetestTolerancePct(normalized) < 0) throw new Error("bad entry trigger buffer");
+  if (getStrategyLookbackWindowBars(normalized) < 1) throw new Error("bad filters.lookbackWindowBars");
+  if (!normalized.name) throw new Error("strategy name required");
+  if (normalized.setupType === "break_retest" && (normalized.setup as any).levels.length <= 0) {
+    throw new Error("at least one break and retest level is required");
+  }
+  if (normalized.setupType === "ma_cross" && (normalized.setup as any).fastValue >= (normalized.setup as any).slowValue) {
+    throw new Error("fast MA must be smaller than slow MA");
+  }
+  if (normalized.risk.riskValue <= 0) throw new Error("bad risk.riskValue");
+  if (normalized.risk.maxOpenPositions < 1) throw new Error("bad risk.maxOpenPositions");
+  if (normalized.risk.stopMode === "r_multiple" && (normalized.risk.stopValueR == null || normalized.risk.stopValueR <= 0)) {
+    throw new Error("bad risk.stopValueR");
+  }
+  if (normalized.brokerCaps.maxTradesPerDay != null && normalized.brokerCaps.maxTradesPerDay < 0) {
+    throw new Error("bad brokerCaps.maxTradesPerDay");
+  }
+
   return normalized;
 }
 
 function saveRules(name: string, config: any, changedBy?: string) {
-  config = normalizeRulesConfigForStorage(config);
-  if (!Number.isFinite(config.timeframeMin) || config.timeframeMin < 1) throw new Error("bad timeframeMin");
-  if (!Number.isFinite(config.retestTolerancePct) || config.retestTolerancePct < 0) throw new Error("bad retestTolerancePct");
-  if (!Number.isFinite(config.rsWindowBars5m) || config.rsWindowBars5m < 1) throw new Error("bad rsWindowBars5m");
-  if (!Number.isFinite(config.longMinBiasScore)) throw new Error("bad longMinBiasScore");
-  if (!Number.isFinite(config.shortMaxBiasScore)) throw new Error("bad shortMaxBiasScore");
-
-  if (config.emaPeriods != null) {
-    if (!Array.isArray(config.emaPeriods)) throw new Error("emaPeriods must be an array");
-    const cleaned = Array.from(
-      new Set<number>(
-        config.emaPeriods
-          .map((x: any) => Number(x))
-          .filter((n: number) => Number.isFinite(n))
-          .map((n: number) => Math.floor(n))
-          .filter((n: number) => n >= 1 && n <= 500)
-      )
-    ).sort((a: number, b: number) => a - b);
-
-    if (cleaned.length === 0) throw new Error("emaPeriods empty");
-    if (cleaned.length > 50) throw new Error("emaPeriods max 50");
-
-    config.emaPeriods = cleaned;
-  }
+  config = normalizeRulesConfigForStorage(config, name);
 
   const r = insertRuleset(db, name, config, changedBy) as any;
   const version = Number(r?.version ?? r);
@@ -366,23 +360,7 @@ function setRulesetActiveFn(version: number, active: boolean) {
 }
 
 function updateRulesetFn(version: number, name: string, config: any, changedBy?: string) {
-  config = normalizeRulesConfigForStorage(config);
-  if (config?.emaPeriods != null) {
-    if (!Array.isArray(config.emaPeriods)) throw new Error("emaPeriods must be an array");
-    const cleaned = Array.from(
-      new Set<number>(
-        config.emaPeriods
-          .map((x: any) => Number(x))
-          .filter((n: number) => Number.isFinite(n))
-          .map((n: number) => Math.floor(n))
-          .filter((n: number) => n >= 1 && n <= 500)
-      )
-    ).sort((a: number, b: number) => a - b);
-
-    if (cleaned.length === 0) throw new Error("emaPeriods empty");
-    if (cleaned.length > 50) throw new Error("emaPeriods max 50");
-    config.emaPeriods = cleaned;
-  }
+  config = normalizeRulesConfigForStorage(config, name);
 
   const out = updateRuleset(db, Number(version), name, config, changedBy);
   refreshRunners();
@@ -880,48 +858,8 @@ function isEntryAlert(a: Alert) {
 // -----------------------------
 // Execution rules extraction (cfg.risk OR cfg.post)
 // -----------------------------
-function buildExecRulesFromCfg(cfg: any) {
-  if (!cfg || typeof cfg !== "object") return undefined;
-
-  const risk = (cfg as any).risk;
-  const post = (cfg as any).post;
-
-  const src = (risk && typeof risk === "object") ? risk : (post && typeof post === "object" ? post : null);
-  if (!src) return undefined;
-
-  const stopR = Number((src as any).stopR);
-  const targetR = Number((src as any).targetR);
-
-  const moveStopToBEAtR =
-    (src as any).moveStopToBEAtR != null
-      ? Number((src as any).moveStopToBEAtR)
-      : ((src as any).moveBeEnabled ? Number((src as any).moveBeAtR) : undefined);
-
-  const trailEnabled = Boolean((src as any).trailEnabled);
-  const trailStartR = (src as any).trailStartR != null ? Number((src as any).trailStartR) : undefined;
-  const trailByR = (src as any).trailByR != null ? Number((src as any).trailByR) : undefined;
-
-  const maxHoldBars1m =
-    (src as any).maxHoldBars1m != null
-      ? Number((src as any).maxHoldBars1m)
-      : ((src as any).maxHoldBars != null ? Number((src as any).maxHoldBars) : undefined);
-
-  if (!Number.isFinite(stopR) || stopR <= 0) return undefined;
-  if (!Number.isFinite(targetR) || targetR <= 0) return undefined;
-
-  const out: any = { stopR, targetR };
-
-  if (Number.isFinite(moveStopToBEAtR as any) && Number(moveStopToBEAtR) > 0) out.moveStopToBEAtR = Number(moveStopToBEAtR);
-
-  if (trailEnabled) {
-    out.trailEnabled = true;
-    if (Number.isFinite(trailStartR as any) && Number(trailStartR) > 0) out.trailStartR = Number(trailStartR);
-    if (Number.isFinite(trailByR as any) && Number(trailByR) > 0) out.trailByR = Number(trailByR);
-  }
-
-  if (Number.isFinite(maxHoldBars1m as any) && Number(maxHoldBars1m) >= 1) out.maxHoldBars1m = Math.floor(Number(maxHoldBars1m));
-
-  return out;
+function buildExecRulesFromCfg(cfg: StrategyDefinition) {
+  return buildOutcomeExecRules(cfg);
 }
 
 // -----------------------------
@@ -1278,7 +1216,8 @@ function triggerBrokerExecutionIfEligible(alert: Alert) {
 function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number) {
   const spyBars = getBars(r, "SPY");
   const qqqBars = getBars(r, "QQQ");
-  if (spyBars.length < STRUCTURE_WINDOW || qqqBars.length < STRUCTURE_WINDOW) return;
+  const structureWindow = getStrategyStructureLookbackBars(r.cfg) || STRUCTURE_WINDOW;
+  if (spyBars.length < structureWindow || qqqBars.length < structureWindow) return;
 
   if (!isRegularMarketHours(ts)) return;
 
@@ -1301,6 +1240,7 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
   });
 
   if (alert) {
+    if ((alert.dir === "CALL" || alert.dir === "PUT") && !strategyAllowsDirection(r.cfg, alert.dir)) return;
     (alert as any).meta = { rulesetVersion: r.version };
 
     startOutcomeTrackingIfTrade(r, alert, ts);
@@ -1343,6 +1283,7 @@ function ingestMinuteBar(
       const tap = r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
       if (tap) {
+        if ((tap.dir === "CALL" || tap.dir === "PUT") && !strategyAllowsDirection(r.cfg, tap.dir)) continue;
         (tap as any).meta = { ...(tap as any).meta, rulesetVersion: r.version };
         startOutcomeTrackingIfTrade(r, tap, ts);
 
