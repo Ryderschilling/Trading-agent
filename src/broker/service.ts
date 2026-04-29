@@ -14,6 +14,7 @@ import {
   sumSubmittedBrokerNotionalForStrategyDay,
 } from "../db/db";
 import { AlpacaBrokerAdapter } from "./alpacaAdapter";
+import { getIbkrAdapter } from "./ibkrAdapter";
 import { normalizeBrokerConfig } from "./config";
 import {
   BrokerActivityRow,
@@ -103,7 +104,8 @@ export function buildConnectionState(args: {
     };
   }
 
-  if (args.cfg.brokerKey !== "alpaca") {
+  const SUPPORTED_BROKERS = new Set(["alpaca", "ibkr"]);
+  if (!SUPPORTED_BROKERS.has(args.cfg.brokerKey)) {
     return {
       code: "unsupported",
       label: "Unsupported",
@@ -158,7 +160,8 @@ export function buildExecutionState(args: {
     };
   }
 
-  if (cfg.brokerKey !== "alpaca") {
+  const SUPPORTED_BROKERS_EXEC = new Set(["alpaca", "ibkr"]);
+  if (!SUPPORTED_BROKERS_EXEC.has(cfg.brokerKey)) {
     return {
       code: "blocked_other",
       label: "Blocked — Unsupported Broker",
@@ -241,10 +244,17 @@ function findLatestSkip(activity: BrokerActivityRow[]): BrokerSkipSummary {
 }
 
 function buildAdapter(cfg: BrokerConfig): BrokerAdapter {
-  if (cfg.brokerKey !== "alpaca") throw new Error("unsupported broker");
-  const key = String(cfg.config?.key || "");
-  const secret = String(cfg.config?.secret || "");
-  return new AlpacaBrokerAdapter(cfg.mode, { key, secret });
+  if (cfg.brokerKey === "alpaca") {
+    const key = String(cfg.config?.key || "");
+    const secret = String(cfg.config?.secret || "");
+    return new AlpacaBrokerAdapter(cfg.mode, { key, secret });
+  } else if (cfg.brokerKey === "ibkr") {
+    const host = String(cfg.config?.host || "localhost");
+    const port = Number(cfg.config?.port || 5000);
+    const accountId = String(cfg.config?.accountId || "");
+    return getIbkrAdapter({ host, port, accountId });
+  }
+  throw new Error("unsupported broker");
 }
 
 function makeActivity(args: Partial<BrokerOrderRecord> & Pick<BrokerOrderRecord, "dayKey" | "symbol" | "direction" | "setupKey">): BrokerOrderRecord {
@@ -254,6 +264,7 @@ function makeActivity(args: Partial<BrokerOrderRecord> & Pick<BrokerOrderRecord,
     dayKey: args.dayKey,
     symbol: args.symbol,
     direction: args.direction,
+    optionType: args.optionType ?? null,
     setupKey: args.setupKey,
     brokerKey: args.brokerKey ?? "",
     mode: args.mode ?? "disabled",
@@ -280,6 +291,24 @@ export class BrokerExecutionService {
 
   getActivity(limit = 25): BrokerActivityRow[] {
     return listBrokerOrders(this.db, limit);
+  }
+
+  async closePosition(symbol: string): Promise<void> {
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    if (!cfg.brokerKey) throw new Error("no broker configured");
+    if (cfg.mode === "disabled") throw new Error("broker mode disabled");
+    const adapter = buildAdapter(cfg);
+    if (!adapter.closePosition) throw new Error("broker does not support closePosition");
+    await adapter.closePosition(symbol);
+  }
+
+  async setStopOrder(symbol: string, stopPrice: number, qty: number | null): Promise<any> {
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    if (!cfg.brokerKey) throw new Error("no broker configured");
+    if (cfg.mode === "disabled") throw new Error("broker mode disabled");
+    const adapter = buildAdapter(cfg);
+    if (!adapter.setStopOrder) throw new Error("broker does not support stop orders");
+    return adapter.setStopOrder(symbol, stopPrice, qty);
   }
 
   private listEnabledStrategyPolicies(): StrategyPolicyRow[] {
@@ -341,7 +370,7 @@ export class BrokerExecutionService {
       provider: cfg.brokerKey || "none",
       mode: cfg.mode,
       configured: Boolean(cfg.brokerKey),
-      supported: cfg.brokerKey === "" || cfg.brokerKey === "alpaca",
+      supported: cfg.brokerKey === "" || cfg.brokerKey === "alpaca" || cfg.brokerKey === "ibkr",
       connectionStatus: initialConnectionState.code,
       connectionState: initialConnectionState,
       statusText: initialConnectionState.reason || (cfg.brokerKey ? "Not checked" : "No broker configured"),
@@ -372,9 +401,9 @@ export class BrokerExecutionService {
       base.connectionStatus = "disabled";
       return base;
     }
-    if (cfg.brokerKey !== "alpaca") {
-      base.statusText = "Configured provider is not supported in V1";
-      base.warnings.push("Only Alpaca is operational in this pass.");
+    if (cfg.brokerKey !== "alpaca" && cfg.brokerKey !== "ibkr") {
+      base.statusText = "Configured provider is not supported in this pass";
+      base.warnings.push("Only Alpaca and IBKR are operational in this pass.");
       return base;
     }
     if (cfg.mode === "disabled") {
@@ -432,7 +461,7 @@ export class BrokerExecutionService {
     const strategyVersion = strategyPolicyRow?.version ?? requestedStrategyVersion;
     const strategyControls = strategyPolicyRow?.controls ?? { maxTradesPerDay: null, maxCapital: null };
     const refPrice = Number(alert.close || 0);
-    const side = alert.dir === "CALL" ? "buy" : "sell";
+    const side: "buy" | "sell" = alert.dir === "CALL" ? "buy" : "sell";
     const sizingMode = cfg.execution.sizingMode;
     const defaultNotional = sizingMode === "notional" ? cfg.execution.defaultNotional : null;
     const defaultQty = sizingMode === "qty" ? cfg.execution.defaultQty : null;
@@ -443,7 +472,7 @@ export class BrokerExecutionService {
       alertId: alert.id,
       dayKey,
       symbol: alert.symbol,
-      direction: alert.dir === "CALL" ? "CALL" : "PUT",
+      direction: alert.dir === "CALL" ? "LONG" : "SHORT",
       setupKey,
       brokerKey: cfg.brokerKey,
       mode: cfg.mode,
@@ -477,7 +506,7 @@ export class BrokerExecutionService {
     };
 
     if (!cfg.brokerKey) return persist({ ...baseActivity, status: "SKIPPED", reason: "no broker configured" });
-    if (cfg.brokerKey !== "alpaca") return persist({ ...baseActivity, status: "SKIPPED", reason: "broker provider unsupported" });
+    if (cfg.brokerKey !== "alpaca" && cfg.brokerKey !== "ibkr") return persist({ ...baseActivity, status: "SKIPPED", reason: "broker provider unsupported" });
     if (cfg.mode === "disabled") return persist({ ...baseActivity, status: "SKIPPED", reason: "broker mode disabled" });
     if (!cfg.tradingEnabled) return persist({ ...baseActivity, status: "SKIPPED", reason: "kill switch enabled" });
     if (cfg.mode === "live" && !cfg.execution.liveArmed) return persist({ ...baseActivity, status: "SKIPPED", reason: "live mode not armed" });
@@ -539,6 +568,17 @@ export class BrokerExecutionService {
       }
     } catch (error: any) {
       return persist({ ...baseActivity, status: localStatus(error), reason: `preflight failed: ${error?.message || "unknown error"}` });
+    }
+
+    try {
+      if (cfg.execution.bracketEnabled) {
+        console.warn(
+          "[broker] WARNING: bracketEnabled=true but bracket orders are not yet implemented. " +
+          "Submitting plain market order instead. Implement bracket order logic before enabling in live mode."
+        );
+      }
+    } catch (bracketErr: any) {
+      console.warn("[broker] bracket check error (non-fatal):", bracketErr?.message || bracketErr);
     }
 
     try {

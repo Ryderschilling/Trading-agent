@@ -1,7 +1,33 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
+import { requireAuth } from "./auth";
 
 console.log("[HTTP.TS] LOADED createHttpApp vRULESET");
+
+// Computed once per server restart — used to cache-bust static assets
+const BUILD_TS = Date.now().toString();
+
+type AgentAsyncRequest = {
+  message: string;
+  dryRun?: boolean;
+  mode?: "chat" | "strategy";
+  history?: Array<{ role: "user" | "assistant"; text: string }>;
+};
+
+type AgentJobRecord = {
+  id: string;
+  status: "running" | "done" | "error";
+  request: AgentAsyncRequest;
+  createdAt: number;
+  updatedAt: number;
+  result?: any;
+  error?: string;
+};
+
+function createAgentJobId() {
+  return `agent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 
 export function createHttpApp(args: {
@@ -61,6 +87,8 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   saveBrokerConfig?: (cfg: any, changedBy?: string) => any;
   getBrokerStatus?: () => Promise<any>;
   getBrokerActivity?: (limit?: number) => any[];
+  closeBrokerPosition?: (symbol: string) => Promise<void>;
+  setBrokerStop?: (symbol: string, stopPrice: number, qty: number | null) => Promise<any>;
 
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
 
@@ -80,9 +108,42 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
 
   // NEW: list runs for strategy “View” modal
   listBacktestRuns?: (opts: { limit: number; strategyVersion?: number }) => any[];
+  getAiOperatorStatus?: () => any;
+  runAiOperator?: (request: {
+    message: string;
+    dryRun?: boolean;
+    mode?: "chat" | "strategy";
+    history?: Array<{ role: "user" | "assistant"; text: string }>;
+  }) => Promise<any>;
 }) {
   const app = express();
   app.use(express.json());
+
+  // -----------------------------
+  // Auth gate (all routes except /api/login and /login)
+  // -----------------------------
+  app.use(requireAuth);
+
+  // -----------------------------
+  // POST /api/login — exchange token for cookie
+  // -----------------------------
+  app.post("/api/login", (req, res) => {
+    const secret = process.env.AGENT_SECRET || "";
+    if (!secret) {
+      // No secret configured — always OK in dev mode
+      return res.json({ ok: true });
+    }
+    const token = String(req.body?.token || "").trim();
+    if (!token || token !== secret) {
+      return res.status(401).json({ ok: false, error: "invalid token" });
+    }
+    // Set an HttpOnly cookie so subsequent page loads are auth'd
+    res.setHeader(
+      "Set-Cookie",
+      `agent_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`
+    );
+    return res.json({ ok: true });
+  });
 
   // -----------------------------
 // Backtests (REPLAY = live engine path)
@@ -141,8 +202,18 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   // Page routes (CLEAN URLS)
   // -----------------------------
   function sendPage(res: express.Response, file: string) {
-    return res.sendFile(path.join(args.publicDir, file));
+    const filePath = path.join(args.publicDir, file);
+    try {
+      const html = fs.readFileSync(filePath, "utf8").replace(/BUILD_TS/g, BUILD_TS);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(html);
+    } catch {
+      return res.sendFile(filePath);
+    }
   }
+
+  app.get("/login", (_req, res) => sendPage(res, "login.html"));
+  app.get("/login.html", (_req, res) => res.redirect(301, "/login"));
 
   app.get("/", (_req, res) => sendPage(res, "index.html"));
   app.get("/outcomes", (_req, res) => sendPage(res, "outcomes.html"));
@@ -160,6 +231,32 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/backtest.html", (_req, res) => res.redirect(301, "/backtest"));
 
   app.use(express.static(args.publicDir));
+
+  const agentJobs = new Map<string, AgentJobRecord>();
+
+  function pruneAgentJobs() {
+    const now = Date.now();
+    for (const [jobId, job] of agentJobs.entries()) {
+      const ageMs = now - job.updatedAt;
+      if (ageMs > 30 * 60_000) {
+        agentJobs.delete(jobId);
+      }
+    }
+  }
+
+  function getAgentJobResponse(job: AgentJobRecord) {
+    return {
+      ok: true,
+      job: {
+        id: job.id,
+        status: job.status,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        error: job.error || null,
+        result: job.result ?? null,
+      },
+    };
+  }
 
   // -----------------------------
   // API: alerts
@@ -233,6 +330,33 @@ app.get("/api/broker/status", async (_req, res) => {
   }
 });
 
+app.post("/api/broker/close-position", async (req, res) => {
+  try {
+    if (!args.closeBrokerPosition) return res.status(400).json({ ok: false, error: "close position not enabled" });
+    const symbol = String(req.body?.symbol || "").trim().toUpperCase();
+    if (!symbol) return res.status(400).json({ ok: false, error: "symbol required" });
+    await args.closeBrokerPosition(symbol);
+    res.json({ ok: true, symbol });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
+app.post("/api/broker/set-stop", async (req, res) => {
+  try {
+    if (!args.setBrokerStop) return res.status(400).json({ ok: false, error: "set stop not enabled" });
+    const symbol = String(req.body?.symbol || "").trim().toUpperCase();
+    const stopPrice = Number(req.body?.stopPrice);
+    const qty = req.body?.qty != null ? Number(req.body.qty) : null;
+    if (!symbol) return res.status(400).json({ ok: false, error: "symbol required" });
+    if (!Number.isFinite(stopPrice) || stopPrice <= 0) return res.status(400).json({ ok: false, error: "valid stopPrice required" });
+    const result = await args.setBrokerStop(symbol, stopPrice, qty);
+    res.json({ ok: true, symbol, stopPrice, result });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || "failed" });
+  }
+});
+
 app.get("/api/broker/activity", (req, res) => {
   try {
     const limit = Math.max(1, Math.min(100, Number(req.query.limit || 25)));
@@ -247,6 +371,80 @@ app.get("/api/broker/activity", (req, res) => {
   // API: signals snapshot
   // -----------------------------
   app.get("/api/signals", (_req, res) => res.json({ signals: args.getSignals ? args.getSignals() : null }));
+
+  app.get("/api/agent/status", (_req, res) => {
+    try {
+      res.json({ ok: true, status: args.getAiOperatorStatus ? args.getAiOperatorStatus() : { configured: false } });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.post("/api/agent/run", async (req, res) => {
+    try {
+      if (!args.runAiOperator) return res.status(400).json({ ok: false, error: "ai operator not enabled" });
+      const message = String(req.body?.message || "").trim();
+      const dryRun = Boolean(req.body?.dryRun);
+      const mode = req.body?.mode === "strategy" ? "strategy" : "chat";
+      const history = Array.isArray(req.body?.history) ? req.body.history : [];
+      if (!message) return res.status(400).json({ ok: false, error: "message required" });
+
+      const out = await args.runAiOperator({ message, dryRun, mode, history });
+      res.json(out);
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.post("/api/agent/jobs", async (req, res) => {
+    try {
+      if (!args.runAiOperator) return res.status(400).json({ ok: false, error: "ai operator not enabled" });
+      pruneAgentJobs();
+
+      const message = String(req.body?.message || "").trim();
+      const dryRun = Boolean(req.body?.dryRun);
+      const mode = req.body?.mode === "strategy" ? "strategy" : "chat";
+      const history = Array.isArray(req.body?.history) ? req.body.history : [];
+      if (!message) return res.status(400).json({ ok: false, error: "message required" });
+
+      const job: AgentJobRecord = {
+        id: createAgentJobId(),
+        status: "running",
+        request: { message, dryRun, mode, history },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      agentJobs.set(job.id, job);
+
+      void args
+        .runAiOperator(job.request)
+        .then((out) => {
+          job.status = "done";
+          job.result = out;
+          job.updatedAt = Date.now();
+        })
+        .catch((e: any) => {
+          job.status = "error";
+          job.error = e?.message || "failed";
+          job.updatedAt = Date.now();
+        });
+
+      res.json({ ok: true, jobId: job.id, status: job.status });
+    } catch (e: any) {
+      res.status(400).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
+
+  app.get("/api/agent/jobs/:id", (req, res) => {
+    pruneAgentJobs();
+    const jobId = String(req.params.id || "").trim();
+    const job = agentJobs.get(jobId);
+    if (!job) {
+      return res.status(404).json({ ok: false, error: "job not found" });
+    }
+    return res.json(getAgentJobResponse(job));
+  });
 
   // -----------------------------
   // API: outcomes

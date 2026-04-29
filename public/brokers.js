@@ -21,6 +21,7 @@ const els = {
   closeSettingsBtn: $("closeSettingsBtn"),
   settingsModal: $("settingsModal"),
   settingsBackdrop: $("settingsBackdrop"),
+  settingsBody: document.querySelector(".broker-modal-body"),
 
   tradingEnabled: $("tradingEnabled"),
   liveArmed: $("liveArmed"),
@@ -832,7 +833,10 @@ function setModalOpen(open) {
   if (open) resetAccordionState(LAST_STATUS);
   els.settingsModal.hidden = !open;
   els.settingsModal.classList.toggle("is-open", open);
-  document.body.style.overflow = open ? "hidden" : "";
+  document.body.classList.toggle("broker-settings-open", open);
+  if (open && els.settingsBody) {
+    els.settingsBody.scrollTop = 0;
+  }
 }
 
 function applyConfigToUi(cfg) {

@@ -17,9 +17,14 @@ export type AlpacaStreamConfig = {
   feed: "iex" | "sip" | "delayed_sip";
 };
 
+const BACKOFF_MIN_MS = 1000;
+const BACKOFF_MAX_MS = 30_000;
+
 export class AlpacaStream {
   private ws: WebSocket | null = null;
   private cfg: AlpacaStreamConfig;
+  private subscribedSymbols: Set<string> = new Set();
+  private reconnectDelayMs = BACKOFF_MIN_MS;
 
   constructor(
     cfg: AlpacaStreamConfig,
@@ -52,28 +57,39 @@ export class AlpacaStream {
         const msgs = Array.isArray(data) ? data : [data];
         for (const msg of msgs) this.handleMsg(msg);
       } catch {
-        // ignore
+        // ignore parse errors
       }
     });
 
     this.ws.on("close", () => {
       this.handlers.onStatus("disconnected");
-      setTimeout(() => this.connect(), 2000);
+      const delay = this.reconnectDelayMs;
+      this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, BACKOFF_MAX_MS);
+      setTimeout(() => this.connect(), delay);
     });
 
     this.ws.on("error", () => {
-      // triggers close -> reconnect
+      // error triggers close → reconnect handled above
     });
   }
 
   subscribeBars(symbols: string[]) {
-    if (!this.ws) return;
+    for (const s of symbols) this.subscribedSymbols.add(s);
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ action: "subscribe", bars: symbols }));
   }
 
   unsubscribeBars(symbols: string[]) {
-    if (!this.ws) return;
+    for (const s of symbols) this.subscribedSymbols.delete(s);
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify({ action: "unsubscribe", bars: symbols }));
+  }
+
+  private resubscribeAll() {
+    if (this.subscribedSymbols.size === 0) return;
+    const symbols = Array.from(this.subscribedSymbols);
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ action: "subscribe", bars: symbols }));
   }
 
   private handleMsg(msg: any) {
@@ -83,6 +99,11 @@ export class AlpacaStream {
     }
     if (msg?.T === "success" && msg?.msg) {
       this.handlers.onStatus(String(msg.msg));
+      if (String(msg.msg).toLowerCase() === "authenticated") {
+        // Auth succeeded — reset backoff and re-subscribe to tracked symbols
+        this.reconnectDelayMs = BACKOFF_MIN_MS;
+        this.resubscribeAll();
+      }
       return;
     }
     if (msg?.T === "error" && msg?.msg) {

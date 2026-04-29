@@ -2,7 +2,7 @@ export type BrokerMode = "disabled" | "paper" | "live";
 
 export type BrokerSizingMode = "notional" | "qty";
 
-export type BrokerOrderType = "market";
+export type BrokerOrderType = "market" | "limit";
 
 export type BrokerTimeInForce = "day";
 
@@ -44,7 +44,8 @@ export type BrokerOrderRecord = {
   dayKey: string;
   alertId: string | null;
   symbol: string;
-  direction: "CALL" | "PUT";
+  direction: "LONG" | "SHORT";
+  optionType?: "CALL" | "PUT" | null;
   setupKey: string;
   brokerKey: string;
   mode: BrokerMode;
@@ -185,6 +186,20 @@ export type BrokerSubmitOrderRequest = {
   extendedHours: boolean;
 };
 
+export type OptionsContractSpec = {
+  symbol: string;
+  expiry: string;
+  strike: number;
+  optionType: "CALL" | "PUT";
+  conid?: number | null;
+};
+
+export type BrokerSubmitOptionsOrderRequest = BrokerSubmitOrderRequest & {
+  contract: OptionsContractSpec;
+  limitPrice: number;
+  timeInForce: "DAY" | "GTC";
+};
+
 export type BrokerSubmitOrderResult = {
   brokerOrderId: string | null;
   brokerStatus: string | null;
@@ -198,4 +213,7 @@ export interface BrokerAdapter {
     orders: BrokerOpenOrderSnapshot[];
   }>;
   submitMarketOrder(input: BrokerSubmitOrderRequest): Promise<BrokerSubmitOrderResult>;
+  submitOptionsOrder?(input: BrokerSubmitOptionsOrderRequest): Promise<BrokerSubmitOrderResult>;
+  closePosition?(symbol: string): Promise<void>;
+  setStopOrder?(symbol: string, stopPrice: number, qty: number | null): Promise<any>;
 }

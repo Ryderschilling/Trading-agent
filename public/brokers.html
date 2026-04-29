@@ -372,10 +372,15 @@
         inset: 0;
         z-index: 40;
         display: none;
+        align-items: flex-start;
+        justify-content: flex-end;
+        padding: 18px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
 
       .page-brokers .broker-modal.is-open {
-        display: block;
+        display: flex;
       }
 
       .page-brokers .broker-modal-backdrop {
@@ -386,13 +391,11 @@
       }
 
       .page-brokers .broker-modal-panel {
-        position: absolute;
-        top: 18px;
-        right: 18px;
-        bottom: 18px;
-        width: min(720px, calc(100vw - 36px));
-        display: grid;
-        grid-template-rows: auto 1fr;
+        position: relative;
+        width: min(720px, 100%);
+        display: flex;
+        flex-direction: column;
+        margin-left: auto;
         border: 1px solid var(--line);
         border-radius: 18px;
         background:
@@ -400,6 +403,7 @@
           var(--card);
         box-shadow: var(--shadowLift);
         overflow: hidden;
+        overscroll-behavior: contain;
       }
 
       .page-brokers .broker-modal-head {
@@ -432,10 +436,15 @@
       }
 
       .page-brokers .broker-modal-body {
-        display: grid;
+        display: flex;
+        flex-direction: column;
         gap: 14px;
         padding: 16px 18px 18px;
-        overflow-y: auto;
+        overflow: visible;
+      }
+
+      body.page-brokers.broker-settings-open {
+        overflow: hidden;
       }
 
       .page-brokers .broker-accordion {
@@ -494,18 +503,15 @@
       }
 
       .page-brokers .broker-accordion-body {
-        display: grid;
-        grid-template-rows: 0fr;
-        transition: grid-template-rows 160ms ease;
+        display: none;
       }
 
       .page-brokers .broker-accordion.is-open .broker-accordion-body {
-        grid-template-rows: 1fr;
+        display: block;
       }
 
       .page-brokers .broker-accordion-panel {
-        min-height: 0;
-        overflow: hidden;
+        overflow: visible;
       }
 
       .page-brokers .broker-form {
@@ -649,10 +655,7 @@
         }
 
         .page-brokers .broker-modal-panel {
-          top: 10px;
-          right: 10px;
-          bottom: 10px;
-          width: calc(100vw - 20px);
+          width: 100%;
         }
       }
 

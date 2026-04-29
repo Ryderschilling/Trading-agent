@@ -176,3 +176,48 @@ test("rules update handler forwards simplified MA cross strategies", () => {
   assert.equal(captured?.name, "MA Pullback");
   assert.equal(captured?.config?.setupType, "ma_cross");
 });
+
+test("ai operator run handler forwards prompt and dry-run mode", async () => {
+  let captured: any = null;
+  const app = createHttpApp({
+    publicDir: process.cwd(),
+    getAlerts: () => [],
+    getWatchlist: () => [],
+    addSymbol: () => undefined,
+    removeSymbol: () => undefined,
+    httpGetJson: async () => ({}),
+    runAiOperator: async (request) => {
+      captured = request;
+      return {
+        ok: true,
+        dryRun: true,
+        summary: "planned",
+        assistantMessage: "done",
+        assumptions: [],
+        warnings: [],
+        actions: [],
+        results: [],
+      };
+    },
+  });
+
+  const handler = getRouteHandler(app, "/api/agent/run", "post");
+  const res = makeRes();
+
+  await handler(
+    {
+      body: {
+        message: "Create a strategy and test it.",
+        dryRun: true,
+        mode: "chat",
+      },
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(captured?.message, "Create a strategy and test it.");
+  assert.equal(captured?.dryRun, true);
+  assert.equal(captured?.mode, "chat");
+});

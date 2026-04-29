@@ -32,8 +32,10 @@ import { BrokerExecutionService } from "./broker/service";
 import { maskSecretConfig, mergeSecretConfig, normalizeExecutionPolicy } from "./broker/config";
 import { BrokerConfig } from "./broker/types";
 import { normalizeRulesetConfig } from "./rules/executionPolicy";
+import { AiOperatorService } from "./agent/service";
 import {
   buildOutcomeExecRules,
+  defaultStrategyDefinition,
   getStrategyEmaPeriods,
   getStrategyLookbackWindowBars,
   getStrategyRetestTolerancePct,
@@ -150,6 +152,27 @@ console.log("[ENV CHECK]", {
 // -----------------------------
 const db = openDb();
 const brokerExecution = new BrokerExecutionService(db);
+
+try {
+  const startupBrokerCfg = loadBrokerConfig(db);
+  if (startupBrokerCfg.brokerKey === "ibkr" && startupBrokerCfg.mode !== "disabled") {
+    void brokerExecution
+      .getStatus()
+      .then((status) => {
+        console.log("[ibkr] startup connectivity check", status);
+      })
+      .catch((error) => {
+        console.warn(
+          `[ibkr] startup connectivity check failed: ${error?.message || error}. Ensure IBKR Client Portal Gateway is running at the configured host:port and you are logged in.`
+        );
+      });
+  }
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `[ibkr] startup connectivity check failed: ${message}. Ensure IBKR Client Portal Gateway is running at the configured host:port and you are logged in.`
+  );
+}
 
 // keep alerts that have outcomes; prune truly orphaned old alerts
 try {
@@ -382,6 +405,44 @@ function deleteRulesetFn(version: number, _changedBy?: string) {
 // Load persisted watchlist / alerts / outcomes
 // -----------------------------
 let watch: string[] = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`).all().map((r: any) => String(r.symbol));
+
+// -----------------------------
+// Seed default watchlist if empty
+// -----------------------------
+const DEFAULT_WATCHLIST = ["AAPL", "GOOGL", "HOOD", "IWM", "NVDA", "PLTR", "QQQ", "SPY", "TSLA"];
+if (watch.length === 0) {
+  console.log("[startup] watchlist empty — seeding defaults:", DEFAULT_WATCHLIST.join(", "));
+  const insertSym = db.prepare(`INSERT OR IGNORE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`);
+  const seedTx = db.transaction(() => {
+    for (const sym of DEFAULT_WATCHLIST) {
+      insertSym.run(sym, resolveSectorEtf(sym) ?? null, Date.now());
+    }
+  });
+  seedTx();
+  watch = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`).all().map((r: any) => String(r.symbol));
+}
+
+// -----------------------------
+// Seed default PB-style strategy if no rulesets exist
+// -----------------------------
+{
+  const rulesetCount = (db.prepare(`SELECT COUNT(*) as c FROM rulesets`).get() as any)?.c ?? 0;
+  if (rulesetCount === 0) {
+    console.log("[startup] no rulesets found — seeding default PB break-retest strategy with EMA8");
+    const base = defaultStrategyDefinition("break_retest", "PB Break+Retest (EMA8)");
+    // Raw config: levels includes "moving_average" so normalizer wires up EMA8
+    const rawConfig = {
+      ...base,
+      setup: {
+        ...(base.setup as any),
+        levels: ["pmh", "pml", "pdh", "pdl", "vwap", "moving_average"],
+        movingAverage: { type: "EMA", values: [8] },
+      },
+    };
+    insertRuleset(db, "PB Break+Retest (EMA8)", rawConfig, "system:seed");
+    console.log("[startup] default strategy created");
+  }
+}
 
 const ALERT_TTL_MS = 6 * 60 * 60_000;
 
@@ -774,14 +835,13 @@ function getEffectiveMarketDir(): MarketDirection {
   const spy = computeIndexSide("SPY");
   const qqq = computeIndexSide("QQQ");
 
-  const indexAlignedBull = spy.side === "ABOVE" && qqq.side === "ABOVE";
-  const indexAlignedBear = spy.side === "BELOW" && qqq.side === "BELOW";
-
-  const symbols = normalizedWatchlist();
-  const bias = computeMarketBiasFromVwap(symbols);
-
-  if (bias === "BULLISH" && indexAlignedBull) return "BULLISH";
-  if (bias === "BEARISH" && indexAlignedBear) return "BEARISH";
+  // Direction is determined solely by SPY and QQQ VWAP alignment.
+  // Previously this also required 60%+ watchlist breadth, which was far too
+  // strict — it returned NEUTRAL during most normal market conditions and
+  // blocked all signal evaluation. The strategy-level "requireSpyQqqAlignment"
+  // filter maps directly to this check.
+  if (spy.side === "ABOVE" && qqq.side === "ABOVE") return "BULLISH";
+  if (spy.side === "BELOW" && qqq.side === "BELOW") return "BEARISH";
   return "NEUTRAL";
 }
 
@@ -1228,7 +1288,9 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
   const benchBars = symbol === "SPY" ? qqqBars : spyBars;
 
   const effDir = getEffectiveMarketDir();
-  if (effDir === "NEUTRAL") return;
+  // Do not early-return on NEUTRAL: pass it to the engine so it can properly
+  // invalidate any BROKEN states (emitting "SETUP INVALID — STAND DOWN") and
+  // keep internal state consistent. The engine itself blocks new signals when NEUTRAL.
 
   const alert = r.engine.evaluateSymbol({
     symbol,
@@ -1236,7 +1298,8 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
     spyBars5: benchBars,
     symBars5: symBars,
     symLevels: getLevels(symbol),
-    nowTs: ts
+    nowTs: ts,
+    symVwap: getVwap(symbol)
   });
 
   if (alert) {
@@ -1517,12 +1580,39 @@ async function replayBars(symbols: string[], minutes: number, emitAlerts: boolea
 
 async function runStartupBackfill() {
   const syms = streamSymbols();
-  console.log(`[backfill] starting for ${syms.length} symbols (1m)`);
+  console.log(`[backfill] starting for ${syms.length} symbols (5d range)`);
 
   const ordered = ["SPY", "QQQ", ...syms.filter((s) => s !== "SPY" && s !== "QQQ")];
+
+  // Fetch 5 full calendar days so the previous trading session is always included,
+  // even after 3-day holiday weekends (Mon startup → must reach prior Friday).
+  // This populates PDH/PDL via the onBarUpdateLevels day-rollover logic.
+  const startMs = Date.now() - 5 * 24 * 60 * 60_000;
+  const endMs = Date.now();
+
   for (const s of ordered) {
-    try { await backfillSymbol1m(s, 300); } catch { console.log(`[backfill] failed ${s}`); }
+    try {
+      const bars = await fetchBars1mRange(s, startMs, endMs);
+      for (const b of bars) {
+        const ts = new Date(b.t).getTime();
+        if (!Number.isFinite(ts)) continue;
+        ingestMinuteBar(s, ts, b.o, b.h, b.l, b.c, b.v, true);
+      }
+      console.log(`[backfill] ${s} — ${bars.length} bars`);
+    } catch (e) {
+      console.log(`[backfill] failed ${s}:`, e);
+    }
   }
+
+  // Prime streamStats.lastBarTs from the most recent bar in the DB so the health
+  // indicator shows correct status before the first live WebSocket bar arrives.
+  try {
+    const latest = db.prepare("SELECT MAX(ts) as ts FROM candles_1m").get() as any;
+    if (latest?.ts && Number.isFinite(Number(latest.ts))) {
+      streamStats.lastBarTs = Number(latest.ts);
+      console.log(`[backfill] primed streamStats.lastBarTs = ${new Date(Number(latest.ts)).toISOString()}`);
+    }
+  } catch {}
 
   recomputeSignalsAndBroadcast();
   console.log("[backfill] done");
@@ -1748,6 +1838,47 @@ async function runReplayBacktest(cfg: {
 // -----------------------------
 // HTTP app wiring
 // -----------------------------
+async function addSymbolToWatchlist(s: string) {
+  const sym = String(s || "").trim().toUpperCase();
+  if (!sym) return;
+  if (!isValidSymbol(sym)) return;
+
+  if (!watch.includes(sym)) {
+    watch.push(sym);
+    const etf = await resolveSectorEtf(sym);
+    db.prepare(`INSERT OR REPLACE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`).run(sym, etf, Date.now());
+  }
+
+  refreshSubscriptions();
+  realtime?.broadcastWatchlist(normalizedWatchlist());
+}
+
+async function removeSymbolFromWatchlist(s: string) {
+  const sym = String(s || "").trim().toUpperCase();
+  if (!sym) return;
+
+  watch = watch.filter((x) => x !== sym);
+  db.prepare(`DELETE FROM watchlist WHERE symbol=?`).run(sym);
+
+  refreshSubscriptions();
+  realtime?.broadcastWatchlist(normalizedWatchlist());
+}
+
+const aiOperator = new AiOperatorService({
+  getRules,
+  listRulesets: () => listRulesets() as Array<{ version: number; name: string; active: boolean }>,
+  getRulesetByVersion: (version: number) => getRulesetByVersion(db, version),
+  getWatchlist: () => normalizedWatchlist(),
+  addSymbol: async (symbol: string) => addSymbolToWatchlist(symbol),
+  removeSymbol: async (symbol: string) => removeSymbolFromWatchlist(symbol),
+  saveRules: (name: string, config: any, changedBy?: string) => saveRules(name, config, changedBy),
+  updateRuleset: (version: number, name: string, config: any, changedBy?: string) =>
+    updateRulesetFn(version, name, config, changedBy),
+  setRulesetActive: (version: number, active: boolean) => setRulesetActiveFn(version, active),
+  createBacktestRun: (cfg: any) => backtestQueue.createRun(cfg),
+  listBacktestRuns: (opts: { limit: number; strategyVersion?: number }) => backtestQueue.listRuns(opts),
+});
+
 const app = createHttpApp({
   publicDir,
 
@@ -1766,6 +1897,8 @@ const app = createHttpApp({
   getBacktestTrades: (id: string) => backtestQueue.listTrades(id),
   getBacktestEquity: (id: string) => backtestQueue.getEquity(id),
   listBacktestRuns: (opts: { limit: number; strategyVersion?: number }) => backtestQueue.listRuns(opts),
+  getAiOperatorStatus: () => aiOperator.status(),
+  runAiOperator: (request: { message: string; dryRun?: boolean }) => aiOperator.run(request),
 
   // data for UI
   getAlerts: () => alerts,
@@ -1781,6 +1914,8 @@ const app = createHttpApp({
   saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
   getBrokerStatus: () => brokerExecution.getStatus(),
   getBrokerActivity: (limit?: number) => brokerExecution.getActivity(limit),
+  closeBrokerPosition: (symbol: string) => brokerExecution.closePosition(symbol),
+  setBrokerStop: (symbol: string, stopPrice: number, qty: number | null) => brokerExecution.setStopOrder(symbol, stopPrice, qty),
 
   httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
 
@@ -1792,31 +1927,8 @@ const app = createHttpApp({
 
   getMarketState: () => computeMarketState(),
 
-  addSymbol: async (s: string) => {
-    const sym = String(s || "").trim().toUpperCase();
-    if (!sym) return;
-    if (!isValidSymbol(sym)) return;
-
-    if (!watch.includes(sym)) {
-      watch.push(sym);
-      const etf = await resolveSectorEtf(sym);
-      db.prepare(`INSERT OR REPLACE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`).run(sym, etf, Date.now());
-    }
-
-    refreshSubscriptions();
-    realtime?.broadcastWatchlist(normalizedWatchlist());
-  },
-
-  removeSymbol: async (s: string) => {
-    const sym = String(s || "").trim().toUpperCase();
-    if (!sym) return;
-
-    watch = watch.filter((x) => x !== sym);
-    db.prepare(`DELETE FROM watchlist WHERE symbol=?`).run(sym);
-
-    refreshSubscriptions();
-    realtime?.broadcastWatchlist(normalizedWatchlist());
-  }
+  addSymbol: (s: string) => addSymbolToWatchlist(s),
+  removeSymbol: (s: string) => removeSymbolFromWatchlist(s)
 });
 
 // -----------------------------
@@ -1831,7 +1943,29 @@ realtime = attachRealtime(server, {
 });
 
 server.listen(PORT, () => {
-  console.log(`Dashboard: http://localhost:${PORT}`);
+  // ─────────────────────────────────────────────
+  // STARTUP SUMMARY
+  // ─────────────────────────────────────────────
+  const brokerCfg = (() => {
+    try { return loadBrokerConfig(db); } catch { return null; }
+  })();
+  const brokerKey = String(brokerCfg?.brokerKey || "none");
+  const brokerMode = String(brokerCfg?.mode || "disabled");
+  const strategyEntries = Array.from(runners.entries());
+  const strategyNames = strategyEntries.length
+    ? strategyEntries.map(([v, r]) => `${r.name} (v${v})`).join(", ")
+    : "none";
+  const watchSyms = normalizedWatchlist();
+
+  console.log("─".repeat(56));
+  console.log(`  Trading Agent — http://localhost:${PORT}`);
+  console.log("─".repeat(56));
+  console.log(`  Broker  : ${brokerKey} [${brokerMode}]`);
+  console.log(`  Strategies : ${strategyNames}`);
+  console.log(`  Watchlist  : ${watchSyms.length ? watchSyms.join(", ") : "empty"}`);
+  console.log(`  Data feed  : Alpaca ${FEED.toUpperCase()}`);
+  console.log(`  Auth       : ${process.env.AGENT_SECRET ? "AGENT_SECRET set (login required)" : "open (no AGENT_SECRET)"}`);
+  console.log("─".repeat(56));
 
   if (!HAS_KEYS) {
     console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");

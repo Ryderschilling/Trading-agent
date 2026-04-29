@@ -184,26 +184,43 @@ function migrate(db: Database.Database) {
       id            TEXT PRIMARY KEY,
       created_ts    INTEGER NOT NULL,
       updated_ts    INTEGER NOT NULL,
+      started_ts    INTEGER,
+      finished_ts   INTEGER,
       status        TEXT NOT NULL,
       tickers_json  TEXT NOT NULL,
       timeframe     TEXT NOT NULL,
       start_date    TEXT NOT NULL,
       end_date      TEXT NOT NULL,
       strategy_ver  INTEGER,
-      strategy_name TEXT
+      strategy_name TEXT,
+      config_json   TEXT,
+      config_hash   TEXT,
+      error         TEXT
     );
 
     CREATE TABLE IF NOT EXISTS backtest_trades (
+      trade_id   INTEGER PRIMARY KEY AUTOINCREMENT,
       run_id     TEXT NOT NULL,
-      seq        INTEGER NOT NULL,
-      ts         INTEGER NOT NULL,
-      symbol     TEXT NOT NULL,
+      seq        INTEGER,
+      ts         INTEGER,
+      symbol     TEXT,
+      ticker     TEXT,
       dir        TEXT NOT NULL,
+      level_key  TEXT,
+      level_price REAL,
+      entry_ts   INTEGER,
+      entry_price REAL,
+      stop_price REAL,
+      target_price REAL,
+      exit_ts    INTEGER,
+      exit_price REAL,
+      exit_reason TEXT,
+      r_mult     REAL,
+      bars_held  INTEGER,
       entry      REAL,
       exit       REAL,
       pnl        REAL,
-      meta_json  TEXT,
-      PRIMARY KEY (run_id, seq)
+      meta_json  TEXT
     );
 
     CREATE TABLE IF NOT EXISTS backtest_equity (
@@ -263,12 +280,80 @@ function migrate(db: Database.Database) {
     VALUES (1, '', 'disabled', '{}', '{}', 0);
   `);
 
+  if (!hasColumn(db, "broker_orders", "option_type")) {
+    db.exec(`ALTER TABLE broker_orders ADD COLUMN option_type TEXT;`);
+  }
+
   // Safety: older DBs may have outcomes without exec columns
   if (!hasColumn(db, "outcomes", "exit_reason")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_reason TEXT;`);
   if (!hasColumn(db, "outcomes", "exit_fill")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_fill REAL;`);
   if (!hasColumn(db, "outcomes", "exit_return_pct")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_return_pct REAL;`);
   if (!hasColumn(db, "outcomes", "stop_moved_to_be"))
     db.exec(`ALTER TABLE outcomes ADD COLUMN stop_moved_to_be INTEGER NOT NULL DEFAULT 0;`);
+
+  // Backtest runs: migrate legacy installs to the richer runtime schema.
+  if (!hasColumn(db, "backtest_runs", "started_ts")) {
+    db.exec(`ALTER TABLE backtest_runs ADD COLUMN started_ts INTEGER;`);
+  }
+  if (!hasColumn(db, "backtest_runs", "finished_ts")) {
+    db.exec(`ALTER TABLE backtest_runs ADD COLUMN finished_ts INTEGER;`);
+  }
+  if (!hasColumn(db, "backtest_runs", "config_json")) {
+    db.exec(`ALTER TABLE backtest_runs ADD COLUMN config_json TEXT;`);
+  }
+  if (!hasColumn(db, "backtest_runs", "config_hash")) {
+    db.exec(`ALTER TABLE backtest_runs ADD COLUMN config_hash TEXT;`);
+  }
+  if (!hasColumn(db, "backtest_runs", "error")) {
+    db.exec(`ALTER TABLE backtest_runs ADD COLUMN error TEXT;`);
+  }
+
+  // Backtest trades: keep legacy columns but add the richer fields used by current UI/runtime.
+  if (!hasColumn(db, "backtest_trades", "trade_id")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN trade_id INTEGER;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "ticker")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN ticker TEXT;`);
+    db.exec(`UPDATE backtest_trades SET ticker = symbol WHERE ticker IS NULL AND symbol IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "level_key")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN level_key TEXT;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "level_price")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN level_price REAL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "entry_ts")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN entry_ts INTEGER;`);
+    db.exec(`UPDATE backtest_trades SET entry_ts = ts WHERE entry_ts IS NULL AND ts IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "entry_price")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN entry_price REAL;`);
+    db.exec(`UPDATE backtest_trades SET entry_price = entry WHERE entry_price IS NULL AND entry IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "stop_price")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN stop_price REAL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "target_price")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN target_price REAL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "exit_ts")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN exit_ts INTEGER;`);
+    db.exec(`UPDATE backtest_trades SET exit_ts = ts WHERE exit_ts IS NULL AND ts IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "exit_price")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN exit_price REAL;`);
+    db.exec(`UPDATE backtest_trades SET exit_price = exit WHERE exit_price IS NULL AND exit IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "exit_reason")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN exit_reason TEXT;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "r_mult")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN r_mult REAL;`);
+    db.exec(`UPDATE backtest_trades SET r_mult = pnl WHERE r_mult IS NULL AND pnl IS NOT NULL;`);
+  }
+  if (!hasColumn(db, "backtest_trades", "bars_held")) {
+    db.exec(`ALTER TABLE backtest_trades ADD COLUMN bars_held INTEGER;`);
+  }
 }
 
 export function migrateDb(db: Database.Database) {
@@ -401,17 +486,18 @@ export function saveBrokerConfig(db: Database.Database, next: any) {
 export function insertBrokerOrder(db: Database.Database, row: BrokerOrderRecord) {
   db.prepare(
     `INSERT INTO broker_orders(
-      ts, day_key, alert_id, symbol, direction, setup_key, broker_key, mode,
+      ts, day_key, alert_id, symbol, direction, option_type, setup_key, broker_key, mode,
       client_order_id, broker_order_id, status, broker_status, reason,
       sizing_mode, qty, notional, order_type, time_in_force,
       extended_hours, bracket_enabled, strategy_version, request_json, response_json
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     row.ts,
     row.dayKey,
     row.alertId,
     row.symbol,
     row.direction,
+    row.optionType ?? null,
     row.setupKey,
     row.brokerKey,
     row.mode,
@@ -445,7 +531,7 @@ export function listBrokerOrders(db: Database.Database, limit = 25): BrokerActiv
   const rows = db
     .prepare(
       `SELECT
-        id, ts, day_key, alert_id, symbol, direction, setup_key, broker_key, mode,
+        id, ts, day_key, alert_id, symbol, direction, option_type, setup_key, broker_key, mode,
         client_order_id, broker_order_id, status, broker_status, reason, sizing_mode,
         qty, notional, order_type, time_in_force, extended_hours, bracket_enabled,
         strategy_version, request_json, response_json
@@ -462,6 +548,10 @@ export function listBrokerOrders(db: Database.Database, limit = 25): BrokerActiv
     alertId: row.alert_id == null ? null : String(row.alert_id),
     symbol: String(row.symbol),
     direction: String(row.direction) as BrokerOrderRecord["direction"],
+    optionType:
+      row.option_type == null
+        ? null
+        : (String(row.option_type) as BrokerOrderRecord["optionType"]),
     setupKey: String(row.setup_key),
     brokerKey: String(row.broker_key),
     mode: String(row.mode) as BrokerOrderRecord["mode"],

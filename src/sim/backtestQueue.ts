@@ -138,6 +138,17 @@ function tfFromMinutes(tfMin: number): BacktestConfig["timeframe"] {
   return "1m";
 }
 
+function legacyConfigFromRow(row: any) {
+  return {
+    tickers: safeJson(row?.tickers_json) || [],
+    timeframe: String(row?.timeframe || "1m"),
+    startDate: String(row?.start_date || ""),
+    endDate: String(row?.end_date || ""),
+    strategyVersion: row?.strategy_ver == null ? undefined : Number(row.strategy_ver),
+    strategyName: row?.strategy_name == null ? undefined : String(row.strategy_name),
+  };
+}
+
 export class BacktestQueue {
     private q: Array<{ runId: string; config: any }> = [];
   private running = false;
@@ -259,10 +270,29 @@ try {
   
     this.db
       .prepare(
-        `INSERT INTO backtest_runs(id, created_ts, status, config_json, config_hash)
-         VALUES(?,?,?,?,?)`
+        `INSERT INTO backtest_runs(
+          id, created_ts, updated_ts, started_ts, finished_ts, status,
+          tickers_json, timeframe, start_date, end_date, strategy_ver, strategy_name,
+          config_json, config_hash, error
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
-      .run(runId, now, "QUEUED", JSON.stringify(cfg), h);
+      .run(
+        runId,
+        now,
+        now,
+        null,
+        null,
+        "QUEUED",
+        JSON.stringify(cfg.tickers || []),
+        String(cfg.timeframe || "1m"),
+        String(cfg.startDate || ""),
+        String(cfg.endDate || ""),
+        cfg.strategyVersion == null ? null : Number(cfg.strategyVersion),
+        cfg.strategyName == null ? null : String(cfg.strategyName),
+        JSON.stringify(cfg),
+        h,
+        null
+      );
   
     this.enqueue(runId, cfg);
     return { runId, reused: false };
@@ -280,6 +310,7 @@ try {
     } catch {
       cfg = null;
     }
+    if (!cfg) cfg = legacyConfigFromRow(row);
 
     const metricsRow = this.db
       .prepare(`SELECT metrics_json FROM backtest_metrics WHERE run_id=?`)
@@ -314,7 +345,8 @@ try {
 
     const rows = this.db
       .prepare(
-        `SELECT id, created_ts, started_ts, finished_ts, status, config_json, error
+        `SELECT id, created_ts, started_ts, finished_ts, status, config_json, error,
+                tickers_json, timeframe, start_date, end_date, strategy_ver, strategy_name
          FROM backtest_runs
          ORDER BY created_ts DESC
          LIMIT ?`
@@ -322,7 +354,7 @@ try {
       .all(limit) as any[];
 
     const out = rows.map((r) => {
-      const cfg = safeJson(r.config_json) || null;
+      const cfg = safeJson(r.config_json) || legacyConfigFromRow(r);
 
       const metricsRow = this.db
         .prepare(`SELECT metrics_json FROM backtest_metrics WHERE run_id=?`)
@@ -353,10 +385,25 @@ try {
   listTrades(runId: string, limit = 5000) {
     const rows = this.db
       .prepare(
-        `SELECT trade_id, ticker, dir, level_key, level_price, entry_ts, entry_price, stop_price, target_price, exit_ts, exit_price, exit_reason, r_mult, bars_held, meta_json
+        `SELECT
+           COALESCE(trade_id, seq) AS trade_id,
+           COALESCE(ticker, symbol) AS ticker,
+           dir,
+           level_key,
+           level_price,
+           COALESCE(entry_ts, ts) AS entry_ts,
+           COALESCE(entry_price, entry) AS entry_price,
+           stop_price,
+           target_price,
+           COALESCE(exit_ts, ts) AS exit_ts,
+           COALESCE(exit_price, exit) AS exit_price,
+           exit_reason,
+           COALESCE(r_mult, pnl) AS r_mult,
+           bars_held,
+           meta_json
          FROM backtest_trades
          WHERE run_id=?
-         ORDER BY trade_id ASC
+         ORDER BY COALESCE(trade_id, seq) ASC
          LIMIT ?`
       )
       .all(String(runId), Number(limit)) as any[];
@@ -504,7 +551,7 @@ try {
   private async runJob(job: { runId: string; config: BacktestConfig }) {
     const { runId, config } = job;
     const started = Date.now();
-    this.db.prepare(`UPDATE backtest_runs SET status='RUNNING', started_ts=? WHERE id=?`).run(started, runId);
+    this.db.prepare(`UPDATE backtest_runs SET status='RUNNING', started_ts=?, updated_ts=? WHERE id=?`).run(started, started, runId);
 
     try {
       const candlesByTicker: Record<string, Candle[]> = {};
@@ -535,15 +582,21 @@ try {
 
         const insTrade = this.db.prepare(
           `INSERT INTO backtest_trades(
-            run_id, ticker, dir, level_key, level_price,
+            run_id, trade_id, seq, ts, symbol, ticker, dir, level_key, level_price,
             entry_ts, entry_price, stop_price, target_price,
-            exit_ts, exit_price, exit_reason, r_mult, bars_held, meta_json
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+            exit_ts, exit_price, exit_reason, r_mult, bars_held, entry, exit, pnl, meta_json
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
         );
 
-        for (const tr of result.trades) {
+        for (let i = 0; i < result.trades.length; i++) {
+          const tr = result.trades[i];
+          const seq = i + 1;
           insTrade.run(
             runId,
+            seq,
+            seq,
+            tr.entryTs,
+            tr.ticker,
             tr.ticker,
             tr.dir,
             tr.levelKey,
@@ -557,6 +610,9 @@ try {
             tr.exitReason,
             tr.rMult,
             tr.barsHeld,
+            tr.entryPrice,
+            tr.exitPrice,
+            tr.rMult,
             tr.meta ? JSON.stringify(tr.meta) : null
           );
         }
@@ -576,16 +632,16 @@ try {
         }
 
         this.db
-          .prepare(`UPDATE backtest_runs SET status='DONE', finished_ts=?, error=NULL WHERE id=?`)
-          .run(Date.now(), runId);
+          .prepare(`UPDATE backtest_runs SET status='DONE', finished_ts=?, updated_ts=?, error=NULL WHERE id=?`)
+          .run(Date.now(), Date.now(), runId);
       });
 
       tx();
     } catch (e: any) {
       const msg = String(e?.message || e || "backtest failed");
       this.db
-        .prepare(`UPDATE backtest_runs SET status='FAILED', finished_ts=?, error=? WHERE id=?`)
-        .run(Date.now(), msg, runId);
+        .prepare(`UPDATE backtest_runs SET status='FAILED', finished_ts=?, updated_ts=?, error=? WHERE id=?`)
+        .run(Date.now(), Date.now(), msg, runId);
     }
   }
 }

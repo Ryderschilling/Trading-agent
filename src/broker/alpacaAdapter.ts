@@ -6,6 +6,7 @@ import {
   BrokerOpenOrderSnapshot,
   BrokerPositionSnapshot,
   BrokerSubmitOrderRequest,
+  BrokerSubmitOptionsOrderRequest,
   BrokerSubmitOrderResult,
 } from "./types";
 
@@ -24,7 +25,7 @@ function baseUrlForMode(mode: BrokerMode) {
 }
 
 function requestJson(args: {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "DELETE";
   url: string;
   headers: Record<string, string>;
   body?: any;
@@ -44,6 +45,12 @@ function requestJson(args: {
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
+          // 204 No Content — success with no body
+          if (res.statusCode === 204) {
+            resolve(null);
+            return;
+          }
+
           let parsed: any = null;
           try {
             parsed = data ? JSON.parse(data) : null;
@@ -159,5 +166,56 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
       brokerStatus: raw?.status == null ? null : String(raw.status),
       raw,
     };
+  }
+
+  async submitOptionsOrder(_input: BrokerSubmitOptionsOrderRequest): Promise<BrokerSubmitOrderResult> {
+    throw new Error("Alpaca does not support options orders");
+  }
+
+  async closePosition(symbol: string): Promise<void> {
+    // Cancel any open orders for this symbol first so Alpaca has full qty available
+    try {
+      const openOrders: any[] = await requestJson({
+        method: "GET",
+        url: `${this.baseUrl}/v2/orders?status=open&limit=500`,
+        headers: this.headers,
+      }) ?? [];
+      const matching = (Array.isArray(openOrders) ? openOrders : [])
+        .filter((o: any) => String(o?.symbol || "").toUpperCase() === symbol.toUpperCase());
+      await Promise.all(
+        matching.map((o: any) =>
+          requestJson({ method: "DELETE", url: `${this.baseUrl}/v2/orders/${encodeURIComponent(String(o.id))}`, headers: this.headers }).catch(() => {})
+        )
+      );
+      // Give Alpaca a moment to process cancellations before closing
+      if (matching.length > 0) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    } catch {
+      // If order fetch fails, proceed anyway — Alpaca's DELETE position also tries to cancel
+    }
+
+    await requestJson({
+      method: "DELETE",
+      url: `${this.baseUrl}/v2/positions/${encodeURIComponent(symbol)}`,
+      headers: this.headers,
+    });
+  }
+
+  async setStopOrder(symbol: string, stopPrice: number, qty: number | null): Promise<any> {
+    const body: Record<string, unknown> = {
+      symbol,
+      side: "sell",
+      type: "stop",
+      time_in_force: "gtc",
+      stop_price: String(stopPrice),
+    };
+    if (qty != null && qty > 0) {
+      body.qty = String(qty);
+    } else {
+      // Fallback: close full position — use notional 0 trick isn't valid; require qty
+      throw new Error("qty required to place stop order");
+    }
+    return requestJson({ method: "POST", url: `${this.baseUrl}/v2/orders`, headers: this.headers, body });
   }
 }

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Login • Trading Agent</title>
+    <link rel="stylesheet" href="/styles-v4.css" />
+    <style>
+      .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .login-card {
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 40px 36px;
+        width: 100%;
+        max-width: 380px;
+      }
+      .login-logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+      }
+      .login-logo img {
+        height: 48px;
+        width: auto;
+        object-fit: contain;
+      }
+      .login-logo span {
+        font-weight: 800;
+        font-size: 1.1rem;
+        letter-spacing: -0.2px;
+      }
+      .login-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: var(--text);
+      }
+      .login-sub {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+      .login-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .login-field label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .login-field input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 0.95rem;
+        outline: none;
+        box-sizing: border-box;
+      }
+      .login-field input:focus {
+        border-color: var(--accent);
+      }
+      .login-btn {
+        width: 100%;
+        padding: 11px;
+        background: var(--text);
+        color: var(--card);
+        border: none;
+        border-radius: 10px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        letter-spacing: 0.01em;
+      }
+      .login-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .login-error {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: rgba(255, 83, 83, 0.12);
+        color: #ff5353;
+        font-size: 0.85rem;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bg-wash"></div>
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">
+          <img src="/logo.PNG" alt="Logo" />
+          <span>Trading Agent</span>
+        </div>
+        <div class="login-title">Sign in</div>
+        <div class="login-sub">Enter your access token to continue.</div>
+
+        <form id="loginForm" autocomplete="off">
+          <div class="login-field">
+            <label for="tokenInput">Access Token</label>
+            <input
+              id="tokenInput"
+              type="password"
+              placeholder="••••••••"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+          <button class="login-btn" type="submit" id="loginBtn">Sign in</button>
+        </form>
+
+        <div class="login-error" id="loginError"></div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById("loginForm");
+      const tokenInput = document.getElementById("tokenInput");
+      const loginBtn = document.getElementById("loginBtn");
+      const loginError = document.getElementById("loginError");
+
+      function showError(msg) {
+        loginError.textContent = msg;
+        loginError.style.display = "block";
+      }
+
+      function hideError() {
+        loginError.style.display = "none";
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        hideError();
+        const token = tokenInput.value.trim();
+        if (!token) return;
+
+        loginBtn.disabled = true;
+        loginBtn.textContent = "Signing in…";
+
+        try {
+          const res = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token })
+          });
+
+          if (res.ok) {
+            try { sessionStorage.setItem("agent_token", token); } catch {}
+            window.location.replace("/");
+          } else {
+            const j = await res.json().catch(() => ({}));
+            showError(j?.error || "Invalid token. Please try again.");
+          }
+        } catch {
+          showError("Could not connect to server. Try again.");
+        } finally {
+          loginBtn.disabled = false;
+          loginBtn.textContent = "Sign in";
+        }
+      });
+    </script>
+  </body>
+</html>

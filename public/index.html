@@ -40,6 +40,36 @@
     <main class="shell">
       <section class="stack">
 
+        <!-- P&L stat row -->
+        <div class="stat-row">
+          <div class="stat-tile">
+            <div class="stat-tile-label">Account Equity</div>
+            <div class="stat-tile-value" id="statEquity">—</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Cash Available</div>
+            <div class="stat-tile-value" id="statCash">—</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Unrealized P&amp;L</div>
+            <div class="stat-tile-value" id="statPnl">—</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Open Positions</div>
+            <div class="stat-tile-value" id="statPositions">—</div>
+          </div>
+        </div>
+
+        <section id="dataHealthBanner" class="feed-banner" style="display:none;" aria-live="polite">
+          <div class="feed-banner-head">
+            <div id="dataHealthTitle" class="feed-banner-title">Trading Paused</div>
+            <div id="dataHealthMeta" class="feed-banner-meta">Waiting for live market data.</div>
+          </div>
+          <div id="dataHealthBody" class="feed-banner-body">
+            Fresh bars are required before the platform can surface new setups or submit trades.
+          </div>
+        </section>
+
         <!-- ROW 1: Activity feed (full width) -->
         <div class="card">
           <div class="card-head">
@@ -71,12 +101,12 @@
           <div class="card">
             <div class="card-head">
               <div>
-                <div class="card-title">Confirmed A+</div>
+                <div class="card-title">Live Trades</div>
               </div>
             </div>
 
-            <div id="aPlusEmpty" class="small" style="padding: 12px;">No confirmed A+ entries yet.</div>
-            <div class="list" id="aPlusList"></div>
+            <div id="liveTradesEmpty" class="small" style="padding: 12px;">No open positions.</div>
+            <div class="list" id="liveTradesList"></div>
           </div>
 
           <div class="card">
@@ -94,7 +124,18 @@
       </section>
     </main>
 
+    <!-- Trade management modal -->
+    <div id="tradeModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.65); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:20px;">
+      <div style="width:min(680px, calc(100vw - 40px)); background:#0e121a; border:1px solid rgba(255,255,255,0.10); border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,0.6); overflow:hidden;">
+        <div class="card-head" style="padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.07);">
+          <div id="tradeModalTitle" class="card-title" style="font-size:15px;"></div>
+          <button id="tradeModalClose" style="background:none;border:none;color:var(--muted,#888);cursor:pointer;font-size:22px;line-height:1;padding:0 4px;">×</button>
+        </div>
+        <div id="tradeModalBody" style="padding:20px;"></div>
+      </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/app.js?v=12"></script>
+    <script src="/app.js?v=BUILD_TS"></script>
   </body>
 </html>

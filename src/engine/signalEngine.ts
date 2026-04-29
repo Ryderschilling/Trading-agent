@@ -238,8 +238,9 @@ export class SignalEngine {
     symBars5: Bar5[];
     symLevels: Levels;
     nowTs?: number; // pass bar-close ts from caller for replay determinism
+    symVwap?: number | null; // per-symbol VWAP for EMA/VWAP confirmation filters
   }): Alert | null {
-    const { symbol, marketDir, spyBars5, symBars5, symLevels, nowTs } = args;
+    const { symbol, marketDir, spyBars5, symBars5, symLevels, nowTs, symVwap } = args;
 
     const last = symBars5.at(-1);
     if (!last) return null;
@@ -297,7 +298,16 @@ export class SignalEngine {
       return null;
     }
 
+    // EMA8 + VWAP confirmation filters (PB Investing style):
+    // CALL: price must be above 8 EMA and above VWAP to confirm bullish bias
+    // PUT:  price must be below 8 EMA and below VWAP to confirm bearish bias
+    const ema8 = ctx.ema?.[8];
+
     if (dir === "CALL") {
+      // Price must be above 8 EMA (if computed) and above VWAP (if available)
+      if (ema8 != null && last.c <= ema8) return null;
+      if (symVwap != null && last.c <= symVwap) return null;
+
       const candidates: LevelType[] = ["PMH", "PDH"];
       for (const lt of candidates) {
         const lp = getLevelPrice(symLevels, lt);
@@ -310,6 +320,10 @@ export class SignalEngine {
         }
       }
     } else {
+      // Price must be below 8 EMA (if computed) and below VWAP (if available)
+      if (ema8 != null && last.c >= ema8) return null;
+      if (symVwap != null && last.c >= symVwap) return null;
+
       const candidates: LevelType[] = ["PML", "PDL"];
       for (const lt of candidates) {
         const lp = getLevelPrice(symLevels, lt);

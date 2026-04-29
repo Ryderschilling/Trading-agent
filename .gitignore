@@ -51,3 +51,6 @@ data/*.sqlite
 data/*.sqlite-wal
 data/*.sqlite-shm
 *.db
+
+# macOS FUSE filesystem artifacts
+data/.fuse_hidden*

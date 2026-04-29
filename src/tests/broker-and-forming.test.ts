@@ -136,7 +136,7 @@ test("execution service records duplicate skips and failure isolation without th
     dayKey: "2026-03-23",
     alertId: alert.id,
     symbol: alert.symbol,
-    direction: "CALL",
+    direction: "LONG",
     setupKey: buildSetupKey(alert),
     brokerKey: "alpaca",
     mode: "paper",
