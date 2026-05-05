@@ -6,11 +6,13 @@ import fs from "fs";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { computeMarketDirection, Bar5, MarketDirection } from "./market/marketDirection";
-import { isRegularSessionNY, nyDayKey } from "./market/time";
+import { isRegularSessionNY, isFirstHourNY, nyDayKey } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
 import { OutcomeTracker } from "./engine/outcomeTracker";
+import { ExecutionEngine } from "./engine/executionEngine";
+import { PositionManager } from "./engine/positionManager";
 import { createHttpApp } from "./server/http";
 import { attachRealtime } from "./server/realtime";
 
@@ -23,6 +25,12 @@ const STRUCTURE_WINDOW = Number(process.env.STRUCTURE_WINDOW || 3);
 const RS_WINDOW_BARS = Number(process.env.RS_WINDOW_BARS_5M || 3);
 
 const TRACK_WINDOW_MIN = Number(process.env.TRACK_WINDOW_MINUTES || 60);
+
+const EXECUTION_ENABLED = process.env.EXECUTION_ENABLED === "true";
+const ALPACA_BASE_URL = process.env.ALPACA_BASE_URL || "https://paper-api.alpaca.markets";
+const RISK_PCT = Number(process.env.RISK_PCT_PER_TRADE || 0.02);
+const MAX_TRADES_PER_DAY = Number(process.env.MAX_TRADES_PER_DAY || 5);
+const DAILY_LOSS_LIMIT_PCT = Number(process.env.DAILY_LOSS_LIMIT_PCT || 0.05);
 
 const KEY = process.env.APCA_API_KEY_ID || "";
 const SECRET = process.env.APCA_API_SECRET_KEY || "";
@@ -206,6 +214,27 @@ function biasToMarketDir(bias: "BULLISH" | "BEARISH" | "NEUTRAL"): MarketDirecti
 let lastSignalsBroadcast = 0;
 
 // -----------------------------
+// Execution engine + position manager
+// -----------------------------
+const executionEngine = new ExecutionEngine({
+  baseUrl: ALPACA_BASE_URL,
+  key: KEY,
+  secret: SECRET,
+  riskPct: RISK_PCT
+});
+
+const positionManager = new PositionManager(executionEngine, {
+  maxTradesPerDay: MAX_TRADES_PER_DAY,
+  dailyLossLimitPct: DAILY_LOSS_LIMIT_PCT
+});
+
+if (EXECUTION_ENABLED) {
+  console.log(`[exec] Execution ENABLED → paper=${ALPACA_BASE_URL} risk=${RISK_PCT * 100}% maxTrades=${MAX_TRADES_PER_DAY}`);
+} else {
+  console.log("[exec] Execution DISABLED (set EXECUTION_ENABLED=true to enable)");
+}
+
+// -----------------------------
 // Engine + tracker
 // -----------------------------
 const engine = new SignalEngine({
@@ -218,6 +247,12 @@ const outcomeTracker = new OutcomeTracker({
   trackWindowMin: TRACK_WINDOW_MIN,
   checkpointsMin: [1, 3, 5, 10, 15, 30, 60]
 });
+
+// -----------------------------
+// 1m bar storage (for chart display)
+// -----------------------------
+type Bar1 = { t: number; o: number; h: number; l: number; c: number; v: number; vwap: number | null };
+const bars1Map = new Map<string, Bar1[]>();
 
 // -----------------------------
 // 5m aggregation
@@ -334,6 +369,7 @@ const app = createHttpApp({
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
 
   getDbRows,
+  getBars1: (sym: string) => bars1Map.get(sym) ?? [],
 
   addSymbol: (s: string) => {
     const sym = s.toUpperCase();
@@ -368,6 +404,77 @@ server.listen(PORT, () => {
 });
 
 // -----------------------------
+// Historical seed (levels + RS warmup)
+// -----------------------------
+async function seedHistory() {
+  if (!HAS_KEYS) return;
+
+  const DATA_BASE = "https://data.alpaca.markets";
+  const hdrs: Record<string, string> = {
+    "APCA-API-KEY-ID": KEY,
+    "APCA-API-SECRET-KEY": SECRET
+  };
+  const syms = streamSymbols();
+  console.log(`[seed] Seeding ${syms.length} symbols...`);
+
+  try {
+    // 2 days of 5m bars: yesterday RTH sets curRthHigh/Low, today pre-market sets PMH/PML
+    const start = new Date(Date.now() - 2 * 24 * 60 * 60_000).toISOString();
+    const params = new URLSearchParams({
+      symbols: syms.join(","),
+      timeframe: "5Min",
+      start,
+      limit: "10000",
+      adjustment: "raw",
+      feed: FEED
+    });
+
+    const res = await fetch(`${DATA_BASE}/v2/stocks/bars?${params}`, { headers: hdrs });
+    if (!res.ok) {
+      console.warn(`[seed] fetch failed: ${res.status} ${await res.text().catch(() => "")}`);
+      return;
+    }
+
+    type RawBar = { t: string; o: number; h: number; l: number; c: number; v: number };
+    const data = (await res.json()) as { bars?: Record<string, RawBar[]> };
+
+    for (const [rawSym, bars] of Object.entries(data.bars ?? {})) {
+      const symbol = rawSym.toUpperCase();
+      const sorted = [...bars].sort((a, b) => a.t.localeCompare(b.t));
+
+      // Process ALL bars through level + vwap trackers (same as live bar handler)
+      // The onBarUpdateLevels rollover will auto-set PDH/PDL when today's first bar arrives
+      for (const bar of sorted) {
+        const ts = new Date(bar.t).getTime();
+        updateVwap(symbol, ts, bar.h, bar.l, bar.c, bar.v);
+        onBarUpdateLevels(getLevels(symbol), ts, bar.h, bar.l);
+        lastPriceMap.set(symbol, bar.c);
+      }
+
+      // Push last 20 bars into bars5 buffer for RS warmup
+      const recent = sorted.slice(-20);
+      for (const bar of recent) {
+        const ts = new Date(bar.t).getTime();
+        pushBar5(symbol, { t: ts, o: bar.o, h: bar.h, l: bar.l, c: bar.c });
+      }
+    }
+
+    // Log seeded levels so we can confirm they loaded
+    const levelLog = syms.map((sym) => {
+      const lv = getLevels(sym);
+      return `${sym}(PMH=${lv.pmh?.toFixed(2) ?? "—"} PDH=${lv.pdh?.toFixed(2) ?? "—"})`;
+    }).join("  ");
+    console.log(`[seed] Levels: ${levelLog}`);
+
+    // Recompute market direction now that bars5 buffers are warm
+    recomputeMarketDir();
+    console.log("[seed] Done");
+  } catch (e) {
+    console.error("[seed] Error:", e);
+  }
+}
+
+// -----------------------------
 // Alpaca stream
 // -----------------------------
 let stream: AlpacaStream | null = null;
@@ -396,7 +503,8 @@ if (HAS_KEYS) {
     }
   );
 
-  stream.connect();
+  // Seed historical levels + RS warmup, then connect stream
+  seedHistory().then(() => stream!.connect());
 }
 
 let currentSubs: string[] = [];
@@ -503,15 +611,27 @@ function recomputeSignalsAndBroadcast() {
 function onAlpacaBar(b: AlpacaBarMsg) {
     const symbol = String((b as any).S ?? (b as any).symbol ?? "").toUpperCase();
     const ts = isoToMs(b.t);
-  
+
     // Debug (temporary)
     if (symbol === "SPY" || symbol === "QQQ") {
       console.log(`[bar] ${symbol} t=${b.t} c=${b.c} v=${b.v}`);
     }
-  
+
+    // Reset daily counters if a new trading day has started
+    positionManager.resetIfNewDay(ts);
+
     updateVwap(symbol, ts, b.h, b.l, b.c, b.v);
     onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
-  
+
+    // Store 1m bar for chart display (capped at 500 bars per symbol)
+    const bar1: Bar1 = { t: ts, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, vwap: getVwap(symbol) };
+    {
+      let arr1 = bars1Map.get(symbol);
+      if (!arr1) { arr1 = []; bars1Map.set(symbol, arr1); }
+      arr1.push(bar1);
+      if (arr1.length > 500) arr1.shift();
+    }
+
     // Update outcome sessions from minute bar
     const doneFromMinute = outcomeTracker.onMinuteBar({
       symbol,
@@ -529,37 +649,43 @@ function onAlpacaBar(b: AlpacaBarMsg) {
       }
     }
   
-    // 1m tap entries
-    const entry = engine.onMinuteBar({
-      symbol,
-      ts,
-      high: b.h,
-      low: b.l,
-      close: b.c,
-      marketDir: getEffectiveMarketDir()
-    });
-  
-    if (entry) {
-      const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
-      if (structureLevel != null && Number.isFinite(structureLevel)) {
-        const tradeDir: TradeDirection =
-          entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
-  
-        outcomeTracker.startSession({
-          alertId: entry.id,
-          symbol: entry.symbol,
-          dir: tradeDir,
-          structureLevel,
-          entryTs: entry.ts,
-          entryRefPrice: entry.close
-        });
+    // 1m tap entries — only during the first hour of regular session (9:30–10:30 AM ET)
+    if (isFirstHourNY(ts)) {
+      const entry = engine.onMinuteBar({
+        symbol,
+        ts,
+        high: b.h,
+        low: b.l,
+        close: b.c,
+        marketDir: getEffectiveMarketDir()
+      });
+
+      if (entry) {
+        const structureLevel = entry.structureLevel ?? entry.levelPrice ?? null;
+        if (structureLevel != null && Number.isFinite(structureLevel)) {
+          const tradeDir: TradeDirection =
+            entry.dir === "CALL" ? "LONG" : entry.dir === "PUT" ? "SHORT" : "LONG";
+
+          outcomeTracker.startSession({
+            alertId: entry.id,
+            symbol: entry.symbol,
+            dir: tradeDir,
+            structureLevel,
+            entryTs: entry.ts,
+            entryRefPrice: entry.close
+          });
+        }
+
+        alerts.push(entry);
+        persistAlerts();
+        realtime.broadcastAlert(entry);
+
+        if (EXECUTION_ENABLED) {
+          positionManager.onSignal(entry, entry.close).catch((e) => console.error("[exec tap]", e));
+        }
       }
-  
-      alerts.push(entry);
-      persistAlerts();
-      realtime.broadcastAlert(entry);
     }
-  
+
     // 5m aggregation
     const bucket = floorBucket(ts, TIMEFRAME_MIN);
     const cur = aggMap.get(symbol);
@@ -572,6 +698,9 @@ function onAlpacaBar(b: AlpacaBarMsg) {
         const closeTs = cur.bucketStart + TIMEFRAME_MIN * 60_000;
         const doneFromBar5 = outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
         for (const id of doneFromBar5) {
+          if (EXECUTION_ENABLED) {
+            positionManager.onStopHit(id).catch((e) => console.error("[exec stop]", e));
+          }
           const out = outcomeTracker.finalize(id);
           if (out) {
             outcomes.push(out);
@@ -579,11 +708,14 @@ function onAlpacaBar(b: AlpacaBarMsg) {
           }
         }
   
-        if (symbol === "SPY" || symbol === "QQQ") {
-          recomputeMarketDir();
-          evaluateIfNeeded(symbol);
-        } else {
-          evaluateIfNeeded(symbol);
+        // Signal evaluation — only during the first hour (9:30–10:30 AM ET)
+        if (isFirstHourNY(closeTs)) {
+          if (symbol === "SPY" || symbol === "QQQ") {
+            recomputeMarketDir();
+            evaluateIfNeeded(symbol);
+          } else {
+            evaluateIfNeeded(symbol);
+          }
         }
       }
   
@@ -630,6 +762,10 @@ const alert = engine.evaluateSymbol({
     alerts.push(alert);
     persistAlerts();
     realtime.broadcastAlert(alert);
+
+    if (EXECUTION_ENABLED && String(alert.message).includes("ENTRY")) {
+      positionManager.onSignal(alert, alert.close).catch((e) => console.error("[exec 5m]", e));
+    }
   }
 }
 

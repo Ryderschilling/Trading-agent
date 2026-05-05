@@ -4,33 +4,31 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Trading Agent • Outcomes</title>
-
     <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   </head>
 
   <body>
     <div class="bg-wash"></div>
 
     <header class="topbar">
-        <div class="topbar-left">
-          <div class="brand">
-            <div class="brand-dot"></div>
-            <div class="brand-text">Trading Agent</div>
-          </div>
-      
-          <nav class="tabs">
-            <a class="tab" href="/">Workspace</a>
-            <a class="tab active" href="/outcomes.html">Outcomes</a>
-          </nav>
+      <div class="topbar-left">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div class="brand-text">Trading Agent</div>
         </div>
-      
-        <div class="topbar-right">
-          <div class="status">
-            <div class="status-dot" id="socketDot"></div>
-            <div class="status-text">Realtime</div>
-          </div>
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab active" href="/outcomes.html">Outcomes</a>
+        </nav>
+      </div>
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
         </div>
-      </header>
+      </div>
+    </header>
 
     <main class="shell">
       <section class="stack" id="database">
@@ -38,24 +36,54 @@
           <div class="card-head">
             <div>
               <div class="card-title">Outcomes Database</div>
-              <div class="card-hint">One row per A+ ENTRY. Joined alerts + tracked outcomes. Click a row for details.</div>
+              <div class="card-hint">A+ ENTRY trades — click a row to view trade context chart</div>
             </div>
-
-            <div style="display:flex; gap:10px; align-items:center;">
-              <a class="card-link" href="/api/db.csv">Download CSV</a>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <a class="card-link" href="/api/db.csv">Export CSV</a>
               <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
             </div>
           </div>
 
-          <div style="display:flex; gap:10px; padding:0 16px 12px 16px; flex-wrap:wrap;">
-            <input id="dbSym" class="input" placeholder="Filter symbol (e.g. PLTR)" style="max-width:220px;" />
-            <select id="dbStatus" class="input" style="max-width:220px;">
+          <!-- Summary stats -->
+          <div class="stats-strip" id="statsStrip">
+            <div class="stat-box">
+              <div class="stat-label">Total Trades</div>
+              <div class="stat-value" id="statTotal">—</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Win Rate (MFE &gt; 0)</div>
+              <div class="stat-value" id="statWinRate">—</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Avg 5m Return</div>
+              <div class="stat-value" id="statAvgRet">—</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Best MFE</div>
+              <div class="stat-value" id="statBestMfe">—</div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">Stop-Outs</div>
+              <div class="stat-value" id="statStops">—</div>
+            </div>
+          </div>
+
+          <!-- Returns distribution chart -->
+          <div class="chart-section">
+            <div class="chart-section-title">5m Return Distribution</div>
+            <div id="returnsChart" style="width:100%;height:140px;"></div>
+          </div>
+
+          <!-- Filters -->
+          <div style="display:flex; gap:10px; padding:12px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line);">
+            <input id="dbSym" class="input" placeholder="Filter symbol…" style="max-width:180px;" />
+            <select id="dbStatus" class="input" style="max-width:180px;">
               <option value="">All statuses</option>
               <option value="LIVE">LIVE</option>
               <option value="STOPPED">STOPPED</option>
               <option value="COMPLETED">COMPLETED</option>
             </select>
-            <label class="small" style="display:flex; gap:8px; align-items:center;">
+            <label class="small" style="display:flex; gap:8px; align-items:center; color:var(--muted);">
               <input id="dbStoppedOnly" type="checkbox" />
               stopped-out only
             </label>
@@ -84,30 +112,81 @@
             </table>
           </div>
 
-          <div id="dbEmpty" class="small" style="padding: 0 16px 16px 16px; display:none;">
+          <div id="dbEmpty" class="small" style="padding:16px 18px; display:none; color:var(--muted);">
             No database rows yet (need A+ ENTRY alerts).
           </div>
         </div>
       </section>
-
-      <!-- Modal: details -->
-      <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999;">
-        <div style="max-width:760px; margin:6vh auto; background:#0b1020; border:1px solid rgba(255,255,255,0.08); border-radius:16px; overflow:hidden;">
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.08);">
-            <div>
-              <div style="font-weight:700;">Signal Details</div>
-              <div class="small" id="modalSub">—</div>
-            </div>
-            <button id="modalClose" class="btn btn-ghost">Close</button>
-          </div>
-          <div style="padding:16px;">
-            <div id="modalBody" class="small">Loading…</div>
-          </div>
-        </div>
-      </div>
     </main>
 
+    <!-- Outcome Detail Modal -->
+    <div id="modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; overflow-y:auto;">
+      <div style="max-width:860px; margin:5vh auto 40px auto; background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadowLift);">
+
+        <!-- Modal header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--line);">
+          <div>
+            <div style="font-weight:700; font-size:15px;" id="modalTitle">Outcome Detail</div>
+            <div class="small" id="modalSub" style="margin-top:2px;">—</div>
+          </div>
+          <button id="modalClose" class="btn btn-ghost">Close</button>
+        </div>
+
+        <!-- Metric cards -->
+        <div class="metric-cards" id="metricCards" style="grid-template-columns: repeat(6,1fr);">
+          <div class="metric-card">
+            <div class="metric-label">Symbol</div>
+            <div class="metric-value" id="mcSymbol">—</div>
+          </div>
+          <div class="metric-card" style="grid-column:span 2;">
+            <div class="metric-label">Strategy</div>
+            <div class="metric-value" id="mcStrategy">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Status</div>
+            <div class="metric-value" id="mcStatus">—</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">PNL</div>
+            <div class="metric-value" id="mcPnl">—</div>
+          </div>
+          <div class="metric-card" style="grid-column:span 1;">
+            <div class="metric-label">Entry</div>
+            <div class="metric-value" id="mcEntry" style="font-size:12px;">—</div>
+          </div>
+          <div class="metric-card" style="grid-column:span 1;">
+            <div class="metric-label">Exit</div>
+            <div class="metric-value" id="mcExit" style="font-size:12px;">—</div>
+          </div>
+        </div>
+
+        <!-- Trade Context Snapshot -->
+        <div class="snapshot-section">
+          <div class="snapshot-header">
+            <div>
+              <div class="snapshot-title">Trade Context Snapshot</div>
+              <div class="snapshot-sub" id="snapshotSub">—</div>
+            </div>
+            <div class="snapshot-controls">
+              <button class="btn-sm active" id="btnEntry">Entry</button>
+              <button class="btn-sm" id="btnExit">Exit</button>
+              <button class="btn-sm active" id="btnVwap">VWAP</button>
+            </div>
+          </div>
+          <div id="tradeChartContainer"></div>
+          <div id="chartLoading" class="small" style="padding:60px 0; text-align:center; display:none;">Loading chart data…</div>
+          <div id="chartNoData" class="small" style="padding:60px 0; text-align:center; display:none;">No candle data available for this symbol yet.</div>
+        </div>
+
+        <!-- Outcome details -->
+        <div style="padding:14px 16px; border-top:1px solid var(--line);">
+          <div id="outcomeDetails" class="small" style="color:var(--muted);">—</div>
+        </div>
+
+      </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/outcomes.js?v=1"></script>
+    <script src="/outcomes.js?v=5"></script>
   </body>
 </html>

@@ -41,3 +41,9 @@ export function isRegularSessionNY(ms: number): boolean {
   const mins = p.hh * 60 + p.mm;
   return mins >= 9 * 60 + 30 && mins < 16 * 60;
 }
+
+export function isFirstHourNY(ms: number): boolean {
+  const p = nyPartsFromMs(ms);
+  const mins = p.hh * 60 + p.mm;
+  return mins >= 9 * 60 + 30 && mins < 10 * 60 + 30;
+}

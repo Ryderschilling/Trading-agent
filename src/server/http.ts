@@ -25,6 +25,7 @@ export function createHttpApp(args: {
   getOutcomeByAlertId: (id: string) => any | null;
 
   getDbRows: () => any[];
+  getBars1: (symbol: string) => any[];
 
   // Watchlist mutation
   addSymbol: (s: string) => void;
@@ -66,6 +67,12 @@ export function createHttpApp(args: {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="trading-agent-db.csv"');
     res.send(csv);
+  });
+
+  app.get("/api/candles/:symbol", (req, res) => {
+    const sym = String(req.params.symbol || "").toUpperCase();
+    const bars = args.getBars1(sym);
+    res.json({ symbol: sym, bars });
   });
 
   app.get("/api/watchlist", (_req, res) => {
