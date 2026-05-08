@@ -701,10 +701,58 @@ function computePnlPct(row) {
   return null;
 }
 
+function renderStats(rows) {
+  const el = document.getElementById("statsBar");
+  if (!el) return;
+
+  const upper = (s) => String(s || "").toUpperCase();
+
+  // Closed = anything that has a settled PnL (completed or stopped). Live rows are excluded.
+  const closedPnl = rows
+    .filter((r) => upper(r.status) !== "LIVE")
+    .map((r) => Number(r.pnlPct))
+    .filter((v) => Number.isFinite(v));
+
+  const wins = closedPnl.filter((v) => v > 0).length;
+  const winRate = closedPnl.length ? (wins / closedPnl.length) * 100 : null;
+  const avgPnl = closedPnl.length ? closedPnl.reduce((a, b) => a + b, 0) / closedPnl.length : null;
+  const totalPnl = closedPnl.length ? closedPnl.reduce((a, b) => a + b, 0) : null;
+  const best = closedPnl.length ? Math.max(...closedPnl) : null;
+  const worst = closedPnl.length ? Math.min(...closedPnl) : null;
+
+  const signedPct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${fmt2(v)}%`);
+  const colorOf = (v) => (v == null ? "" : v > 0 ? "pos" : v < 0 ? "neg" : "");
+  const card = (label, value, cls) =>
+    `<div class="stat-card">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value ${cls || ""}">${value}</div>
+    </div>`;
+
+  el.innerHTML = [
+    card("Total", String(rows.length)),
+    card(
+      "Win Rate",
+      winRate == null ? "—" : `${fmt2(winRate)}%`,
+      winRate == null ? "" : winRate >= 50 ? "pos" : "neg"
+    ),
+    card("Avg PnL", signedPct(avgPnl), colorOf(avgPnl)),
+    card("Total PnL", signedPct(totalPnl), colorOf(totalPnl)),
+    card("Best", signedPct(best), colorOf(best)),
+    card("Worst", signedPct(worst), colorOf(worst)),
+  ].join("");
+}
+
 function renderDbTable() {
   if (!dbBodyEl || !dbEmptyEl) return;
 
   const rows = applyDbFilters(dbRowsRaw);
+
+  // Pre-compute pnlPct on every row so stats and the table stay consistent.
+  for (const r of rows) {
+    r.pnlPct = computePnlPct(r);
+  }
+  renderStats(rows);
+
   dbBodyEl.innerHTML = "";
 
   if (!rows.length) {
@@ -724,8 +772,7 @@ function renderDbTable() {
     };
 
     const stratLabel = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "");
-    const pnl = computePnlPct(r);
-    r.pnlPct = pnl;
+    const pnl = r.pnlPct;
 
     tr.appendChild(td(stratLabel));
     tr.appendChild(td(r.symbol || ""));
