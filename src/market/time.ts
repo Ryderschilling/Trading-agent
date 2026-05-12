@@ -60,3 +60,19 @@ export function isAfterHoursNY(ms: number): boolean {
 export function isExtendedSessionNY(ms: number): boolean {
   return isPremarketNY(ms) || isAfterHoursNY(ms);
 }
+
+// Wall-clock guardrails. Hardcoded by design:
+//   - No new entries after 10:30 AM Central (11:30 AM Eastern)
+//   - All open positions force-flat by 2:59 PM Eastern
+const NO_NEW_ENTRY_NY_MIN = 11 * 60 + 30;
+const EOD_FLATTEN_NY_MIN = 14 * 60 + 59;
+
+export function isPastEntryCutoffNY(ms: number): boolean {
+  const p = nyPartsFromMs(ms);
+  return p.hh * 60 + p.mm >= NO_NEW_ENTRY_NY_MIN;
+}
+
+export function isPastEodFlattenNY(ms: number): boolean {
+  const p = nyPartsFromMs(ms);
+  return p.hh * 60 + p.mm >= EOD_FLATTEN_NY_MIN;
+}

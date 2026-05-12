@@ -276,34 +276,11 @@
           <div id="statsBar" class="stats-bar"></div>
 
           <div class="table-wrap">
-            <!-- Filters -->
-            <div class="table-controls" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-              <select id="dbStrategy" class="input small"></select>
-            
-              <input id="dbSym" class="input small" placeholder="Symbol" />
-            
-              <select id="dbStatus" class="input small">
-                <option value="">All statuses</option>
-                <option value="LIVE">LIVE</option>
-                <option value="STOPPED">STOPPED</option>
-                <option value="COMPLETED">COMPLETED</option>
-              </select>
-            
-              <!-- NEW: time range -->
-              <select id="dbRange" class="input small">
-                <option value="all">All time</option>
-                <option value="day">Today</option>
-                <option value="week">Past week</option>
-                <option value="month">Past month</option>
-                <option value="year">Past year</option>
-              </select>
-            
-              <label class="small" style="display:flex;align-items:center;">
-                <input id="dbStoppedOnly" type="checkbox" />
-                <span style="margin-left:4px;">Stopped only</span>
-              </label>
-            
-              <button id="refreshBtn" class="btn small">Refresh</button>
+            <div class="range-toggles" role="group" aria-label="Time range" style="display:flex;gap:8px;margin-bottom:12px;">
+              <button type="button" class="tab range-toggle active" data-range="day">1D</button>
+              <button type="button" class="tab range-toggle" data-range="month">1M</button>
+              <button type="button" class="tab range-toggle" data-range="year">1Y</button>
+              <button type="button" class="tab range-toggle" data-range="all">All</button>
             </div>
 
             <div id="dbEmpty" class="small" style="padding:8px; display:none;">No rows.</div>

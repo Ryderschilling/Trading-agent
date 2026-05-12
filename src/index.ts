@@ -21,7 +21,7 @@ import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey, isFirstHourNY } from "./market/time";
+import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
@@ -135,7 +135,6 @@ const DEFAULT_TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
 const RETEST_TOL = Number(process.env.RETEST_TOLERANCE_PCT || 0.001);
 const STRUCTURE_WINDOW = Number(process.env.STRUCTURE_WINDOW || 3);
 const RS_WINDOW_BARS = Number(process.env.RS_WINDOW_BARS_5M || 3);
-const TRACK_WINDOW_MIN = Number(process.env.TRACK_WINDOW_MINUTES || 60);
 
 const KEY = process.env.APCA_API_KEY_ID || "";
 const SECRET = process.env.APCA_API_SECRET_KEY || "";
@@ -309,7 +308,6 @@ function buildRunner(rs: { version: number; name: string; config: StrategyDefini
     }),
 
     outcomeTracker: new OutcomeTracker({
-      trackWindowMin: TRACK_WINDOW_MIN,
       checkpointsMin: [1, 3, 5, 10, 15, 30, 60]
     }),
 
@@ -1371,10 +1369,14 @@ function ingestMinuteBar(
 
   if (!warmup && runners.size) {
     const effDir = getEffectiveMarketDir();
+    // Hard wall-clock cutoff for NEW entries (10:30 CT / 11:30 ET).
+    // Existing positions continue to be managed by the outcome tracker below.
+    const allowNewEntries = !isPastEntryCutoffNY(ts);
 
     for (const r of runners.values()) {
-      // 1m tap entries — first hour only
-      if (allowEntries) {
+      // 1m tap entries — first hour only AND before the 10:30 CT cutoff.
+      // Both gates apply; isFirstHourNY is the more restrictive of the two.
+      if (allowEntries && allowNewEntries) {
         const tap = r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
         if (tap) {
@@ -1435,7 +1437,7 @@ function ingestMinuteBar(
           if (!warmup) {
             const closeTs = cur.bucketStart + r.timeframeMin * 60_000;
 
-            const doneFromBar = r.outcomeTracker.onBar5Close({ symbol, ts: closeTs, close: cur.c });
+            const doneFromBar = r.outcomeTracker.onBar5Close({ symbol, ts: closeTs, open: cur.o, close: cur.c });
             for (const id of doneFromBar) {
               const out = r.outcomeTracker.finalize(id);
               if (out) {

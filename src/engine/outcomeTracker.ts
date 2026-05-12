@@ -1,4 +1,5 @@
 // src/engine/outcomeTracker.ts
+import { isPastEodFlattenNY } from "../market/time";
 import { TradeDirection, TradeOutcome } from "./types";
 
 /**
@@ -27,7 +28,7 @@ type ExecState = {
 
   // mutates
   stopMovedToBE: boolean;
-  exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | null;
+  exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | "STRUCTURE_BREAK" | "EOD" | null;
   exitTs: number | null;
   exitFill: number | null;
 };
@@ -213,7 +214,7 @@ export class OutcomeTracker {
   private sessionsById = new Map<string, ActiveSession>();
   private sessionsBySymbol = new Map<string, Set<string>>();
 
-  constructor(private cfg: { trackWindowMin: number; checkpointsMin?: number[] }) {}
+  constructor(private cfg: { checkpointsMin?: number[] }) {}
 
   startSession(args: {
     alertId: string;
@@ -381,11 +382,11 @@ export class OutcomeTracker {
         }
       }
 
-      if (elapsedMin >= this.cfg.trackWindowMin) {
+      // EOD flatten: no positions held past 2:59 PM NY. Exit fill = current bar close.
+      if (isPastEodFlattenNY(args.ts)) {
         s.status = "COMPLETED";
 
-        // TIME exit fill = bar close
-        s.exec.exitReason = "TIME";
+        s.exec.exitReason = "EOD";
         s.exec.exitTs = args.ts;
         s.exec.exitFill = args.close;
 
@@ -398,7 +399,16 @@ export class OutcomeTracker {
     return { completed, beMoved };
   }
 
-  onBar5Close(args: { symbol: string; ts: number; close: number }): string[] {
+  /**
+   * Retest invalidation. If a 5m bar that begins AFTER our entry opens on the
+   * wrong side of the entry's retest level (structureLevel), the retest is
+   * broken — exit immediately at that bar's open price. The retest level held
+   * during entry must remain on the correct side of price; an open beyond it
+   * means the structure is gone and the trade thesis is invalid.
+   *
+   * Runs alongside R-stop / target / BE in onMinuteBar — first trigger wins.
+   */
+  onBar5Close(args: { symbol: string; ts: number; open: number; close: number }): string[] {
     const ids = this.sessionsBySymbol.get(args.symbol);
     if (!ids || !ids.size) return [];
 
@@ -408,24 +418,27 @@ export class OutcomeTracker {
       const s = this.sessionsById.get(id);
       if (!s || s.status !== "LIVE") continue;
 
-      if (s.exec.enabled) continue;
+      // Only check bars that opened AFTER entry — never exit on the bar we entered into.
+      if (args.ts <= s.entryTs) continue;
+      if (!isFiniteNum(args.open)) continue;
 
-      const stopHit = s.dir === "LONG" ? args.close < s.structureLevel : args.close > s.structureLevel;
-      if (stopHit) {
-        s.status = "STOPPED";
-        s.stoppedOut = true;
-        s.stopTs = args.ts;
-        s.stopClose = args.close;
-        s.barsToStop = s.bar1mCount;
+      const invalidated =
+        s.dir === "LONG" ? args.open < s.structureLevel : args.open > s.structureLevel;
+      if (!invalidated) continue;
 
-        s.exec.exitReason = "STOP_CLOSE";
-        s.exec.exitTs = args.ts;
-        s.exec.exitFill = args.close;
+      s.status = "STOPPED";
+      s.stoppedOut = true;
+      s.stopTs = args.ts;
+      s.stopClose = args.open;
+      s.barsToStop = s.bar1mCount;
 
-        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.close);
+      s.exec.exitReason = "STRUCTURE_BREAK";
+      s.exec.exitTs = args.ts;
+      s.exec.exitFill = args.open;
 
-        completed.push(s.alertId);
-      }
+      s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.open);
+
+      completed.push(s.alertId);
     }
 
     return completed;
