@@ -45,7 +45,7 @@ export type Alert = {
 export type TradeDirection = "LONG" | "SHORT";
 export type TradeSessionStatus = "LIVE" | "STOPPED" | "COMPLETED";
 
-export type TradeExitReason = "STOP" | "TARGET" | "TIME" | "STOP_CLOSE";
+export type TradeExitReason = "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | "STRUCTURE_BREAK" | "EOD";
 
 export type TradeOutcome = {
   alertId: string;

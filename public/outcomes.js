@@ -11,12 +11,8 @@ const socketDot = document.getElementById("socketDot");
 
 const dbBodyEl = document.getElementById("dbBody");
 const dbEmptyEl = document.getElementById("dbEmpty");
-const dbSymEl = document.getElementById("dbSym");
-const dbStatusEl = document.getElementById("dbStatus");
-const dbRangeEl = document.getElementById("dbRange");
-const dbStoppedOnlyEl = document.getElementById("dbStoppedOnly");
-const refreshBtn = document.getElementById("refreshBtn");
-const dbStrategyEl = document.getElementById("dbStrategy");
+const rangeToggleEls = Array.from(document.querySelectorAll(".range-toggle"));
+let activeRange = "day"; // 1D default
 
 const modalEl = document.getElementById("modal");
 const modalCloseEl = document.getElementById("modalClose");
@@ -89,29 +85,6 @@ async function refreshDataLiveDot() {
   }
 }
 
-async function loadStrategies() {
-  if (!dbStrategyEl) return;
-  try {
-    const res = await fetch("/api/rulesets", { cache: "no-store" });
-    const j = await res.json();
-    const list = Array.isArray(j?.rulesets) ? j.rulesets : [];
-
-    dbStrategyEl.innerHTML = "";
-    const defaultOpt = document.createElement("option");
-    defaultOpt.value = "";
-    defaultOpt.textContent = "All strategies";
-    dbStrategyEl.appendChild(defaultOpt);
-
-    for (const rs of list) {
-      const opt = document.createElement("option");
-      opt.value = String(rs.version);
-      opt.textContent = rs.name || `v${rs.version}`;
-      dbStrategyEl.appendChild(opt);
-    }
-  } catch {
-    // ignore
-  }
-}
 
 function clearModalCleanup() {
   if (typeof modalCleanup === "function") modalCleanup();
@@ -657,24 +630,13 @@ async function openModalForRow(r) {
 }
 
 function applyDbFilters(rows) {
-  const sym = String(dbSymEl?.value || "").trim().toUpperCase();
-  const status = String(dbStatusEl?.value || "").trim().toUpperCase();
-  const stoppedOnly = Boolean(dbStoppedOnlyEl?.checked);
-  const strat = String(dbStrategyEl?.value || "").trim();
-
-  const range = String(dbRangeEl?.value || "all").toLowerCase();
   const now = Date.now();
   let cutoff = 0;
-  if (range === "day") cutoff = now - 1 * 24 * 60 * 60_000;
-  else if (range === "week") cutoff = now - 7 * 24 * 60 * 60_000;
-  else if (range === "month") cutoff = now - 30 * 24 * 60 * 60_000;
-  else if (range === "year") cutoff = now - 365 * 24 * 60 * 60_000;
+  if (activeRange === "day") cutoff = now - 1 * 24 * 60 * 60_000;
+  else if (activeRange === "month") cutoff = now - 30 * 24 * 60 * 60_000;
+  else if (activeRange === "year") cutoff = now - 365 * 24 * 60 * 60_000;
 
   return (rows || []).filter((r) => {
-    if (sym && String(r.symbol || "").toUpperCase() !== sym) return false;
-    if (status && String(r.status || "").toUpperCase() !== status) return false;
-    if (stoppedOnly && !r.stoppedOut) return false;
-    if (strat && String(r.strategyVersion || "") !== strat) return false;
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
     return true;
   });
@@ -807,12 +769,15 @@ async function fetchDbRowsStable() {
   }
 }
 
-dbSymEl?.addEventListener("input", renderDbTable);
-dbStatusEl?.addEventListener("change", renderDbTable);
-dbRangeEl?.addEventListener("change", renderDbTable);
-dbStoppedOnlyEl?.addEventListener("change", renderDbTable);
-dbStrategyEl?.addEventListener("change", renderDbTable);
-refreshBtn?.addEventListener("click", fetchDbRowsStable);
+for (const btn of rangeToggleEls) {
+  btn.addEventListener("click", () => {
+    const r = String(btn.dataset.range || "all");
+    if (r === activeRange) return;
+    activeRange = r;
+    for (const b of rangeToggleEls) b.classList.toggle("active", b === btn);
+    renderDbTable();
+  });
+}
 
 if (socket) {
   socket.on("init", (payload) => {
@@ -828,7 +793,7 @@ if (socket) {
   socketDot?.classList.remove("live");
 }
 
-loadStrategies().then(() => fetchDbRowsStable());
+fetchDbRowsStable();
 window.setInterval(fetchDbRowsStable, 6000);
 
 refreshDataLiveDot();
