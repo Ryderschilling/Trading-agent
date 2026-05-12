@@ -42,6 +42,13 @@ export function isRegularSessionNY(ms: number): boolean {
   return mins >= 9 * 60 + 30 && mins < 16 * 60;
 }
 
+// True only for the first hour of regular session (9:30–10:30 AM ET)
+export function isFirstHourNY(ms: number): boolean {
+  const p = nyPartsFromMs(ms);
+  const mins = p.hh * 60 + p.mm;
+  return mins >= 9 * 60 + 30 && mins < 10 * 60 + 30;
+}
+
 // NEW: after-hours (16:00–20:00 ET)
 export function isAfterHoursNY(ms: number): boolean {
   const p = nyPartsFromMs(ms);

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "backfill": "ts-node scripts/backfill-premarket.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",

@@ -222,6 +222,20 @@ function syncCanvasSize(canvas) {
   return { ctx, width, height };
 }
 
+function emaOf(bars, period) {
+  if (!bars.length || period <= 0) return [];
+  const k = 2 / (period + 1);
+  const out = new Array(bars.length).fill(null);
+  let ema = null;
+  for (let i = 0; i < bars.length; i++) {
+    const c = Number(bars[i].c);
+    if (!Number.isFinite(c)) continue;
+    ema = ema === null ? c : c * k + ema * (1 - k);
+    out[i] = ema;
+  }
+  return out;
+}
+
 function drawRoundedLabel(ctx, x, y, text, fillStyle, textStyle) {
   ctx.save();
   ctx.font = "10px system-ui";
@@ -283,8 +297,10 @@ function drawChart(canvas, bars, opts) {
   let lo = Infinity;
   let hi = -Infinity;
   for (const b of bars) {
-    lo = Math.min(lo, Number(b.l));
-    hi = Math.max(hi, Number(b.h));
+    const lv = Number(b.l);
+    const hv = Number(b.h);
+    if (Number.isFinite(lv)) lo = Math.min(lo, lv);
+    if (Number.isFinite(hv)) hi = Math.max(hi, hv);
   }
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
   if (hi === lo) {
@@ -331,6 +347,61 @@ function drawChart(canvas, bars, opts) {
     ctx.fillRect(left, padTop, Math.max(2, right - left), plotH);
   }
 
+  // Horizontal S/R levels
+  if (Array.isArray(opts?.levels)) {
+    for (const lvl of opts.levels) {
+      const price = Number(lvl.price);
+      if (!Number.isFinite(price) || price < lo || price > hi) continue;
+      const y = Math.round(yOf(price)) + 0.5;
+      ctx.save();
+      ctx.strokeStyle = lvl.color || "rgba(255, 220, 60, 0.7)";
+      ctx.lineWidth = lvl.lineWidth || 1.5;
+      ctx.setLineDash(lvl.dash || [6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(padLeft, y);
+      ctx.lineTo(w - padRight + 10, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (lvl.label) {
+        ctx.font = "10px system-ui";
+        ctx.fillStyle = lvl.color || "rgba(255, 220, 60, 0.85)";
+        ctx.fillText(`${lvl.label} ${fmt2(price)}`, w - padRight + 14, y - 3);
+      }
+      ctx.restore();
+    }
+  }
+
+  // EMA lines
+  if (Array.isArray(opts?.emas)) {
+    for (const emaCfg of opts.emas) {
+      const values = emaOf(bars, emaCfg.period);
+      ctx.save();
+      ctx.strokeStyle = emaCfg.color || "rgba(255, 165, 0, 0.8)";
+      ctx.lineWidth = emaCfg.lineWidth || 1.4;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i];
+        if (v == null) continue;
+        const x = xOf(i);
+        const y = yOf(v);
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // Label at end
+      if (started && values[values.length - 1] != null) {
+        const lastVal = values[values.length - 1];
+        const ly = yOf(lastVal);
+        ctx.font = "9px system-ui";
+        ctx.fillStyle = emaCfg.color || "rgba(255, 165, 0, 0.85)";
+        ctx.fillText(`${emaCfg.label || `EMA${emaCfg.period}`}`, w - padRight + 14, ly + 3);
+      }
+      ctx.restore();
+    }
+  }
+
   if (opts?.showVwap) {
     const vwap = vwapSeries(bars);
     ctx.strokeStyle = "rgba(125, 191, 255, 0.82)";
@@ -358,6 +429,7 @@ function drawChart(canvas, bars, opts) {
 
   for (let i = 0; i < bars.length; i++) {
     const b = bars[i];
+    if (!Number.isFinite(Number(b.o)) || !Number.isFinite(Number(b.c))) continue;
     const x = xOf(i);
     const wickX = wickXOf(i);
     const yH = yOf(b.h);
@@ -366,14 +438,14 @@ function drawChart(canvas, bars, opts) {
     const yC = yOf(b.c);
     const up = b.c >= b.o;
 
-    ctx.strokeStyle = up ? "rgba(74, 222, 128, 0.75)" : "rgba(248, 113, 113, 0.78)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = up ? "rgba(74, 222, 128, 0.85)" : "rgba(248, 113, 113, 0.88)";
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.moveTo(wickX, yH);
     ctx.lineTo(wickX, yL);
     ctx.stroke();
 
-    ctx.fillStyle = up ? "rgba(74, 222, 128, 0.92)" : "rgba(248, 113, 113, 0.92)";
+    ctx.fillStyle = up ? "rgba(74, 222, 128, 0.95)" : "rgba(248, 113, 113, 0.95)";
     const top = Math.min(yO, yC);
     const height = Math.max(1.5, Math.abs(yC - yO));
     const bodyLeft = Math.round((x - bodyW / 2) * 2) / 2;
@@ -383,33 +455,38 @@ function drawChart(canvas, bars, opts) {
   const markerY = padTop + 8;
   const markers = [
     {
-      idx: entryIdx,
+      idx: opts?.showEntry !== false ? entryIdx : null,
       label: "Entry",
-      lineColor: "rgba(45, 212, 255, 0.88)",
-      pillFill: "rgba(45, 212, 255, 0.16)",
-      pillText: "#96ecff",
+      lineColor: "rgba(45, 212, 255, 0.95)",
+      pillFill: "rgba(45, 212, 255, 0.22)",
+      pillText: "#b0f0ff",
     },
     {
-      idx: exitIdx,
+      idx: opts?.showExit !== false ? exitIdx : null,
       label: "Exit",
-      lineColor: "rgba(251, 113, 133, 0.88)",
-      pillFill: "rgba(251, 113, 133, 0.16)",
-      pillText: "#ffb0bf",
+      lineColor: "rgba(251, 113, 133, 0.95)",
+      pillFill: "rgba(251, 113, 133, 0.22)",
+      pillText: "#ffd0da",
     },
   ];
 
   for (const marker of markers) {
     if (marker.idx == null) continue;
     const x = wickXOf(marker.idx);
+
+    // Full-height vertical line — dashed
+    ctx.save();
     ctx.strokeStyle = marker.lineColor;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
     ctx.beginPath();
     ctx.moveTo(x, padTop);
     ctx.lineTo(x, padTop + plotH);
     ctx.stroke();
+    ctx.restore();
 
     ctx.save();
-    ctx.font = "10px system-ui";
+    ctx.font = "11px system-ui";
     const labelWidth = ctx.measureText(marker.label).width + 14;
     ctx.restore();
     const clampedX = Math.max(6, Math.min(x - labelWidth / 2, w - labelWidth - 6));
@@ -430,15 +507,131 @@ function drawChart(canvas, bars, opts) {
     const clampedX = Math.max(6, Math.min(x - measured / 2, w - measured - 6));
     ctx.fillText(text, clampedX, h - 10);
   }
+
+  // Hover crosshair — vertical line at hovered bar + time/price labels.
+  const hoverIdx = Number.isFinite(Number(opts?.hoverIdx)) ? Math.floor(Number(opts.hoverIdx)) : -1;
+  if (hoverIdx >= 0 && hoverIdx < bars.length) {
+    const hb = bars[hoverIdx];
+    const x = wickXOf(hoverIdx);
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, padTop);
+    ctx.lineTo(x, padTop + plotH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Bottom time pill
+    const timeText = fmtDateTime(Number(hb.ts));
+    ctx.save();
+    ctx.font = "11px system-ui";
+    const padX = 8;
+    const padY = 4;
+    const textW = ctx.measureText(timeText).width;
+    const pillW = textW + padX * 2;
+    const pillH = 20;
+    const pillX = Math.max(4, Math.min(x - pillW / 2, w - pillW - 4));
+    const pillY = h - pillH - 2;
+
+    ctx.fillStyle = "rgba(15, 22, 38, 0.95)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const r = 6;
+    ctx.moveTo(pillX + r, pillY);
+    ctx.lineTo(pillX + pillW - r, pillY);
+    ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + r);
+    ctx.lineTo(pillX + pillW, pillY + pillH - r);
+    ctx.quadraticCurveTo(pillX + pillW, pillY + pillH, pillX + pillW - r, pillY + pillH);
+    ctx.lineTo(pillX + r, pillY + pillH);
+    ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - r);
+    ctx.lineTo(pillX, pillY + r);
+    ctx.quadraticCurveTo(pillX, pillY, pillX + r, pillY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(231, 237, 246, 0.95)";
+    ctx.textBaseline = "middle";
+    ctx.fillText(timeText, pillX + padX, pillY + pillH / 2 + 0.5);
+    ctx.restore();
+
+    // Right-side price pill at the bar's close
+    const closePx = Number(hb.c);
+    if (Number.isFinite(closePx)) {
+      const py = yOf(closePx);
+      const priceText = fmt2(closePx);
+      ctx.save();
+      ctx.font = "11px system-ui";
+      const tW = ctx.measureText(priceText).width;
+      const ppadX = 6;
+      const pW = tW + ppadX * 2;
+      const pH = 18;
+      const pX = Math.min(w - pW - 2, padLeft + plotW + 4);
+      const pY = Math.max(padTop, Math.min(py - pH / 2, padTop + plotH - pH));
+
+      ctx.fillStyle = "rgba(15, 22, 38, 0.95)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+      ctx.lineWidth = 1;
+      const rr = 5;
+      ctx.beginPath();
+      ctx.moveTo(pX + rr, pY);
+      ctx.lineTo(pX + pW - rr, pY);
+      ctx.quadraticCurveTo(pX + pW, pY, pX + pW, pY + rr);
+      ctx.lineTo(pX + pW, pY + pH - rr);
+      ctx.quadraticCurveTo(pX + pW, pY + pH, pX + pW - rr, pY + pH);
+      ctx.lineTo(pX + rr, pY + pH);
+      ctx.quadraticCurveTo(pX, pY + pH, pX, pY + pH - rr);
+      ctx.lineTo(pX, pY + rr);
+      ctx.quadraticCurveTo(pX, pY, pX + rr, pY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(231, 237, 246, 0.95)";
+      ctx.textBaseline = "middle";
+      ctx.fillText(priceText, pX + ppadX, pY + pH / 2 + 0.5);
+      ctx.restore();
+    }
+  }
 }
 
-function localDayWindow(ts) {
-  const d = new Date(Number(ts || Date.now()));
-  const start = new Date(d);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(d);
-  end.setHours(23, 59, 59, 999);
-  return { start: start.getTime(), end: end.getTime() };
+// NY trading session window: 4:00 AM ET (premarket open) → 4:00 PM ET (RTH close).
+// Returns absolute UTC ms for the trading day that contains `ts` in NY time.
+// Handles DST automatically by probing the offset from the trade-day's noon.
+function nySessionWindow(ts) {
+  const probeMs = Number(ts) || Date.now();
+
+  // Resolve which NY calendar day the timestamp belongs to.
+  const dayParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit", hour12: false,
+  }).formatToParts(new Date(probeMs));
+  const dp = Object.fromEntries(dayParts.map((p) => [p.type, p.value]));
+  const y = Number(dp.year);
+  const m = Number(dp.month);
+  const d = Number(dp.day);
+
+  // Probe the NY-vs-UTC offset on that NY day at noon (well clear of any DST flip).
+  const noonUtc = Date.UTC(y, m - 1, d, 12, 0, 0);
+  const noonNyParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(new Date(noonUtc));
+  const np = Object.fromEntries(noonNyParts.map((p) => [p.type, p.value]));
+  const noonHr = np.hour === "24" ? 0 : Number(np.hour);
+  const noonAsIfUtc = Date.UTC(Number(np.year), Number(np.month) - 1, Number(np.day), noonHr, Number(np.minute), Number(np.second));
+  const nyOffsetMs = noonAsIfUtc - noonUtc; // negative for NY (e.g. -4h or -5h)
+
+  // 7:00 AM NY (= 6:00 AM CT premarket) → 4:00 PM NY (= 3:00 PM CT close).
+  const start = Date.UTC(y, m - 1, d, 7, 0, 0) - nyOffsetMs;
+  const end   = Date.UTC(y, m - 1, d, 16, 0, 0) - nyOffsetMs;
+  return { start, end };
 }
 
 async function requestCandles(symbol, endTs, minutes) {
@@ -462,61 +655,35 @@ function scoreRange(bars, entryTs, exitTs, preferenceWeight) {
 }
 
 async function fetchSnapshotBars(symbol, entryTs, exitTs) {
-  const dayWindow = localDayWindow(entryTs || Date.now());
-  const fullDayMinutes = Math.min(2000, Math.max(390, Math.ceil((dayWindow.end - dayWindow.start) / 60_000)));
-  const widestEnd = Math.max(Number(entryTs || 0), Number(exitTs || 0), Date.now() - 60_000) + 180 * 60_000;
-  const candidates = [
-    { label: "trade day", end: dayWindow.end, minutes: fullDayMinutes, weight: 30_000 },
-    { label: "extended context", end: widestEnd, minutes: 2000, weight: 20_000 },
-    { label: "widest available context", end: Number(entryTs || Date.now()), minutes: 2000, weight: 10_000 },
-  ];
+  // Always pin the chart window to the NY trading session of the trade's day:
+  // 7:00 AM ET (= 6:00 AM CT premarket) → 4:00 PM ET (= 3:00 PM CT close) = 540 minutes.
+  const win = nySessionWindow(entryTs || Date.now());
+  const sessionMinutes = Math.ceil((win.end - win.start) / 60_000); // 540
 
-  let best = { bars1m: [], label: "No data" };
-
-  for (const candidate of candidates) {
-    try {
-      const bars1m = await requestCandles(symbol, candidate.end, candidate.minutes);
-      const score = scoreRange(bars1m, entryTs, exitTs, candidate.weight);
-      const bestScore = scoreRange(best.bars1m, entryTs, exitTs, 0);
-      if (score > bestScore) {
-        best = { bars1m, label: candidate.label };
-      }
-      if (candidate.label === "trade day" && bars1m.length) {
-        const first = Number(bars1m[0].ts);
-        const last = Number(bars1m[bars1m.length - 1].ts) + 60_000;
-        if (Number(entryTs) >= first && Number(entryTs) <= last) {
-          best = { bars1m, label: candidate.label };
-          break;
-        }
-      }
-    } catch {
-      // ignore and fall through
-    }
+  let bars1m = [];
+  try {
+    bars1m = await requestCandles(symbol, win.end, sessionMinutes);
+  } catch {
+    bars1m = [];
   }
 
-  return best;
+  // Strict clamp to the NY session window so we never spill into other days.
+  bars1m = bars1m.filter((b) => Number(b.ts) >= win.start && Number(b.ts) < win.end);
+
+  // Score is informational only now; we no longer fall back to wider windows.
+  void scoreRange(bars1m, entryTs, exitTs, 0);
+
+  return {
+    bars1m,
+    label: "NY trading session (premarket → close)",
+    windowStart: win.start,
+    windowEnd: win.end,
+  };
 }
 
-function chooseDisplayTimeframe(baseTfMin, bars1mLength) {
-  void baseTfMin;
-  const totalBars = Math.max(0, Math.floor(Number(bars1mLength || 0)));
-  if (totalBars <= 0 || totalBars <= DISPLAY_BAR_TARGET_MAX) return 1;
-
-  const candidates = DISPLAY_TIMEFRAME_STEPS.map((tf) => ({
-    tf,
-    count: Math.max(1, Math.ceil(totalBars / tf)),
-  }));
-  const preferred = candidates
-    .filter((candidate) => candidate.count >= DISPLAY_BAR_TARGET_MIN && candidate.count <= DISPLAY_BAR_TARGET_MAX)
-    .sort((a, b) => Math.abs(a.count - DISPLAY_BAR_TARGET_IDEAL) - Math.abs(b.count - DISPLAY_BAR_TARGET_IDEAL) || a.tf - b.tf);
-  if (preferred.length) return preferred[0].tf;
-
-  const capped = candidates
-    .filter((candidate) => candidate.count <= DISPLAY_BAR_TARGET_MAX)
-    .sort((a, b) => b.count - a.count || a.tf - b.tf);
-  if (capped.length) return capped[0].tf;
-
-  return DISPLAY_TIMEFRAME_STEPS[DISPLAY_TIMEFRAME_STEPS.length - 1];
+// Always render 5-minute candles, regardless of how much data is available.
+function chooseDisplayTimeframe(_baseTfMin, _bars1mLength) {
+  return 5;
 }
 
 function buildMetric(label, value) {
@@ -581,9 +748,11 @@ async function openModalForRow(r) {
           </div>
 
           <div class="outcome-chart-legend">
-            <span class="outcome-chip">Entry</span>
-            <span class="outcome-chip">Exit</span>
-            ${showVwap ? `<span class="outcome-chip">VWAP</span>` : ""}
+            <button class="outcome-chip outcome-chip-btn active" id="toggleEntry" title="Toggle entry marker">● Entry</button>
+            <button class="outcome-chip outcome-chip-btn" id="toggleExit" title="Toggle exit marker">● Exit</button>
+            <button class="outcome-chip outcome-chip-btn active" id="toggleVwap" title="Toggle VWAP line">● VWAP</button>
+            <button class="outcome-chip outcome-chip-btn active" id="toggleEma" title="Toggle EMA 9" style="color:#ffffff;">● EMA 9</button>
+            <button class="outcome-chip outcome-chip-btn active" id="toggleLevels" title="Toggle PDH/PDL/PMH/PML levels">● Levels</button>
           </div>
         </div>
 
@@ -611,13 +780,94 @@ async function openModalForRow(r) {
     const snapshot = await fetchSnapshotBars(r.symbol, entryTs, exitTs);
     if (modalToken !== activeModalToken) return;
     const displayTfMin = chooseDisplayTimeframe(strategyTfMin, snapshot.bars1m.length);
-    const barsDisplay = aggregateBars(snapshot.bars1m, displayTfMin);
+    const aggregated = aggregateBars(snapshot.bars1m, displayTfMin);
 
-    drawChart(canvas, barsDisplay, {
-      entryTs,
-      exitTs,
-      showVwap,
-    });
+    // Pad the display series with empty 5m slots so the chart axis always
+    // spans the full NY session window (e.g. 6:00 AM CT → 3:00 PM CT),
+    // even if the broker feed only returned data for part of it.
+    const slotMs = displayTfMin * 60_000;
+    const wStart = Number(snapshot.windowStart);
+    const wEnd   = Number(snapshot.windowEnd);
+    const barsDisplay = [];
+    if (Number.isFinite(wStart) && Number.isFinite(wEnd) && wEnd > wStart) {
+      const real = new Map(aggregated.map((b) => [Math.floor(Number(b.ts) / slotMs) * slotMs, b]));
+      for (let ts = Math.floor(wStart / slotMs) * slotMs; ts < wEnd; ts += slotMs) {
+        const hit = real.get(ts);
+        barsDisplay.push(hit || { ts, o: NaN, h: NaN, l: NaN, c: NaN, v: 0 });
+      }
+    } else {
+      barsDisplay.push(...aggregated);
+    }
+
+    // Named structural levels: PDH (green), PDL (red), PMH/PML (purple)
+    const GREEN  = "rgba(74, 222, 128, 0.95)";
+    const RED    = "rgba(248, 113, 113, 0.95)";
+    const PURPLE = "rgba(170, 100, 255, 0.95)";
+    const namedLevels = [
+      { key: "pdh", label: "PDH", color: GREEN  },
+      { key: "pdl", label: "PDL", color: RED    },
+      { key: "pmh", label: "PMH", color: PURPLE },
+      { key: "pml", label: "PML", color: PURPLE },
+    ];
+
+    const chartLevels = [];
+    const seenPrices = new Set();
+    for (const spec of namedLevels) {
+      const v = Number(r[spec.key]);
+      if (!Number.isFinite(v)) continue;
+      const key = v.toFixed(4);
+      if (seenPrices.has(key)) continue;
+      seenPrices.add(key);
+      chartLevels.push({
+        price: v,
+        color: spec.color,
+        label: spec.label,
+        dash: [5, 4],
+        lineWidth: 1.4,
+      });
+    }
+
+    // Backward compat: older alerts (before level snapshotting) only have a
+    // single triggering level on the row. Color it by `r.level` when known.
+    if (chartLevels.length === 0 && r.structureLevel != null && Number.isFinite(Number(r.structureLevel))) {
+      const lvlKey = String(r.level || "").toUpperCase();
+      const fallbackColor =
+        lvlKey === "PDH" ? GREEN  :
+        lvlKey === "PDL" ? RED    :
+        lvlKey === "PMH" || lvlKey === "PML" ? PURPLE :
+        "rgba(200, 200, 200, 0.7)";
+      chartLevels.push({
+        price: Number(r.structureLevel),
+        color: fallbackColor,
+        label: lvlKey || "S/R",
+        dash: [5, 4],
+        lineWidth: 1.4,
+      });
+    }
+
+    // EMA: only the 9, in white
+    const chartEmas = [
+      { period: 9, color: "rgba(255, 255, 255, 0.92)", lineWidth: 1.4, label: "9" },
+    ];
+
+    // Toggle state
+    let showEntry = true;
+    let showExit = Boolean(exitTs);
+    let showVwapToggle = showVwap;
+
+    function redraw() {
+      drawChart(canvas, barsDisplay, {
+        entryTs,
+        exitTs,
+        showVwap: showVwapToggle,
+        showEntry,
+        showExit,
+        levels: chartLevels,
+        emas: chartEmas,
+      });
+    }
+
+    redraw();
 
     if (chartContextEl) {
       const rangeStart = barsDisplay.length ? fmtDateTime(barsDisplay[0].ts) : "—";
@@ -627,15 +877,84 @@ async function openModalForRow(r) {
         `Range ${rangeStart} to ${rangeEnd}.`;
     }
 
-    const onResize = () => {
+    // Wire toggle buttons
+    const btnEntry  = document.getElementById("toggleEntry");
+    const btnExit   = document.getElementById("toggleExit");
+    const btnVwap   = document.getElementById("toggleVwap");
+    const btnEma    = document.getElementById("toggleEma");
+    const btnLevels = document.getElementById("toggleLevels");
+
+    let showEmas   = true;
+    let showLevels = true;
+    let hoverIdx   = -1;
+
+    function redrawWithToggles() {
       drawChart(canvas, barsDisplay, {
         entryTs,
         exitTs,
-        showVwap,
+        showVwap: showVwapToggle,
+        showEntry,
+        showExit,
+        levels: showLevels ? chartLevels : [],
+        emas: showEmas ? chartEmas : [],
+        hoverIdx,
       });
+    }
+
+    // Replace the simpler redraw with the full-toggle version
+    // (redraw is still used by resize handler — repoint it)
+    const redrawFull = redrawWithToggles;
+    // Re-draw now with toggles applied
+    redrawFull();
+
+    if (btnEntry) {
+      btnEntry.classList.toggle("active", showEntry);
+      btnExit?.classList.toggle("active", showExit);
+      btnVwap?.classList.toggle("active", showVwapToggle);
+      btnEma?.classList.toggle("active", showEmas);
+      btnLevels?.classList.toggle("active", showLevels);
+
+      btnEntry.onclick = () => { showEntry = !showEntry; btnEntry.classList.toggle("active", showEntry); redrawFull(); };
+      if (btnExit)   btnExit.onclick   = () => { showExit = !showExit; btnExit.classList.toggle("active", showExit); redrawFull(); };
+      if (btnVwap)   btnVwap.onclick   = () => { showVwapToggle = !showVwapToggle; btnVwap.classList.toggle("active", showVwapToggle); redrawFull(); };
+      if (btnEma)    btnEma.onclick    = () => { showEmas = !showEmas; btnEma.classList.toggle("active", showEmas); redrawFull(); };
+      if (btnLevels) btnLevels.onclick = () => { showLevels = !showLevels; btnLevels.classList.toggle("active", showLevels); redrawFull(); };
+    }
+
+    // Hover crosshair: map cursor X to nearest bar index using the same
+    // padding constants drawChart uses.
+    const onMove = (e) => {
+      if (!barsDisplay.length) return;
+      const rect = canvas.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const padLeft = 14;
+      const padRight = 62;
+      const plotW = Math.max(40, rect.width - padLeft - padRight);
+      const slotW = plotW / barsDisplay.length;
+      const idx = Math.floor((localX - padLeft) / slotW);
+      const clamped = idx < 0 ? -1 : (idx >= barsDisplay.length ? -1 : idx);
+      if (clamped !== hoverIdx) {
+        hoverIdx = clamped;
+        redrawFull();
+      }
     };
+    const onLeave = () => {
+      if (hoverIdx !== -1) {
+        hoverIdx = -1;
+        redrawFull();
+      }
+    };
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mouseleave", onLeave);
+    canvas.style.cursor = "crosshair";
+
+    const onResize = () => redrawFull();
     window.addEventListener("resize", onResize);
-    modalCleanup = () => window.removeEventListener("resize", onResize);
+    modalCleanup = () => {
+      window.removeEventListener("resize", onResize);
+      canvas.removeEventListener("mousemove", onMove);
+      canvas.removeEventListener("mouseleave", onLeave);
+    };
   } catch {
     if (modalToken !== activeModalToken) return;
     drawChart(canvas, [], {});
@@ -780,9 +1099,32 @@ function renderDbTable() {
     tr.appendChild(td(r.market || "—"));
     tr.appendChild(td(r.rs || "—"));
     tr.appendChild(td(r.level || "—"));
-    tr.appendChild(td(r.status || "—"));
-    tr.appendChild(td(r.stoppedOut ? "YES" : "NO"));
-    tr.appendChild(td(pnl == null ? "—" : `${fmt2(pnl)}%`));
+
+    // Status — color coded
+    const statusTd = document.createElement("td");
+    const statusColors = { LIVE: "#60a5fa", STOPPED: "#f87171", COMPLETED: "#34d399" };
+    const sc = statusColors[r.status] || "";
+    statusTd.innerHTML = sc
+      ? `<span style="color:${sc};font-weight:700;">${escapeHtml(r.status || "—")}</span>`
+      : escapeHtml(r.status || "—");
+    tr.appendChild(statusTd);
+
+    // Stopped — highlight yes in red
+    const stopTd = document.createElement("td");
+    stopTd.innerHTML = r.stoppedOut
+      ? `<span style="color:#f87171;font-weight:700;">YES</span>`
+      : `<span style="color:rgba(255,255,255,0.3);">NO</span>`;
+    tr.appendChild(stopTd);
+
+    // PnL — green/red
+    const pnlTd = document.createElement("td");
+    if (pnl == null) {
+      pnlTd.textContent = "—";
+    } else {
+      const pnlColor = pnl > 0 ? "#34d399" : pnl < 0 ? "#f87171" : "inherit";
+      pnlTd.innerHTML = `<span style="color:${pnlColor};font-weight:700;">${fmt2(pnl)}%</span>`;
+    }
+    tr.appendChild(pnlTd);
 
     tr.addEventListener("click", () => openModalForRow(r));
     dbBodyEl.appendChild(tr);

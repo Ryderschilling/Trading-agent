@@ -272,11 +272,15 @@ export class OutcomeTracker {
     this.sessionsBySymbol.get(args.symbol)!.add(args.alertId);
   }
 
-  onMinuteBar(args: { symbol: string; ts: number; high: number; low: number; close: number }): string[] {
+  onMinuteBar(args: { symbol: string; ts: number; high: number; low: number; close: number }): {
+    completed: string[];
+    beMoved: Array<{ alertId: string; symbol: string; newStopPx: number }>;
+  } {
     const ids = this.sessionsBySymbol.get(args.symbol);
-    if (!ids || !ids.size) return [];
+    if (!ids || !ids.size) return { completed: [], beMoved: [] };
 
     const completed: string[] = [];
+    const beMoved: Array<{ alertId: string; symbol: string; newStopPx: number }> = [];
 
     for (const id of Array.from(ids)) {
       const s = this.sessionsById.get(id);
@@ -320,11 +324,13 @@ export class OutcomeTracker {
             if (args.high >= s.exec.beTriggerPx) {
               s.exec.stopPx = s.exec.entry;
               s.exec.stopMovedToBE = true;
+              beMoved.push({ alertId: s.alertId, symbol: s.symbol, newStopPx: s.exec.entry });
             }
           } else {
             if (args.low <= s.exec.beTriggerPx) {
               s.exec.stopPx = s.exec.entry;
               s.exec.stopMovedToBE = true;
+              beMoved.push({ alertId: s.alertId, symbol: s.symbol, newStopPx: s.exec.entry });
             }
           }
         }
@@ -389,7 +395,7 @@ export class OutcomeTracker {
       }
     }
 
-    return completed;
+    return { completed, beMoved };
   }
 
   onBar5Close(args: { symbol: string; ts: number; close: number }): string[] {

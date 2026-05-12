@@ -84,6 +84,18 @@
         font-weight: 700;
       }
 
+      .outcome-chip-btn {
+        cursor: pointer;
+        opacity: 0.4;
+        transition: opacity .15s, background .15s;
+      }
+      .outcome-chip-btn.active {
+        opacity: 1;
+        background: rgba(255,255,255,0.10);
+        border-color: rgba(255,255,255,0.20);
+      }
+      .outcome-chip-btn:hover { opacity: 0.8; }
+
       .outcome-chart-stage {
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 16px;

@@ -21,7 +21,7 @@ import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey } from "./market/time";
+import { nyDayKey, isFirstHourNY } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
@@ -1061,7 +1061,13 @@ function getDbRows() {
       strategyName,
       timeframeMin,
       emaPeriods,
-      showVwap
+      showVwap,
+
+      // structural levels at signal time (snapshotted into alert meta)
+      pmh: meta?.pmh != null && Number.isFinite(Number(meta.pmh)) ? Number(meta.pmh) : null,
+      pml: meta?.pml != null && Number.isFinite(Number(meta.pml)) ? Number(meta.pml) : null,
+      pdh: meta?.pdh != null && Number.isFinite(Number(meta.pdh)) ? Number(meta.pdh) : null,
+      pdl: meta?.pdl != null && Number.isFinite(Number(meta.pdl)) ? Number(meta.pdl) : null
     };
 
     return out;
@@ -1270,6 +1276,20 @@ function triggerBrokerExecutionIfEligible(alert: Alert) {
   });
 }
 
+function placeBrokerStopAfterEntry(alert: Alert) {
+  if (!isTradeSignal(alert)) return;
+  const stopPx =
+    alert.structureLevel != null && Number.isFinite(Number(alert.structureLevel))
+      ? Number(alert.structureLevel)
+      : (alert as any).levelPrice != null && Number.isFinite(Number((alert as any).levelPrice))
+      ? Number((alert as any).levelPrice)
+      : null;
+  if (stopPx == null) return;
+  void brokerExecution.setStopOrder(alert.symbol, stopPx, null).catch((e) => {
+    console.log("[broker] stop order error", e?.message || e);
+  });
+}
+
 // -----------------------------
 // Per-strategy evaluation on bar close
 // -----------------------------
@@ -1304,7 +1324,14 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
 
   if (alert) {
     if ((alert.dir === "CALL" || alert.dir === "PUT") && !strategyAllowsDirection(r.cfg, alert.dir)) return;
-    (alert as any).meta = { rulesetVersion: r.version };
+    const lv = getLevels(symbol);
+    (alert as any).meta = {
+      rulesetVersion: r.version,
+      pmh: lv.pmh ?? null,
+      pml: lv.pml ?? null,
+      pdh: lv.pdh ?? null,
+      pdl: lv.pdl ?? null,
+    };
 
     startOutcomeTrackingIfTrade(r, alert, ts);
 
@@ -1313,6 +1340,7 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
     dbInsertAlert(alert);
     realtime?.broadcastAlert(alert);
     triggerBrokerExecutionIfEligible(alert);
+    placeBrokerStopAfterEntry(alert);
   }
 }
 
@@ -1338,29 +1366,55 @@ function ingestMinuteBar(
   persistCandle1m(symbol, ts, o, h, l, c, v);
 
   const allowSignals = !warmup && isRegularMarketHours(ts);
+  // Entries only fire during the first hour of the session (9:30–10:30 AM ET)
+  const allowEntries = allowSignals && isFirstHourNY(ts);
 
   if (!warmup && runners.size) {
     const effDir = getEffectiveMarketDir();
 
     for (const r of runners.values()) {
-      const tap = r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
+      // 1m tap entries — first hour only
+      if (allowEntries) {
+        const tap = r.engine.onMinuteBar({ symbol, ts, high: h, low: l, close: c, marketDir: effDir });
 
-      if (tap) {
-        if ((tap.dir === "CALL" || tap.dir === "PUT") && !strategyAllowsDirection(r.cfg, tap.dir)) continue;
-        (tap as any).meta = { ...(tap as any).meta, rulesetVersion: r.version };
-        startOutcomeTrackingIfTrade(r, tap, ts);
+        if (tap) {
+          if ((tap.dir === "CALL" || tap.dir === "PUT") && !strategyAllowsDirection(r.cfg, tap.dir)) continue;
+          const lv = getLevels(symbol);
+          (tap as any).meta = {
+            ...(tap as any).meta,
+            rulesetVersion: r.version,
+            pmh: lv.pmh ?? null,
+            pml: lv.pml ?? null,
+            pdh: lv.pdh ?? null,
+            pdl: lv.pdl ?? null,
+          };
+          startOutcomeTrackingIfTrade(r, tap, ts);
 
-        alerts.push(tap);
-        if (alerts.length > 2000) alerts = alerts.slice(-2000);
-        dbInsertAlert(tap);
-        realtime?.broadcastAlert(tap);
-        triggerBrokerExecutionIfEligible(tap);
+          alerts.push(tap);
+          if (alerts.length > 2000) alerts = alerts.slice(-2000);
+          dbInsertAlert(tap);
+          realtime?.broadcastAlert(tap);
+          triggerBrokerExecutionIfEligible(tap);
+          placeBrokerStopAfterEntry(tap);
+        }
       }
 
-      const doneFromMinute = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
+      const { completed: doneFromMinute, beMoved } = r.outcomeTracker.onMinuteBar({ symbol, ts, high: h, low: l, close: c });
+      for (const { symbol: beSym, newStopPx } of beMoved) {
+        console.log(`[broker] BE triggered — moving stop to ${newStopPx} for ${beSym}`);
+        void brokerExecution.setStopOrder(beSym, newStopPx, null).catch((e) => {
+          console.log("[broker] BE stop update error", e?.message || e);
+        });
+      }
       for (const id of doneFromMinute) {
         const out = r.outcomeTracker.finalize(id);
         if (out) {
+          if (out.stoppedOut || (out as any).exitReason === "TARGET") {
+            console.log(`[broker] auto-close ${out.symbol} — reason: ${(out as any).exitReason ?? "STOP"}`);
+            void brokerExecution.closePosition(out.symbol).catch((e) => {
+              console.log("[broker] auto-close error", e?.message || e);
+            });
+          }
           outcomes.push(out);
           dbInsertOutcome(out);
           realtime?.broadcastOutcome(out);
@@ -1385,13 +1439,19 @@ function ingestMinuteBar(
             for (const id of doneFromBar) {
               const out = r.outcomeTracker.finalize(id);
               if (out) {
+                if (out.stoppedOut) {
+                  console.log(`[broker] auto-close ${out.symbol} — bar5 stop hit`);
+                  void brokerExecution.closePosition(out.symbol).catch((e) => {
+                    console.log("[broker] auto-close error", e?.message || e);
+                  });
+                }
                 outcomes.push(out);
                 dbInsertOutcome(out);
                 realtime?.broadcastOutcome(out);
               }
             }
 
-            if (allowSignals) evaluateIfNeededForRunner(r, symbol, closeTs);
+            if (allowEntries) evaluateIfNeededForRunner(r, symbol, closeTs);
           }
         }
 
