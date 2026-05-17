@@ -44,6 +44,9 @@ export function createHttpApp(args: {
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
+  // From remote — used by /api/candles/:symbol route below. Optional so HEAD's
+  // existing multi-strategy main file isn't forced to provide it immediately.
+  getBars1?: (symbol: string) => any[];
 
   getStreamStats?: () => any;
   replay?: (symbols: string[], minutes: number, emitAlerts: boolean) => Promise<void>;

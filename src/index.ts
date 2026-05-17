@@ -20,12 +20,14 @@ import {
 import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
-import { Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY } from "./market/time";
+import { computeMarketDirection, Bar5, MarketDirection } from "./market/marketDirection";
+import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY, isRegularSessionNY } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
 import { OutcomeTracker } from "./engine/outcomeTracker";
+import { ExecutionEngine } from "./engine/executionEngine";
+import { PositionManager } from "./engine/positionManager";
 import { createHttpApp } from "./server/http";
 import { attachRealtime } from "./server/realtime";
 import { BrokerExecutionService } from "./broker/service";
@@ -135,6 +137,18 @@ const DEFAULT_TIMEFRAME_MIN = Number(process.env.TIMEFRAME_MINUTES || 5);
 const RETEST_TOL = Number(process.env.RETEST_TOLERANCE_PCT || 0.001);
 const STRUCTURE_WINDOW = Number(process.env.STRUCTURE_WINDOW || 3);
 const RS_WINDOW_BARS = Number(process.env.RS_WINDOW_BARS_5M || 3);
+
+// Config for the new ExecutionEngine + PositionManager (added in remote commit
+// c20409a). These coexist with the existing BrokerExecutionService — only one
+// path should be wired into the live alert handler. See notes near
+// triggerBrokerExecutionIfEligible / handleAlertExec below.
+const TRACK_WINDOW_MIN = Number(process.env.TRACK_WINDOW_MINUTES || 60);
+
+const EXECUTION_ENABLED = process.env.EXECUTION_ENABLED === "true";
+const ALPACA_BASE_URL = process.env.ALPACA_BASE_URL || "https://paper-api.alpaca.markets";
+const RISK_PCT = Number(process.env.RISK_PCT_PER_TRADE || 0.02);
+const MAX_TRADES_PER_DAY = Number(process.env.MAX_TRADES_PER_DAY || 5);
+const DAILY_LOSS_LIMIT_PCT = Number(process.env.DAILY_LOSS_LIMIT_PCT || 0.05);
 
 const KEY = process.env.APCA_API_KEY_ID || "";
 const SECRET = process.env.APCA_API_SECRET_KEY || "";

@@ -1,4 +1,4 @@
-/* global io */
+/* global io, LightweightCharts */
 
 let socket = null;
 try {
@@ -30,14 +30,18 @@ const DISPLAY_BAR_TARGET_IDEAL = 140;
 
 function fmtTime(ts) {
   try {
-    const d = new Date(ts);
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    const ss = String(d.getSeconds()).padStart(2, "0");
-    return `${hh}:${mm}:${ss}`;
-  } catch {
-    return "—";
-  }
+    return new Date(ts).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch { return "—"; }
+}
+
+function fmtDatetime(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleString("en-US", {
+      month: "numeric", day: "numeric", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+    });
+  } catch { return "—"; }
 }
 
 function fmtDateTime(ts) {
@@ -49,6 +53,11 @@ function fmtDateTime(ts) {
 function fmt2(x) {
   if (x == null || x === "" || Number.isNaN(Number(x))) return "—";
   return Number(x).toFixed(2);
+}
+
+function fmt2pct(x) {
+  const v = fmt2(x);
+  return v === "—" ? "—" : v + "%";
 }
 
 function escapeHtml(s) {
@@ -104,8 +113,29 @@ function modalClose() {
 }
 
 modalCloseEl?.addEventListener("click", modalClose);
-modalEl?.addEventListener("click", (e) => {
-  if (e.target === modalEl) modalClose();
+modalEl?.addEventListener("click", (e) => { if (e.target === modalEl) modalClose(); });
+
+// ─── Chart toggle buttons ──────────────────────────────────────────────────
+let entryTs = null;
+let exitTs = null;
+let candleSeries = null;
+let entryMarkerVisible = true;
+let exitMarkerVisible = false;
+
+document.getElementById("btnEntry")?.addEventListener("click", () => {
+  entryMarkerVisible = !entryMarkerVisible;
+  document.getElementById("btnEntry").classList.toggle("active", entryMarkerVisible);
+  updateMarkers();
+});
+document.getElementById("btnExit")?.addEventListener("click", () => {
+  exitMarkerVisible = !exitMarkerVisible;
+  document.getElementById("btnExit").classList.toggle("active", exitMarkerVisible);
+  updateMarkers();
+});
+document.getElementById("btnVwap")?.addEventListener("click", () => {
+  showVwap = !showVwap;
+  document.getElementById("btnVwap").classList.toggle("active", showVwap);
+  if (activeVwapSeries) activeVwapSeries.applyOptions({ visible: showVwap });
 });
 
 function normalizeBars(bars1m) {
@@ -955,6 +985,93 @@ function applyDbFilters(rows) {
   else if (activeRange === "month") cutoff = now - 30 * 24 * 60 * 60_000;
   else if (activeRange === "year") cutoff = now - 365 * 24 * 60 * 60_000;
 
+  // Destroy previous
+  if (returnsChart) { returnsChart.remove(); returnsChart = null; }
+
+  // Bucket 5m returns
+  const buckets = [
+    { label: "< -3%", min: -Infinity, max: -3, color: "#ef5350" },
+    { label: "-3 to -1%", min: -3, max: -1, color: "#f87171" },
+    { label: "-1 to 0%", min: -1, max: 0, color: "#fca5a5" },
+    { label: "0 to 1%", min: 0, max: 1, color: "#6ee7b7" },
+    { label: "1 to 3%", min: 1, max: 3, color: "#34d399" },
+    { label: "> 3%", min: 3, max: Infinity, color: "#10b981" },
+  ];
+
+  const counts = buckets.map(() => 0);
+  for (const r of rows) {
+    const v = Number(r.ret5m);
+    if (r.ret5m === "" || isNaN(v)) continue;
+    for (let i = 0; i < buckets.length; i++) {
+      if (v >= buckets[i].min && v < buckets[i].max) { counts[i]++; break; }
+    }
+  }
+
+  // Build chart with a baseline histogram using fake time keys
+  const chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 140,
+    layout: { background: { color: "transparent" }, textColor: "#64748b", fontSize: 10 },
+    grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.04)" } },
+    rightPriceScale: { borderVisible: false },
+    timeScale: {
+      borderVisible: false,
+      tickMarkFormatter: (time) => {
+        const idx = time - 1;
+        return buckets[idx]?.label || "";
+      },
+    },
+    handleScroll: false,
+    handleScale: false,
+  });
+  returnsChart = chart;
+
+  const hist = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+  const data = buckets.map((b, i) => ({
+    time: i + 1,
+    value: counts[i],
+    color: b.color + (counts[i] === 0 ? "44" : "cc"),
+  }));
+  hist.setData(data);
+
+  chart.timeScale().fitContent();
+
+  const ro = new ResizeObserver(() => { if (returnsChart) returnsChart.applyOptions({ width: container.clientWidth }); });
+  ro.observe(container);
+}
+
+// ─── Stats strip ───────────────────────────────────────────────────────────
+function renderStats(rows) {
+  const total = rows.length;
+  document.getElementById("statTotal").textContent = total || "0";
+
+  const withMfe = rows.filter((r) => r.mfePct !== "" && Number(r.mfePct) > 0);
+  const winRate = total > 0 ? Math.round((withMfe.length / total) * 100) : null;
+  const statWr = document.getElementById("statWinRate");
+  statWr.textContent = winRate != null ? winRate + "%" : "—";
+  statWr.className = "stat-value " + (winRate != null ? (winRate >= 50 ? "pos" : "neg") : "");
+
+  const ret5vals = rows.map((r) => Number(r.ret5m)).filter((v) => !isNaN(v) && v !== 0);
+  const avgRet = ret5vals.length ? ret5vals.reduce((a, b) => a + b, 0) / ret5vals.length : null;
+  const statAvg = document.getElementById("statAvgRet");
+  statAvg.textContent = avgRet != null ? fmt2pct(avgRet) : "—";
+  statAvg.className = "stat-value " + (avgRet != null ? (avgRet > 0 ? "pos" : "neg") : "");
+
+  const mfeVals = rows.map((r) => Number(r.mfePct)).filter((v) => !isNaN(v));
+  const bestMfe = mfeVals.length ? Math.max(...mfeVals) : null;
+  const statBest = document.getElementById("statBestMfe");
+  statBest.textContent = bestMfe != null ? fmt2pct(bestMfe) : "—";
+  statBest.className = "stat-value pos";
+
+  const stops = rows.filter((r) => r.stoppedOut).length;
+  document.getElementById("statStops").textContent = total > 0 ? `${stops} / ${total}` : "—";
+}
+
+// ─── DB table render ───────────────────────────────────────────────────────
+function applyDbFilters(rows) {
+  const sym = String(document.getElementById("dbSym")?.value || "").trim().toUpperCase();
+  const status = String(document.getElementById("dbStatus")?.value || "").trim().toUpperCase();
+  const stoppedOnly = Boolean(document.getElementById("dbStoppedOnly")?.checked);
   return (rows || []).filter((r) => {
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
     return true;
@@ -1024,6 +1141,8 @@ function renderStats(rows) {
 }
 
 function renderDbTable() {
+  const dbBodyEl = document.getElementById("dbBody");
+  const dbEmptyEl = document.getElementById("dbEmpty");
   if (!dbBodyEl || !dbEmptyEl) return;
 
   const rows = applyDbFilters(dbRowsRaw);
@@ -1036,19 +1155,17 @@ function renderDbTable() {
 
   dbBodyEl.innerHTML = "";
 
-  if (!rows.length) {
-    dbEmptyEl.style.display = "block";
-    return;
-  }
+  if (!rows.length) { dbEmptyEl.style.display = "block"; return; }
   dbEmptyEl.style.display = "none";
 
   for (const r of rows) {
     const tr = document.createElement("tr");
     tr.className = "clickable";
 
-    const td = (t) => {
+    const td = (text, cls) => {
       const el = document.createElement("td");
-      el.textContent = t;
+      el.textContent = text;
+      if (cls) el.className = cls;
       return el;
     };
 
@@ -1106,9 +1223,9 @@ async function fetchDbRowsStable() {
     lastDbrowsHash = hash;
     dbRowsRaw = rows;
     renderDbTable();
-  } catch {
-    // ignore
-  }
+    renderStats(dbRowsRaw);
+    renderReturnsChart(dbRowsRaw);
+  } catch { /* ignore */ }
 }
 
 for (const btn of rangeToggleEls) {

@@ -49,14 +49,14 @@ export function isFirstHourNY(ms: number): boolean {
   return mins >= 9 * 60 + 30 && mins < 10 * 60 + 30;
 }
 
-// NEW: after-hours (16:00–20:00 ET)
+// After-hours (16:00–20:00 ET)
 export function isAfterHoursNY(ms: number): boolean {
   const p = nyPartsFromMs(ms);
   const mins = p.hh * 60 + p.mm;
   return mins >= 16 * 60 && mins < 20 * 60;
 }
 
-// NEW: extended session (premarket OR after-hours)
+// Extended session (premarket OR after-hours)
 export function isExtendedSessionNY(ms: number): boolean {
   return isPremarketNY(ms) || isAfterHoursNY(ms);
 }
