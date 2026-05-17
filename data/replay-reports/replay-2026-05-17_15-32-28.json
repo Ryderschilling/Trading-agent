@@ -1,0 +1,4871 @@
+{
+  "startedAt": 1779031948947,
+  "finishedAt": 1779031949131,
+  "durationMs": 184,
+  "agentEnabled": false,
+  "agentReview": null,
+  "scenarioResults": [
+    {
+      "scenarioId": "real_2026-05-12_aapl",
+      "name": "AAPL real data, 2026-05-12",
+      "testSymbol": "AAPL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "11496a5d3051e2fbd855fc7c",
+            "ts": 1778593200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 292.76,
+            "structureLevel": 292.76,
+            "breakBarTime": 1778593200000,
+            "close": 293.56,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_aapl"
+        },
+        {
+          "alert": {
+            "id": "df93b7eeacdde488531f682c",
+            "ts": 1778593500000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 292.76,
+            "structureLevel": 292.76,
+            "breakBarTime": null,
+            "close": 293.41,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_aapl"
+        },
+        {
+          "alert": {
+            "id": "8380c1816c537faaf6cacf53",
+            "ts": 1778595300000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 292.76,
+            "structureLevel": 292.76,
+            "breakBarTime": 1778595300000,
+            "close": 294.65,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_aapl"
+        },
+        {
+          "alert": {
+            "id": "5c51c510432f06358ae8ec59",
+            "ts": 1778595600000,
+            "symbol": "AAPL",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 292.76,
+            "breakBarTime": 1778595300000,
+            "close": 294.26,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-12_aapl"
+        },
+        {
+          "alert": {
+            "id": "16e68a95429bc96de91b89ff",
+            "ts": 1778615400000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 292.76,
+            "structureLevel": 292.76,
+            "breakBarTime": 1778615400000,
+            "close": 294.77,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_aapl"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-12_aapl",
+          "symbol": "AAPL",
+          "dir": "LONG",
+          "entryTs": 1778593560000,
+          "entryPrice": 293.41,
+          "exitTs": 1778594580000,
+          "exitPrice": 293.41,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 292.76,
+          "targetPrice": 294.7100000000001
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-12_aapl",
+          "ts": 1778593560000,
+          "symbol": "AAPL",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-12_aapl-df93b7ee"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 3,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 1,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-12_meta",
+      "name": "META real data, 2026-05-12",
+      "testSymbol": "META",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "7948c7b0cbac18e02c8dca6e",
+            "ts": 1778593200000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 596.75,
+            "structureLevel": 596.75,
+            "breakBarTime": 1778593200000,
+            "close": 598.2,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_meta"
+        },
+        {
+          "alert": {
+            "id": "46d1d0389fd6a47e646387c1",
+            "ts": 1778593500000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 596.75,
+            "structureLevel": 596.75,
+            "breakBarTime": null,
+            "close": 597.66,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_meta"
+        },
+        {
+          "alert": {
+            "id": "f62401420de8acf22bcde354",
+            "ts": 1778595300000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 596.75,
+            "structureLevel": 596.75,
+            "breakBarTime": 1778595300000,
+            "close": 602.2,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_meta"
+        },
+        {
+          "alert": {
+            "id": "36640e2b2803592a8304ed2d",
+            "ts": 1778595600000,
+            "symbol": "META",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 596.75,
+            "breakBarTime": 1778595300000,
+            "close": 603.12,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-12_meta"
+        },
+        {
+          "alert": {
+            "id": "e2802343ac059858fe9557a5",
+            "ts": 1778615400000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 596.75,
+            "structureLevel": 596.75,
+            "breakBarTime": 1778615400000,
+            "close": 603.33,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_meta"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-12_meta",
+          "symbol": "META",
+          "dir": "LONG",
+          "entryTs": 1778593560000,
+          "entryPrice": 597.81,
+          "exitTs": 1778593980000,
+          "exitPrice": 599.9299999999998,
+          "exitReason": "TARGET",
+          "retPct": 0.3546277245278418,
+          "stopPrice": 596.75,
+          "targetPrice": 599.9299999999998
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-12_meta",
+          "ts": 1778593560000,
+          "symbol": "META",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-12_meta-46d1d038"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 3,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 1,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "TARGET"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-12_nvda",
+      "name": "NVDA real data, 2026-05-12",
+      "testSymbol": "NVDA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "1afa27dfe371e3de65aa15ed",
+            "ts": 1778593200000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 219.15,
+            "structureLevel": 219.15,
+            "breakBarTime": 1778593200000,
+            "close": 223.74,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "d4b0a12753b15bf44af62d57",
+            "ts": 1778593500000,
+            "symbol": "NVDA",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 219.15,
+            "breakBarTime": 1778593200000,
+            "close": 222.435,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "7448b73bb4c2bf2d5bfb1844",
+            "ts": 1778597700000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778597700000,
+            "close": 217.36,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "d173a7c5db15b4c85fcce302",
+            "ts": 1778598000000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": null,
+            "close": 217.34,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "bd230a27cb95773f77e3154b",
+            "ts": 1778598900000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778598900000,
+            "close": 217.1,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "a2674725cbbabcc48b891942",
+            "ts": 1778599200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": null,
+            "close": 217.16,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "d52011c68b2d8f71910205ae",
+            "ts": 1778601300000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778601300000,
+            "close": 216.88,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "53b3c73afef41bd6e39b056b",
+            "ts": 1778601600000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": null,
+            "close": 217.09,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "86f65b9116d6a5228b24bdd7",
+            "ts": 1778602500000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778602500000,
+            "close": 217.5,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "3d69a5fa82ae95f98fa51aaf",
+            "ts": 1778602800000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": null,
+            "close": 217.61,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "ae9bd5f00d4cfa3fc9b5801f",
+            "ts": 1778604000000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778604000000,
+            "close": 217.285,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "cc415ec15a4b6261a8d84424",
+            "ts": 1778604300000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": null,
+            "close": 217.24,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "e17034b2a81879312aefe422",
+            "ts": 1778605200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 217.51,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778605200000,
+            "close": 215.83,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "ca606371644d75279354ba7d",
+            "ts": 1778606400000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 217.51,
+            "breakBarTime": 1778605200000,
+            "close": 217.825,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        },
+        {
+          "alert": {
+            "id": "26f0e71e0c658111f6032b9d",
+            "ts": 1778614800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 219.15,
+            "structureLevel": 219.15,
+            "breakBarTime": 1778614800000,
+            "close": 221.28,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_nvda"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-12_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778599260000,
+          "entryPrice": 217.12,
+          "exitTs": 1778599260000,
+          "exitPrice": 217.12,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 217.51,
+          "targetPrice": 216.34000000000003
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-12_nvda",
+          "ts": 1778599260000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-12_nvda-a2674725"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 8,
+        "entryAlerts": 5,
+        "invalidatedAlerts": 2,
+        "skippedLowRisk": 4,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": [
+        {
+          "ts": 1778598000000,
+          "symbol": "NVDA",
+          "dir": "PUT",
+          "entryPrice": 217.46,
+          "structureLevel": 217.51,
+          "oneRPct": 0.00022992734295954634,
+          "reason": "low_risk"
+        },
+        {
+          "ts": 1778601600000,
+          "symbol": "NVDA",
+          "dir": "PUT",
+          "entryPrice": 217.19,
+          "structureLevel": 217.51,
+          "oneRPct": 0.0014733643353745255,
+          "reason": "low_risk"
+        },
+        {
+          "ts": 1778602800000,
+          "symbol": "NVDA",
+          "dir": "PUT",
+          "entryPrice": 217.65,
+          "structureLevel": 217.51,
+          "oneRPct": 0.0006432345508845154,
+          "reason": "low_risk"
+        },
+        {
+          "ts": 1778604300000,
+          "symbol": "NVDA",
+          "dir": "PUT",
+          "entryPrice": 217.25,
+          "structureLevel": 217.51,
+          "oneRPct": 0.0011967779056386233,
+          "reason": "low_risk"
+        }
+      ]
+    },
+    {
+      "scenarioId": "real_2026-05-12_pltr",
+      "name": "PLTR real data, 2026-05-12",
+      "testSymbol": "PLTR",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "29d6a3848f713414ce1c3451",
+            "ts": 1778615700000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 135.58,
+            "structureLevel": 135.58,
+            "breakBarTime": 1778615700000,
+            "close": 136.02,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_pltr"
+        },
+        {
+          "alert": {
+            "id": "c65ad7600927a515bc954468",
+            "ts": 1778616300000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 135.58,
+            "structureLevel": 135.58,
+            "breakBarTime": null,
+            "close": 135.58,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_pltr"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-12_pltr",
+          "symbol": "PLTR",
+          "dir": "LONG",
+          "entryTs": 1778616480000,
+          "entryPrice": 135.2,
+          "exitTs": 1778616960000,
+          "exitPrice": 135.96000000000004,
+          "exitReason": "TARGET",
+          "retPct": 0.5621301775148283,
+          "stopPrice": 134.81999999999996,
+          "targetPrice": 135.96000000000004
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-12_pltr",
+          "ts": 1778616480000,
+          "symbol": "PLTR",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-12_pltr-c65ad760"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 1,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 0,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "TARGET"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-12_tsla",
+      "name": "TSLA real data, 2026-05-12",
+      "testSymbol": "TSLA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "e552e5e77db14c161bafabb6",
+            "ts": 1778593200000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 441.23,
+            "structureLevel": 441.23,
+            "breakBarTime": 1778593200000,
+            "close": 445.52,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        },
+        {
+          "alert": {
+            "id": "82382c31169f7e12b9c1fa81",
+            "ts": 1778593500000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 441.23,
+            "structureLevel": 441.23,
+            "breakBarTime": null,
+            "close": 441.46,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        },
+        {
+          "alert": {
+            "id": "363ffecbaf23822da40750b1",
+            "ts": 1778594400000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 438.51,
+            "structureLevel": 438.51,
+            "breakBarTime": 1778594400000,
+            "close": 437.73,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        },
+        {
+          "alert": {
+            "id": "23d44366f182f6a80e9ada53",
+            "ts": 1778594700000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 438.51,
+            "structureLevel": 438.51,
+            "breakBarTime": null,
+            "close": 437.355,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        },
+        {
+          "alert": {
+            "id": "1a369dca95b9276931809e0c",
+            "ts": 1778595900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 438.51,
+            "structureLevel": 438.51,
+            "breakBarTime": 1778595900000,
+            "close": 435.14,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        },
+        {
+          "alert": {
+            "id": "b470e011ad238792f0d82d13",
+            "ts": 1778614800000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 438.51,
+            "breakBarTime": 1778595900000,
+            "close": 434.845,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-12_tsla"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-12_tsla",
+          "symbol": "TSLA",
+          "dir": "SHORT",
+          "entryTs": 1778594760000,
+          "entryPrice": 437.37,
+          "exitTs": 1778594940000,
+          "exitPrice": 438.51,
+          "exitReason": "STOP",
+          "retPct": -0.2606488785239011,
+          "stopPrice": 438.51,
+          "targetPrice": 435.09000000000003
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-12_tsla",
+          "ts": 1778594760000,
+          "symbol": "TSLA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-12_tsla-23d44366"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 3,
+        "entryAlerts": 2,
+        "invalidatedAlerts": 1,
+        "skippedLowRisk": 1,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": [
+        {
+          "ts": 1778593500000,
+          "symbol": "TSLA",
+          "dir": "CALL",
+          "entryPrice": 441.055,
+          "structureLevel": 441.23,
+          "oneRPct": 0.0003967759123012127,
+          "reason": "low_risk"
+        }
+      ]
+    },
+    {
+      "scenarioId": "real_2026-05-13_aapl",
+      "name": "AAPL real data, 2026-05-13",
+      "testSymbol": "AAPL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "b6f87b82617d60e1851a4415",
+            "ts": 1778683500000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 294.42,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778683500000,
+            "close": 296.6,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "ffc901f4181548de97ebfe4a",
+            "ts": 1778687400000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778683500000,
+            "close": 297.25,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "c1c220316da1bd49382a2892",
+            "ts": 1778689200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 294.42,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778689200000,
+            "close": 297.84,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "f6d89ddf54b7391eac37e0dc",
+            "ts": 1778690700000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778689200000,
+            "close": 299.015,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "d41f4d1851ac0a498383abc3",
+            "ts": 1778691600000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 294.42,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778691600000,
+            "close": 299.63,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "b449c28b40fdf46315afa410",
+            "ts": 1778697300000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778691600000,
+            "close": 299.325,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "edf11c28be3f1e16cee2fbbc",
+            "ts": 1778698200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 294.42,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778698200000,
+            "close": 299.51,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "a98f51c6a76de01cbd7537bf",
+            "ts": 1778700300000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778698200000,
+            "close": 299.13,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "f658fe88e486603542fa277d",
+            "ts": 1778701200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 294.42,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778701200000,
+            "close": 299.44,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        },
+        {
+          "alert": {
+            "id": "0421937a4d6ecda0e85654a5",
+            "ts": 1778702100000,
+            "symbol": "AAPL",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 294.42,
+            "breakBarTime": 1778701200000,
+            "close": 298.95,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_aapl"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 5,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 5,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-13_meta",
+      "name": "META real data, 2026-05-13",
+      "testSymbol": "META",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "ea929a35a65ee2f10a2b7bbb",
+            "ts": 1778683500000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 599.31,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778683500000,
+            "close": 605.32,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "0c6f83507bdc0f80e4bb0434",
+            "ts": 1778687400000,
+            "symbol": "META",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778683500000,
+            "close": 607.27,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "4bc0ca4ff141ee05781efbfb",
+            "ts": 1778688300000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 599.31,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778688300000,
+            "close": 609.63,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "d5a7fae39c031c8462a85f25",
+            "ts": 1778690700000,
+            "symbol": "META",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778688300000,
+            "close": 612.4,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "6eb180edcd0cf4f03726d83d",
+            "ts": 1778691600000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 599.31,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778691600000,
+            "close": 615.695,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "37986a69a93a66efb7ffea19",
+            "ts": 1778697300000,
+            "symbol": "META",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778691600000,
+            "close": 619.15,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "943e531871373d5fa6977e57",
+            "ts": 1778699700000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 599.31,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778699700000,
+            "close": 618.2,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "3b8a5ec140e49ed0dad762fa",
+            "ts": 1778700300000,
+            "symbol": "META",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778699700000,
+            "close": 616.465,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "74f8f223032f14b7f65c0427",
+            "ts": 1778701200000,
+            "symbol": "META",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 599.31,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778701200000,
+            "close": 616.97,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        },
+        {
+          "alert": {
+            "id": "1350e51589a6733e8e27e828",
+            "ts": 1778702100000,
+            "symbol": "META",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 599.31,
+            "breakBarTime": 1778701200000,
+            "close": 616.61,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_meta"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 5,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 5,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-13_nvda",
+      "name": "NVDA real data, 2026-05-13",
+      "testSymbol": "NVDA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "d2e41b10501de6174392d116",
+            "ts": 1778679900000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 224.51,
+            "structureLevel": 224.51,
+            "breakBarTime": 1778679900000,
+            "close": 222.555,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "b01122f5fe7ef503cb2d0575",
+            "ts": 1778680440000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 224.51,
+            "structureLevel": 224.51,
+            "breakBarTime": null,
+            "close": 224.05,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "8c912ab5d483bdac77071447",
+            "ts": 1778681100000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 224.51,
+            "structureLevel": 224.51,
+            "breakBarTime": 1778681100000,
+            "close": 223.43,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "00bb392dfc0faa842452007f",
+            "ts": 1778681580000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 224.51,
+            "structureLevel": 224.51,
+            "breakBarTime": null,
+            "close": 224.05,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "5013872b87f08c309ee1b7f3",
+            "ts": 1778683800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778683800000,
+            "close": 225.81,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "ea1b56206643ba5f0a9ea3f4",
+            "ts": 1778684100000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": null,
+            "close": 226,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "1def85feed3b2be26d5fcae9",
+            "ts": 1778685000000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778685000000,
+            "close": 226.67,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "1dc1c87338c200cbf6cc1511",
+            "ts": 1778685780000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": null,
+            "close": 226.14,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "e44bafa54423347f0a93dc7a",
+            "ts": 1778686500000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778686500000,
+            "close": 226.335,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "3682af23386801dd30f9ad47",
+            "ts": 1778687400000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778686500000,
+            "close": 227.25,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "2bbae45d3a31d5daf6083817",
+            "ts": 1778688600000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778688600000,
+            "close": 227.67,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "4f41d3462c3eda62e9276d41",
+            "ts": 1778690700000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778688600000,
+            "close": 226.84,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "80512b6ab74d1269199b00a7",
+            "ts": 1778692200000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778692200000,
+            "close": 227.09,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "5fd7459a3a003944d76be13d",
+            "ts": 1778694900000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778692200000,
+            "close": 225.45,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "d19afe9febd05b6639e8f746",
+            "ts": 1778695800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778695800000,
+            "close": 227,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "6bed4841aadd14f73915e27f",
+            "ts": 1778697300000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778695800000,
+            "close": 227.08,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "b1e9477d8a22ca9e2a77691b",
+            "ts": 1778699400000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 225.59,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778699400000,
+            "close": 227.04,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        },
+        {
+          "alert": {
+            "id": "4a3b0508f47193f72704e990",
+            "ts": 1778700300000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 225.59,
+            "breakBarTime": 1778699400000,
+            "close": 226.78,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_nvda"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778680500000,
+          "entryPrice": 224.04,
+          "exitTs": 1778680620000,
+          "exitPrice": 224.04,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 224.51,
+          "targetPrice": 223.1
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778681640000,
+          "entryPrice": 224.085,
+          "exitTs": 1778681700000,
+          "exitPrice": 224.085,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 224.51,
+          "targetPrice": 223.23500000000004
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "symbol": "NVDA",
+          "dir": "LONG",
+          "entryTs": 1778684160000,
+          "entryPrice": 226.02,
+          "exitTs": 1778684640000,
+          "exitPrice": 226.88000000000002,
+          "exitReason": "TARGET",
+          "retPct": 0.38049730112380037,
+          "stopPrice": 225.59,
+          "targetPrice": 226.88000000000002
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "symbol": "NVDA",
+          "dir": "LONG",
+          "entryTs": 1778685840000,
+          "entryPrice": 226.14,
+          "exitTs": 1778687640000,
+          "exitPrice": 227.23999999999995,
+          "exitReason": "TARGET",
+          "retPct": 0.486424338905088,
+          "stopPrice": 225.59,
+          "targetPrice": 227.23999999999995
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "ts": 1778680500000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-13_nvda-b01122f5"
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "ts": 1778681640000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-13_nvda-00bb392d"
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "ts": 1778684160000,
+          "symbol": "NVDA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-13_nvda-ea1b5620"
+        },
+        {
+          "scenarioId": "real_2026-05-13_nvda",
+          "ts": 1778685840000,
+          "symbol": "NVDA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-13_nvda-1dc1c873"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 9,
+        "entryAlerts": 4,
+        "invalidatedAlerts": 5,
+        "skippedLowRisk": 0,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-13_pltr",
+      "name": "PLTR real data, 2026-05-13",
+      "testSymbol": "PLTR",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "913e3fcf036d6d817c681035",
+            "ts": 1778679600000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 134.82,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778679600000,
+            "close": 133.54,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "12b58804af04ec10b9938337",
+            "ts": 1778682000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778679600000,
+            "close": 131.67,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "a3e9d1426fcc9b4535942c28",
+            "ts": 1778687400000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 134.82,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778687400000,
+            "close": 130.59,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "0d94ec6079fdbff4c6088814",
+            "ts": 1778688000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778687400000,
+            "close": 130.565,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "06cd5107ab5c42726858b5a6",
+            "ts": 1778690700000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 134.82,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778690700000,
+            "close": 131.35,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "7ba0d140e45e4b49afb11ae2",
+            "ts": 1778691000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778690700000,
+            "close": 131.13,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "c69116fc74171b75f76ecc93",
+            "ts": 1778697300000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 134.82,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778697300000,
+            "close": 129.97,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        },
+        {
+          "alert": {
+            "id": "889613682ca1a483e98f1128",
+            "ts": 1778698200000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 134.82,
+            "breakBarTime": 1778697300000,
+            "close": 129.73,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_pltr"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 4,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 4,
+        "skippedLowRisk": 0,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-13_tsla",
+      "name": "TSLA real data, 2026-05-13",
+      "testSymbol": "TSLA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "c75a66313a8f46638f452f1e",
+            "ts": 1778679900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 435.47,
+            "structureLevel": 435.47,
+            "breakBarTime": 1778679900000,
+            "close": 432.22,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "6d6a2e9b4ecc779ed1e7ff6d",
+            "ts": 1778680440000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 435.47,
+            "structureLevel": 435.47,
+            "breakBarTime": null,
+            "close": 434.825,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "de8a386893bc215c32bb4b0e",
+            "ts": 1778682000000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778682000000,
+            "close": 439.92,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "7711f46feb11a920f55f438b",
+            "ts": 1778682300000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778682000000,
+            "close": 442.57,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "7e4bd1db497451e92dde12b2",
+            "ts": 1778684400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778684400000,
+            "close": 448.225,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "d9b2a7f7ec585e2d32bbe5e8",
+            "ts": 1778687400000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778684400000,
+            "close": 448.08,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "481d2acdef198ebfee1ba458",
+            "ts": 1778688600000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778688600000,
+            "close": 449.08,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "64cb78151e393c4fb73dcd68",
+            "ts": 1778690700000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778688600000,
+            "close": 450.685,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "76dc7a1279f9f00a5dfe5f5a",
+            "ts": 1778694600000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778694600000,
+            "close": 447.92,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "e176f20550fc89d660a9da59",
+            "ts": 1778697300000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778694600000,
+            "close": 447.47,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "1ebddb70e1f7896c896a5ef4",
+            "ts": 1778698200000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778698200000,
+            "close": 447.65,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "8a8ecce5fa0aa88fbf0b935b",
+            "ts": 1778700300000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778698200000,
+            "close": 444.65,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "83e4b841cd59855a29eeec88",
+            "ts": 1778701200000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 437.55,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778701200000,
+            "close": 444.71,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        },
+        {
+          "alert": {
+            "id": "8df703c6af386dbb6089d306",
+            "ts": 1778702100000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 437.55,
+            "breakBarTime": 1778701200000,
+            "close": 445.325,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-13_tsla"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 7,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 6,
+        "skippedLowRisk": 1,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": null
+      },
+      "skippedEntries": [
+        {
+          "ts": 1778680440000,
+          "symbol": "TSLA",
+          "dir": "PUT",
+          "entryPrice": 434.9,
+          "structureLevel": 435.47,
+          "oneRPct": 0.0013106461255462177,
+          "reason": "low_risk"
+        }
+      ]
+    },
+    {
+      "scenarioId": "real_2026-05-14_aapl",
+      "name": "AAPL real data, 2026-05-14",
+      "testSymbol": "AAPL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "3fc0edea8012adbf8c544cc2",
+            "ts": 1778767200000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778767200000,
+            "close": 297.18,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "7c645ee080eee3e087c0d82f",
+            "ts": 1778767680000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": null,
+            "close": 297.85,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "de0670c36a0e61e8148e5044",
+            "ts": 1778776500000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778776500000,
+            "close": 298.105,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "2b3375bcac5a7b9d7f136b44",
+            "ts": 1778776800000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": null,
+            "close": 298.34,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "e233b09332423f1b9cb7ea88",
+            "ts": 1778777700000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778777700000,
+            "close": 297.61,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "b8e47cb96bcd006ebec05d73",
+            "ts": 1778778000000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778777700000,
+            "close": 297.65,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "245a06112c6c3f0a3d09abda",
+            "ts": 1778784000000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778784000000,
+            "close": 298.34,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "36b510110f3da00fb2f22849",
+            "ts": 1778784300000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": null,
+            "close": 298.26,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "8b7a3407d50c06602807a832",
+            "ts": 1778788200000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": 1778788200000,
+            "close": 298.29,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        },
+        {
+          "alert": {
+            "id": "0a93ed45f6cb9eaf20e6df7a",
+            "ts": 1778788500000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 298.94,
+            "structureLevel": 298.94,
+            "breakBarTime": null,
+            "close": 298.025,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_aapl"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "symbol": "AAPL",
+          "dir": "SHORT",
+          "entryTs": 1778767740000,
+          "entryPrice": 297.87,
+          "exitTs": 1778771280000,
+          "exitPrice": 298.94,
+          "exitReason": "STOP",
+          "retPct": -0.35921710813441876,
+          "stopPrice": 298.94,
+          "targetPrice": 295.73
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "symbol": "AAPL",
+          "dir": "SHORT",
+          "entryTs": 1778776860000,
+          "entryPrice": 298.33,
+          "exitTs": 1778777100000,
+          "exitPrice": 297.10999999999996,
+          "exitReason": "TARGET",
+          "retPct": 0.40894311668287714,
+          "stopPrice": 298.94,
+          "targetPrice": 297.10999999999996
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "symbol": "AAPL",
+          "dir": "SHORT",
+          "entryTs": 1778784360000,
+          "entryPrice": 298.35,
+          "exitTs": 1778785500000,
+          "exitPrice": 298.94,
+          "exitReason": "STOP",
+          "retPct": -0.19775431540136582,
+          "stopPrice": 298.94,
+          "targetPrice": 297.1700000000001
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "symbol": "AAPL",
+          "dir": "SHORT",
+          "entryTs": 1778788560000,
+          "entryPrice": 298.005,
+          "exitTs": 1778789160000,
+          "exitPrice": 298.23,
+          "exitReason": "EOD",
+          "retPct": -0.07550208889113362,
+          "stopPrice": 298.94,
+          "targetPrice": 296.135
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "ts": 1778767740000,
+          "symbol": "AAPL",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_aapl-7c645ee0"
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "ts": 1778776860000,
+          "symbol": "AAPL",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_aapl-2b3375bc"
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "ts": 1778784360000,
+          "symbol": "AAPL",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_aapl-36b51011"
+        },
+        {
+          "scenarioId": "real_2026-05-14_aapl",
+          "ts": 1778788560000,
+          "symbol": "AAPL",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_aapl-0a93ed45"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 5,
+        "entryAlerts": 4,
+        "invalidatedAlerts": 1,
+        "skippedLowRisk": 0,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-14_meta",
+      "name": "META real data, 2026-05-14",
+      "testSymbol": "META",
+      "pass": true,
+      "failures": [],
+      "alerts": [],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 0,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 0,
+        "skippedLowRisk": 0,
+        "firstDir": null,
+        "firstLevel": null,
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-14_nvda",
+      "name": "NVDA real data, 2026-05-14",
+      "testSymbol": "NVDA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "701bf672c9fd5c7470638f1d",
+            "ts": 1778766000000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778766000000,
+            "close": 232.31,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "b35e61f6f2e04ad4bcae8f2a",
+            "ts": 1778766480000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": null,
+            "close": 231.82,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "ceee63ce7646ab82a6b68033",
+            "ts": 1778767800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778767800000,
+            "close": 231.82,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "5936988cb96eb5b28a528488",
+            "ts": 1778768100000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": null,
+            "close": 231.95,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "eb8f9b8f785f26c944c977ca",
+            "ts": 1778769000000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778769000000,
+            "close": 233.97,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "e746b15913fc902625fecf31",
+            "ts": 1778772900000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778769000000,
+            "close": 235.56,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "163cf9afb98f045d06b018c5",
+            "ts": 1778775000000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778775000000,
+            "close": 235.495,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "8ad076211db7d12bfa947714",
+            "ts": 1778776200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778775000000,
+            "close": 234.75,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "e091bd276134e3292cc439b9",
+            "ts": 1778777100000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778777100000,
+            "close": 235.195,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "e9c4826bf81487675a9809ef",
+            "ts": 1778777400000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778777100000,
+            "close": 235.71,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "cb50208690dfcc7205ce0838",
+            "ts": 1778779800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778779800000,
+            "close": 233.86,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "51df400b855742e1ec84ea3e",
+            "ts": 1778781900000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778779800000,
+            "close": 234.235,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "ee307950563295795b91a21b",
+            "ts": 1778782800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778782800000,
+            "close": 235.04,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "3bf82512441d1d104ecc2034",
+            "ts": 1778783100000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778782800000,
+            "close": 235.5,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "f649789d9aa436f4f097e453",
+            "ts": 1778784300000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 231.05,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778784300000,
+            "close": 235.76,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        },
+        {
+          "alert": {
+            "id": "781e71880293e6b4f9c91bf1",
+            "ts": 1778788200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 231.05,
+            "breakBarTime": 1778784300000,
+            "close": 235.8,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_nvda"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-14_nvda",
+          "symbol": "NVDA",
+          "dir": "LONG",
+          "entryTs": 1778766540000,
+          "entryPrice": 231.865,
+          "exitTs": 1778766900000,
+          "exitPrice": 231.05,
+          "exitReason": "STOP",
+          "retPct": -0.3514976387121807,
+          "stopPrice": 231.05,
+          "targetPrice": 233.495
+        },
+        {
+          "scenarioId": "real_2026-05-14_nvda",
+          "symbol": "NVDA",
+          "dir": "LONG",
+          "entryTs": 1778768160000,
+          "entryPrice": 231.95,
+          "exitTs": 1778768520000,
+          "exitPrice": 233.74999999999994,
+          "exitReason": "TARGET",
+          "retPct": 0.7760293166630544,
+          "stopPrice": 231.05,
+          "targetPrice": 233.74999999999994
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-14_nvda",
+          "ts": 1778766540000,
+          "symbol": "NVDA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_nvda-b35e61f6"
+        },
+        {
+          "scenarioId": "real_2026-05-14_nvda",
+          "ts": 1778768160000,
+          "symbol": "NVDA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_nvda-5936988c"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 8,
+        "entryAlerts": 2,
+        "invalidatedAlerts": 6,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-14_pltr",
+      "name": "PLTR real data, 2026-05-14",
+      "testSymbol": "PLTR",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "d570b6775cec19c6c7723fc7",
+            "ts": 1778766000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778766000000,
+            "close": 131.38,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "3a777581ee6f45e260047516",
+            "ts": 1778766540000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": null,
+            "close": 130.81,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "647f62a996679ae8c3c53f24",
+            "ts": 1778767500000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778767500000,
+            "close": 132.225,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "60c0655cbd642e626f50e375",
+            "ts": 1778772900000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778767500000,
+            "close": 132.755,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "163cf2af1d2a6f43fd0729d7",
+            "ts": 1778773800000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778773800000,
+            "close": 133.14,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "0ca3013c0b813b12180e1aa2",
+            "ts": 1778776200000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778773800000,
+            "close": 133.44,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "c9831e447e7ae22c4078e1df",
+            "ts": 1778777100000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778777100000,
+            "close": 133.73,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "241ccd7046508af996bef52f",
+            "ts": 1778777400000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778777100000,
+            "close": 133.12,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "0662642613b2d39e19fc06cb",
+            "ts": 1778779800000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778779800000,
+            "close": 133.4,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "25967cb360db07136b7afe4a",
+            "ts": 1778781900000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778779800000,
+            "close": 133.635,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "9c6689879267bb9c4406ad2e",
+            "ts": 1778782800000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778782800000,
+            "close": 134.3,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "3fce4cd24c95affb430f5b8a",
+            "ts": 1778783100000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778782800000,
+            "close": 133.965,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "817086ccdab325fb582b6b7e",
+            "ts": 1778785500000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 130.28,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778785500000,
+            "close": 133.84,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        },
+        {
+          "alert": {
+            "id": "424e8a0f408e2d166b2f5545",
+            "ts": 1778788200000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 130.28,
+            "breakBarTime": 1778785500000,
+            "close": 133.72,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_pltr"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-14_pltr",
+          "symbol": "PLTR",
+          "dir": "LONG",
+          "entryTs": 1778766600000,
+          "entryPrice": 130.725,
+          "exitTs": 1778766900000,
+          "exitPrice": 131.61499999999998,
+          "exitReason": "TARGET",
+          "retPct": 0.680818512143803,
+          "stopPrice": 130.28,
+          "targetPrice": 131.61499999999998
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-14_pltr",
+          "ts": 1778766600000,
+          "symbol": "PLTR",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_pltr-3a777581"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 7,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 6,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "TARGET"
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-14_tsla",
+      "name": "TSLA real data, 2026-05-14",
+      "testSymbol": "TSLA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "1d5b15e90f23d9e16be1c94b",
+            "ts": 1778766900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778766900000,
+            "close": 442.73,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "64c74cda3285d4fe1935da27",
+            "ts": 1778767320000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": null,
+            "close": 445.915,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "b4ecec264243dff9fd9d7540",
+            "ts": 1778774400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 450,
+            "structureLevel": 450,
+            "breakBarTime": 1778774400000,
+            "close": 450.15,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "42434b7f462a2dd6dba9d0bf",
+            "ts": 1778774700000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 450,
+            "structureLevel": 450,
+            "breakBarTime": null,
+            "close": 450.56,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "39b71b5699b1dcf617bba973",
+            "ts": 1778775600000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 450,
+            "structureLevel": 450,
+            "breakBarTime": 1778775600000,
+            "close": 450.9,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "256b10321aa2228d5720b10f",
+            "ts": 1778775900000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 450,
+            "structureLevel": 450,
+            "breakBarTime": null,
+            "close": 451.02,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "60716b17bf6d2077f2fe97f7",
+            "ts": 1778777400000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778777400000,
+            "close": 446.815,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "fa3635a947943b5d4f88fc06",
+            "ts": 1778777700000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": null,
+            "close": 447.2,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "421064a22d32e9d0b505ddcc",
+            "ts": 1778778600000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778778600000,
+            "close": 445.54,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "e5a730f5864ede32fbd99d66",
+            "ts": 1778779800000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778778600000,
+            "close": 445.25,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "e4c0054be7d27457e6683696",
+            "ts": 1778781900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778781900000,
+            "close": 444.67,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "2605f17b85c189f1fe219fe7",
+            "ts": 1778782200000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778781900000,
+            "close": 445.57,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "1a6d007aa86d194cac13214c",
+            "ts": 1778783100000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778783100000,
+            "close": 443.76,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "6898fdd2fbc204081b3ea524",
+            "ts": 1778783400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778783100000,
+            "close": 444.305,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "5ae7f35fc06955d0b3052132",
+            "ts": 1778788200000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 447.59,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778788200000,
+            "close": 443.205,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        },
+        {
+          "alert": {
+            "id": "12e5feec2d79cfbefe1e0ab6",
+            "ts": 1778788500000,
+            "symbol": "TSLA",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 447.59,
+            "breakBarTime": 1778788200000,
+            "close": 443.21,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-14_tsla"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-14_tsla",
+          "symbol": "TSLA",
+          "dir": "SHORT",
+          "entryTs": 1778767380000,
+          "entryPrice": 445.76,
+          "exitTs": 1778767380000,
+          "exitPrice": 445.76,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 447.59,
+          "targetPrice": 442.1
+        },
+        {
+          "scenarioId": "real_2026-05-14_tsla",
+          "symbol": "TSLA",
+          "dir": "LONG",
+          "entryTs": 1778775960000,
+          "entryPrice": 451.115,
+          "exitTs": 1778776020000,
+          "exitPrice": 450,
+          "exitReason": "STOP",
+          "retPct": -0.24716535694889533,
+          "stopPrice": 450,
+          "targetPrice": 453.345
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-14_tsla",
+          "ts": 1778767380000,
+          "symbol": "TSLA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_tsla-64c74cda"
+        },
+        {
+          "scenarioId": "real_2026-05-14_tsla",
+          "ts": 1778775960000,
+          "symbol": "TSLA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-14_tsla-256b1032"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 8,
+        "entryAlerts": 4,
+        "invalidatedAlerts": 4,
+        "skippedLowRisk": 2,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": [
+        {
+          "ts": 1778774700000,
+          "symbol": "TSLA",
+          "dir": "CALL",
+          "entryPrice": 450.155,
+          "structureLevel": 450,
+          "oneRPct": 0.0003443258433205734,
+          "reason": "low_risk"
+        },
+        {
+          "ts": 1778777700000,
+          "symbol": "TSLA",
+          "dir": "PUT",
+          "entryPrice": 446.96,
+          "structureLevel": 447.59,
+          "oneRPct": 0.0014095221048863332,
+          "reason": "low_risk"
+        }
+      ]
+    },
+    {
+      "scenarioId": "real_2026-05-15_aapl",
+      "name": "AAPL real data, 2026-05-15",
+      "testSymbol": "AAPL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "6cc216efe53786efcff9d670",
+            "ts": 1778854200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778854200000,
+            "close": 299.085,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "12aba45d0d1995b270c3f833",
+            "ts": 1778855100000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778854200000,
+            "close": 299.215,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "b732c99da3b4e8cff1b7d11f",
+            "ts": 1778856000000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778856000000,
+            "close": 300.775,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "1eaaabf678fdc5945645e282",
+            "ts": 1778856600000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778856000000,
+            "close": 300.96,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "845245120f75d2ae68be72b2",
+            "ts": 1778857500000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778857500000,
+            "close": 301.63,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "6809e3a5cb3dea06ae28af82",
+            "ts": 1778859900000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778857500000,
+            "close": 301.22,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "59ef7be36d1c27d326b07ac7",
+            "ts": 1778861400000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778861400000,
+            "close": 301.18,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "583748edc354c57b24d7d188",
+            "ts": 1778861700000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778861400000,
+            "close": 301.14,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "27367002e9b38caf95a0df12",
+            "ts": 1778862600000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778862600000,
+            "close": 302.085,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "be55418aeccb3005f1b0744b",
+            "ts": 1778864100000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778862600000,
+            "close": 302,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "db5980903e05aaabb350e028",
+            "ts": 1778865000000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778865000000,
+            "close": 302.66,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "9a1cfd761975c3a481014d6e",
+            "ts": 1778867100000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778865000000,
+            "close": 302.38,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "270942512a8dfd37c245501b",
+            "ts": 1778870400000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778870400000,
+            "close": 301.225,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "bf21065f04c2597764d8385d",
+            "ts": 1778871900000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778870400000,
+            "close": 300.99,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 7,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 7,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-15_meta",
+      "name": "META real data, 2026-05-15",
+      "testSymbol": "META",
+      "pass": true,
+      "failures": [],
+      "alerts": [],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 0,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 0,
+        "skippedLowRisk": 0,
+        "firstDir": null,
+        "firstLevel": null,
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-15_nvda",
+      "name": "NVDA real data, 2026-05-15",
+      "testSymbol": "NVDA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "010256ae42224f0ed3f5242f",
+            "ts": 1778851800000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778851800000,
+            "close": 227.49,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "6ba04ec1552ea3c77aa9e891",
+            "ts": 1778854200000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778851800000,
+            "close": 227.82,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "d6c1938c1651f679326f5047",
+            "ts": 1778855100000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778855100000,
+            "close": 226.625,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "330ebd04c7927424efbaa467",
+            "ts": 1778855400000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778855100000,
+            "close": 227.49,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "7a8d4dca399430001f8cdfeb",
+            "ts": 1778856600000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778856600000,
+            "close": 226.31,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "a004a6b35a98b674e3b52587",
+            "ts": 1778856900000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778856600000,
+            "close": 226.09,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "8aeae7bda425747997413069",
+            "ts": 1778860200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778860200000,
+            "close": 227.94,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "b14f9cd804215f959fe6f963",
+            "ts": 1778860500000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": null,
+            "close": 227.86,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "026a4bf62078a74408072d7d",
+            "ts": 1778861700000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778861700000,
+            "close": 227.43,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "78944347597b6a3da1234792",
+            "ts": 1778862060000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": null,
+            "close": 227.67,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "6ba974b1ab5b9e010a372578",
+            "ts": 1778864100000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778864100000,
+            "close": 227.905,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "c9760a99dad94586a3fc479a",
+            "ts": 1778864400000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": null,
+            "close": 227.96,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "669f03d03de1b2a6cf23d312",
+            "ts": 1778866500000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 230.03,
+            "structureLevel": 230.03,
+            "breakBarTime": 1778866500000,
+            "close": 230.25,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "3aa5945bb66132632c796111",
+            "ts": 1778866800000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 230.03,
+            "structureLevel": 230.03,
+            "breakBarTime": null,
+            "close": 230.2,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "8278696f7340e217a3336934",
+            "ts": 1778867700000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 230.03,
+            "structureLevel": 230.03,
+            "breakBarTime": 1778867700000,
+            "close": 230.82,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "5e4060ad3630f181aa8c8a74",
+            "ts": 1778868060000,
+            "symbol": "NVDA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 230.03,
+            "structureLevel": 230.03,
+            "breakBarTime": null,
+            "close": 230.685,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "a504e3aca6e2218dbf3160b4",
+            "ts": 1778871900000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778871900000,
+            "close": 227.75,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "fff5d338aa9ea3591cdfcd4b",
+            "ts": 1778872200000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": null,
+            "close": 227.66,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "586278f12d373feae2a5a0a3",
+            "ts": 1778874600000,
+            "symbol": "NVDA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 228.39,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778874600000,
+            "close": 225.235,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        },
+        {
+          "alert": {
+            "id": "eac5598a5990fd4b1dadc285",
+            "ts": 1778875500000,
+            "symbol": "NVDA",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 228.39,
+            "breakBarTime": 1778874600000,
+            "close": 224.75,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_nvda"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778860560000,
+          "entryPrice": 227.745,
+          "exitTs": 1778860920000,
+          "exitPrice": 228.39,
+          "exitReason": "STOP",
+          "retPct": -0.2832114865309806,
+          "stopPrice": 228.39,
+          "targetPrice": 226.45500000000004
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778862120000,
+          "entryPrice": 227.76,
+          "exitTs": 1778862600000,
+          "exitPrice": 228.39,
+          "exitReason": "STOP",
+          "retPct": -0.2766069546891445,
+          "stopPrice": 228.39,
+          "targetPrice": 226.5
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778864460000,
+          "entryPrice": 227.96,
+          "exitTs": 1778865060000,
+          "exitPrice": 228.39,
+          "exitReason": "STOP",
+          "retPct": -0.1886295841375585,
+          "stopPrice": 228.39,
+          "targetPrice": 227.10000000000005
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "symbol": "NVDA",
+          "dir": "LONG",
+          "entryTs": 1778868120000,
+          "entryPrice": 230.7,
+          "exitTs": 1778868960000,
+          "exitPrice": 230.7,
+          "exitReason": "STOP",
+          "retPct": 0,
+          "stopPrice": 230.03,
+          "targetPrice": 232.03999999999996
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "symbol": "NVDA",
+          "dir": "SHORT",
+          "entryTs": 1778872260000,
+          "entryPrice": 227.65,
+          "exitTs": 1778874720000,
+          "exitPrice": 226.17000000000004,
+          "exitReason": "TARGET",
+          "retPct": 0.6501207994728581,
+          "stopPrice": 228.39,
+          "targetPrice": 226.17000000000004
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "ts": 1778860560000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_nvda-b14f9cd8"
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "ts": 1778862120000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_nvda-78944347"
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "ts": 1778864460000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_nvda-c9760a99"
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "ts": 1778868120000,
+          "symbol": "NVDA",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_nvda-5e4060ad"
+        },
+        {
+          "scenarioId": "real_2026-05-15_nvda",
+          "ts": 1778872260000,
+          "symbol": "NVDA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_nvda-fff5d338"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 10,
+        "entryAlerts": 6,
+        "invalidatedAlerts": 4,
+        "skippedLowRisk": 1,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": "STOP"
+      },
+      "skippedEntries": [
+        {
+          "ts": 1778866800000,
+          "symbol": "NVDA",
+          "dir": "CALL",
+          "entryPrice": 230.13,
+          "structureLevel": 230.03,
+          "oneRPct": 0.0004345370008255956,
+          "reason": "low_risk"
+        }
+      ]
+    },
+    {
+      "scenarioId": "real_2026-05-15_pltr",
+      "name": "PLTR real data, 2026-05-15",
+      "testSymbol": "PLTR",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "5f9558d2f29ad6c4463cebf8",
+            "ts": 1778854200000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778854200000,
+            "close": 134.09,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "ba89d3a045c11d0eb3eb0004",
+            "ts": 1778855100000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778854200000,
+            "close": 133.46,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "b41868ea615f67ad3d94e055",
+            "ts": 1778856000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778856000000,
+            "close": 134.28,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "f6e3b6eb84048009c42b1354",
+            "ts": 1778856600000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778856000000,
+            "close": 133.73,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "891cf2d17d18e103fb24af68",
+            "ts": 1778858100000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778858100000,
+            "close": 133.41,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "abb32fb4c7aefd9435855fa7",
+            "ts": 1778859900000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778858100000,
+            "close": 133.62,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "51f57ad8fe69062576b5feeb",
+            "ts": 1778861100000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778861100000,
+            "close": 134.16,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "a23264f22bb3be52bc22ea5d",
+            "ts": 1778861700000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778861100000,
+            "close": 133.97,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "2f7fafc47ad64f299b406d9a",
+            "ts": 1778862600000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778862600000,
+            "close": 134.63,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "e0afca14de7a180bb0a9773d",
+            "ts": 1778864100000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778862600000,
+            "close": 134.355,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "da8e868fc149ad98700ab786",
+            "ts": 1778865600000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778865600000,
+            "close": 134.9,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "b11757f9f97ddb37858e5050",
+            "ts": 1778867100000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778865600000,
+            "close": 135.02,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "1be32357421de88e96766873",
+            "ts": 1778868000000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778868000000,
+            "close": 135.36,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "8252caed9732e088a7b5ce0e",
+            "ts": 1778868900000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778868000000,
+            "close": 135.28,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "aa0c03e2cce7504511482d5a",
+            "ts": 1778870400000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778870400000,
+            "close": 135.22,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "7d301d6473f542767d956314",
+            "ts": 1778871900000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778870400000,
+            "close": 134.43,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "c37c4f70408cf22c0e9fdc5b",
+            "ts": 1778873700000,
+            "symbol": "PLTR",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 132.76,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778873700000,
+            "close": 134.065,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        },
+        {
+          "alert": {
+            "id": "880c850b5c1a2fdbb9f41ab1",
+            "ts": 1778874600000,
+            "symbol": "PLTR",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 132.76,
+            "breakBarTime": 1778873700000,
+            "close": 133.83,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_pltr"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 9,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 9,
+        "skippedLowRisk": 0,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": null
+      },
+      "skippedEntries": []
+    },
+    {
+      "scenarioId": "real_2026-05-15_tsla",
+      "name": "TSLA real data, 2026-05-15",
+      "testSymbol": "TSLA",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "453ed95e8cf27929ad703a3a",
+            "ts": 1778851800000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778851800000,
+            "close": 429.285,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "f9e5fab7411edb5794198e62",
+            "ts": 1778852100000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": null,
+            "close": 430.01,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "d4d8cdac59a478c88bac8064",
+            "ts": 1778853300000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778853300000,
+            "close": 426.06,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "b45fc647906b2420042a7326",
+            "ts": 1778854200000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778853300000,
+            "close": 428.99,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "4b05637b5b414524e287452e",
+            "ts": 1778855100000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778855100000,
+            "close": 426.305,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "79ce4e85d65d1d378466b2ee",
+            "ts": 1778855400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778855100000,
+            "close": 427.935,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "f604a1f33a59e275aca76282",
+            "ts": 1778856600000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778856600000,
+            "close": 426.385,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "d5e71f5e266c29312963a7d3",
+            "ts": 1778856900000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778856600000,
+            "close": 425.555,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "cc41ce76818863e7e41438b9",
+            "ts": 1778859900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778859900000,
+            "close": 425.26,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "c3a80a94e16fda6110385588",
+            "ts": 1778860500000,
+            "symbol": "TSLA",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778859900000,
+            "close": 425.04,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "859899b0552ed4ba4b664fdb",
+            "ts": 1778861700000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778861700000,
+            "close": 423.91,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "95a83fd998b75fd2ed173279",
+            "ts": 1778862000000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778861700000,
+            "close": 424.28,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "8c1224e165d529c9b7c27f07",
+            "ts": 1778867100000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778867100000,
+            "close": 427.94,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "6dc705740e62aabf4d00d6d9",
+            "ts": 1778867400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778867100000,
+            "close": 428.41,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "61e3dd68643da3c8bfb38d7f",
+            "ts": 1778868900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778868900000,
+            "close": 425.94,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "a0e2ab069023c7cd5a8672b7",
+            "ts": 1778870400000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778868900000,
+            "close": 425.22,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "dbe7ea1923750d5f33c8ba4a",
+            "ts": 1778871900000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778871900000,
+            "close": 424.69,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "bc1a6874941c1ddf84e95aff",
+            "ts": 1778872800000,
+            "symbol": "TSLA",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778871900000,
+            "close": 423.17,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "0bb80405a466d47c230484fb",
+            "ts": 1778874600000,
+            "symbol": "TSLA",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "PUT",
+            "level": "PML",
+            "levelPrice": 431.28,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778874600000,
+            "close": 422.89,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        },
+        {
+          "alert": {
+            "id": "4ae390268d757b0033970a57",
+            "ts": 1778874900000,
+            "symbol": "TSLA",
+            "market": "NEUTRAL",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 431.28,
+            "breakBarTime": 1778874600000,
+            "close": 422.27,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_tsla"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "real_2026-05-15_tsla",
+          "symbol": "TSLA",
+          "dir": "SHORT",
+          "entryTs": 1778852160000,
+          "entryPrice": 429.45,
+          "exitTs": 1778852700000,
+          "exitPrice": 425.79,
+          "exitReason": "TARGET",
+          "retPct": 0.8522528815927275,
+          "stopPrice": 431.28,
+          "targetPrice": 425.79
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "real_2026-05-15_tsla",
+          "ts": 1778852160000,
+          "symbol": "TSLA",
+          "side": "sell",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-real_2026-05-15_tsla-f9e5fab7"
+        }
+      ],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 10,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 9,
+        "skippedLowRisk": 0,
+        "firstDir": "PUT",
+        "firstLevel": "PML",
+        "finalExitReason": "TARGET"
+      },
+      "skippedEntries": []
+    }
+  ],
+  "totals": {
+    "scenarios": 20,
+    "passed": 20,
+    "failed": 0,
+    "alerts": 221,
+    "fills": 24,
+    "brokerCalls": 24,
+    "errors": 0
+  }
+}

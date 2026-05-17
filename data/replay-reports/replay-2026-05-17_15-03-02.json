@@ -1,0 +1,17 @@
+{
+  "startedAt": 1779030182714,
+  "finishedAt": 1779030182714,
+  "durationMs": 0,
+  "agentEnabled": false,
+  "agentReview": null,
+  "scenarioResults": [],
+  "totals": {
+    "scenarios": 0,
+    "passed": 0,
+    "failed": 0,
+    "alerts": 0,
+    "fills": 0,
+    "brokerCalls": 0,
+    "errors": 0
+  }
+}

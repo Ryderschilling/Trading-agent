@@ -28,7 +28,7 @@ type ExecState = {
 
   // mutates
   stopMovedToBE: boolean;
-  exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | "STRUCTURE_BREAK" | "EOD" | null;
+  exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | "STRUCTURE_BREAK" | "EOD" | "MANUAL_CLOSE" | "SKIPPED" | null;
   exitTs: number | null;
   exitFill: number | null;
 };
@@ -501,5 +501,65 @@ export class OutcomeTracker {
     }
 
     return out;
+  }
+
+  /**
+   * Immediately close all LIVE sessions for a symbol due to a manual broker close.
+   * Returns the finalized TradeOutcome records so the caller can persist them.
+   * exitPx is optional — when provided the exit return % is computed; otherwise
+   * those fields are left null (e.g. if we don't know the fill price yet).
+   */
+  manualClose(symbol: string, exitPx?: number, exitTs?: number): TradeOutcome[] {
+    const ids = this.sessionsBySymbol.get(symbol);
+    if (!ids || ids.size === 0) return [];
+
+    const now = exitTs ?? Date.now();
+    const results: TradeOutcome[] = [];
+
+    for (const id of Array.from(ids)) {
+      const s = this.sessionsById.get(id);
+      if (!s || s.status !== "LIVE") continue;
+
+      s.status = "COMPLETED";
+      s.exec.exitReason = "MANUAL_CLOSE";
+      s.exec.exitTs = now;
+      s.exec.exitFill = exitPx ?? null;
+
+      if (exitPx != null && isFiniteNum(exitPx)) {
+        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, exitPx);
+      }
+
+      const out = this.finalize(id);
+      if (out) results.push(out);
+    }
+
+    return results;
+  }
+
+  /**
+   * Cancel a session that was never executed (e.g. broker order was SKIPPED/duplicate).
+   * The session is removed from memory; no outcome is written.
+   */
+  cancelSession(alertId: string): void {
+    const s = this.sessionsById.get(alertId);
+    if (!s) return;
+    this.sessionsById.delete(alertId);
+    const set = this.sessionsBySymbol.get(s.symbol);
+    if (set) {
+      set.delete(alertId);
+      if (set.size === 0) this.sessionsBySymbol.delete(s.symbol);
+    }
+  }
+
+  /** IDs of all currently LIVE sessions (for reconciliation). */
+  liveSessionIds(): string[] {
+    return Array.from(this.sessionsById.values())
+      .filter((s) => s.status === "LIVE")
+      .map((s) => s.alertId);
+  }
+
+  /** Symbol for a given session id, or null. */
+  sessionSymbol(alertId: string): string | null {
+    return this.sessionsById.get(alertId)?.symbol ?? null;
   }
 }

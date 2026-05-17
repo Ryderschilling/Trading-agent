@@ -293,13 +293,15 @@ export class BrokerExecutionService {
     return listBrokerOrders(this.db, limit);
   }
 
-  async closePosition(symbol: string): Promise<void> {
+  async closePosition(symbol: string): Promise<{ orderId: string; adapter: any } | null> {
     const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
     if (!cfg.brokerKey) throw new Error("no broker configured");
     if (cfg.mode === "disabled") throw new Error("broker mode disabled");
     const adapter = buildAdapter(cfg);
     if (!adapter.closePosition) throw new Error("broker does not support closePosition");
-    await adapter.closePosition(symbol);
+    const result = await adapter.closePosition(symbol);
+    if (!result?.orderId) return null;
+    return { orderId: result.orderId, adapter };
   }
 
   async setStopOrder(symbol: string, stopPrice: number, qty: number | null): Promise<any> {
@@ -465,8 +467,25 @@ export class BrokerExecutionService {
     const sizingMode = cfg.execution.sizingMode;
     const defaultNotional = sizingMode === "notional" ? cfg.execution.defaultNotional : null;
     const defaultQty = sizingMode === "qty" ? cfg.execution.defaultQty : null;
-    const notional = defaultNotional != null ? round(defaultNotional) : defaultQty != null && refPrice > 0 ? round(defaultQty * refPrice) : null;
-    const qty = defaultQty != null ? round(defaultQty) : null;
+    let notional = defaultNotional != null ? round(defaultNotional) : defaultQty != null && refPrice > 0 ? round(defaultQty * refPrice) : null;
+    let qty = defaultQty != null ? round(defaultQty) : null;
+
+    // Alpaca does not allow fractional shorts. When we would otherwise submit a
+    // short via notional sizing (which produces fractional shares), convert it
+    // to floor(notional / refPrice) whole shares. If the resulting qty < 1, the
+    // order is marked for SKIPPED below rather than letting the broker reject it
+    // with HTTP 422 ("fractional orders cannot be sold short"), which is what
+    // happened to every SHORT signal on 2026-05-15.
+    let shortFractionalSkipReason: string | null = null;
+    if (side === "sell" && qty == null && notional != null && refPrice > 0) {
+      const wholeQty = Math.floor(notional / refPrice);
+      if (wholeQty >= 1) {
+        qty = wholeQty;
+        notional = round(wholeQty * refPrice);
+      } else {
+        shortFractionalSkipReason = `notional $${notional} below 1-share price $${refPrice.toFixed(2)} — shorts require >=1 whole share (fractional shorts unsupported)`;
+      }
+    }
 
     const baseActivity = makeActivity({
       alertId: alert.id,
@@ -514,6 +533,45 @@ export class BrokerExecutionService {
 
     if ((sizingMode === "notional" && !(defaultNotional && defaultNotional > 0)) || (sizingMode === "qty" && !(defaultQty && defaultQty > 0))) {
       return persist({ ...baseActivity, status: "SKIPPED", reason: "invalid default size" });
+    }
+
+    if (shortFractionalSkipReason) {
+      return persist({ ...baseActivity, status: "SKIPPED", reason: shortFractionalSkipReason });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // MIN-RISK FILTER (Fix #1, wired 2026-05-17)
+    //
+    // Drops trades where the structure-based stop is too close to the entry
+    // to survive normal noise. Across 4 days × 5 symbols of replay data,
+    // every entry with 1R < 0.15% stopped out at 0.00% return — pure
+    // wasted broker calls + slippage.
+    //
+    // Configured via MIN_RISK_PCT env var. Default 0.0015 (0.15%).
+    // Set MIN_RISK_PCT=0 to disable.
+    //
+    // 1R is computed from alert.close (the 5-min close that produced the
+    // signal) vs alert.structureLevel (the broken PMH/PML/PDH/PDL). The
+    // real fill price is whatever the broker prints — alert.close is a
+    // good-enough proxy for pre-trade risk sizing.
+    // ──────────────────────────────────────────────────────────────────────
+    const minRiskPctRaw = process.env.MIN_RISK_PCT;
+    const minRiskPct = minRiskPctRaw == null || minRiskPctRaw === ""
+      ? 0.0015
+      : Number(minRiskPctRaw);
+    if (Number.isFinite(minRiskPct) && minRiskPct > 0) {
+      const structureLevel = Number(alert.structureLevel);
+      const ref = Number(refPrice);
+      if (Number.isFinite(structureLevel) && structureLevel !== 0 && Number.isFinite(ref) && ref > 0) {
+        const oneRPct = Math.abs(ref - structureLevel) / Math.abs(ref);
+        if (oneRPct < minRiskPct) {
+          return persist({
+            ...baseActivity,
+            status: "SKIPPED",
+            reason: `risk too tight: 1R=${(oneRPct * 100).toFixed(3)}% below MIN_RISK_PCT=${(minRiskPct * 100).toFixed(2)}%`,
+          });
+        }
+      }
     }
 
     if (findSubmittedBrokerOrderBySetup(this.db, dayKey, setupKey)) {

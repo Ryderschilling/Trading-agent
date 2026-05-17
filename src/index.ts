@@ -21,7 +21,7 @@ import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY } from "./market/time";
+import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
@@ -173,13 +173,14 @@ try {
   );
 }
 
-// keep alerts that have outcomes; prune truly orphaned old alerts
+// keep alerts that have outcomes or open broker orders; prune truly orphaned old alerts
 try {
   const cutoff = Date.now() - 14 * 24 * 60 * 60_000;
   db.prepare(`
     DELETE FROM alerts
     WHERE ts < ?
       AND id NOT IN (SELECT alert_id FROM outcomes)
+      AND id NOT IN (SELECT alert_id FROM broker_orders WHERE status = 'SUBMITTED')
   `).run(cutoff);
 } catch {}
 
@@ -449,6 +450,7 @@ try {
     DELETE FROM alerts
     WHERE ts < ?
       AND id NOT IN (SELECT alert_id FROM outcomes)
+      AND id NOT IN (SELECT alert_id FROM broker_orders WHERE status = 'SUBMITTED')
   `).run(Date.now() - ALERT_TTL_MS);
 } catch {}
 
@@ -963,6 +965,7 @@ function getDbRows() {
        LEFT JOIN outcomes o ON o.alert_id = a.id
        WHERE a.dir IN ('CALL','PUT')
          AND (a.message IS NULL OR (a.message NOT LIKE '%FORMING%' AND a.message NOT LIKE '%INVALID%'))
+         AND (o.exit_reason IS NULL OR o.exit_reason != 'SKIPPED')
        ORDER BY a.ts DESC
        LIMIT 50000`
     )
@@ -1266,12 +1269,52 @@ function startOutcomeTrackingIfTrade(r: StrategyRunner, alert: Alert, ts: number
   } catch {}
 }
 
-function triggerBrokerExecutionIfEligible(alert: Alert) {
+function triggerBrokerExecutionIfEligible(alert: Alert): void {
   if (!isTradeSignal(alert)) return;
 
-  void brokerExecution.executeConfirmedAlert(alert).catch((e) => {
-    console.log("[broker] execution error", e?.message || e);
-  });
+  void brokerExecution.executeConfirmedAlert(alert)
+    .then((record) => {
+      // Outcomes only track ORDERS THAT REACHED THE BROKER AS SUBMITTED.
+      // If the order was skipped (duplicate, kill switch, max trades, etc.),
+      // rejected (e.g. fractional shorts, validation), or errored at submit,
+      // cancel the outcome-tracker session so it doesn't linger as LIVE forever
+      // and so we don't report simulated P&L for trades that never traded.
+      // Real broker rejections used to silently flow into Outcomes with
+      // fabricated stop/EOD exits — that's the bug being fixed here.
+      const NON_EXECUTED_STATUSES = new Set(["SKIPPED", "REJECTED", "ERROR"]);
+      if (record?.status && NON_EXECUTED_STATUSES.has(record.status)) {
+        const tag = record.status.toLowerCase();
+        console.log(`[outcomes] cancelling session for ${tag} alert ${alert.id} (${alert.symbol}) — reason: ${record.reason ?? "unknown"}`);
+        for (const r of runners.values()) {
+          r.outcomeTracker.cancelSession(alert.id);
+        }
+        // Persist a SKIPPED outcome row so the alert never resurfaces as LIVE
+        // after a server restart. These rows are filtered from the Outcomes
+        // page (see SQL filter in getOutcomes: exit_reason != 'SKIPPED').
+        // Broker-side detail is preserved on the Brokers activity feed.
+        const skippedOutcome: TradeOutcome = {
+          alertId: alert.id,
+          symbol: alert.symbol,
+          dir: alert.dir === "CALL" ? "LONG" : "SHORT",
+          structureLevel: Number(alert.structureLevel ?? alert.levelPrice ?? 0),
+          entryTs: alert.ts,
+          entryRefPrice: Number(alert.close ?? 0),
+          status: "COMPLETED",
+          endTs: Date.now(),
+          exitReason: "SKIPPED",
+          exitFill: null,
+          exitReturnPct: null,
+          stopMovedToBE: false,
+          mfeAbs: 0, maeAbs: 0, mfePct: 0, maePct: 0, timeToMfeSec: null,
+          stoppedOut: false, stopTs: null, stopClose: null, stopReturnPct: null, barsToStop: null,
+          returnsPct: {}
+        };
+        dbInsertOutcome(skippedOutcome);
+      }
+    })
+    .catch((e) => {
+      console.log("[broker] execution error", e?.message || e);
+    });
 }
 
 function placeBrokerStopAfterEntry(alert: Alert) {
@@ -1676,8 +1719,89 @@ async function runStartupBackfill() {
     }
   } catch {}
 
+  // After RTH backfill, seed PMH/PML from today's premarket bars.
+  // IEX free feed does NOT stream premarket bars, so PMH/PML are always null
+  // without this explicit fetch. We try SIP first (full premarket coverage),
+  // then fall back to IEX (IEX extended-hours data, sparse but better than nothing).
+  await fetchPremarketLevelsForToday(ordered).catch((e) =>
+    console.log("[premarket] backfill error:", e?.message || e)
+  );
+
   recomputeSignalsAndBroadcast();
   console.log("[backfill] done");
+}
+
+/**
+ * Fetch today's premarket bars (4:00–9:30 AM ET) and seed PMH/PML levels.
+ *
+ * Called at the end of runStartupBackfill so that by the time RTH opens and
+ * signals start firing, the in-memory levelsMap has valid pmh/pml values.
+ *
+ * Strategy: try SIP feed first (authoritative, requires paid subscription),
+ * fall back to IEX (free tier, IEX does trade pre-market from ~8 AM ET).
+ * Calls onBarUpdateLevels directly — intentionally skips VWAP and candle
+ * persistence to avoid polluting RTH-only metrics with pre-market volume.
+ */
+async function fetchPremarketLevelsForToday(symbols: string[]): Promise<void> {
+  if (!HAS_KEYS) return;
+
+  // Premarket window: today midnight UTC → min(now, 14:00 UTC).
+  // Starting at midnight UTC safely covers 4 AM ET regardless of DST offset.
+  // Ending at 14:00 UTC covers up to ~10 AM ET, well past 9:30 RTH open.
+  const now = Date.now();
+  const d = new Date(now);
+  const todayMidnightUtcMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const startMs = todayMidnightUtcMs;
+  const endMs = Math.min(now, todayMidnightUtcMs + 14 * 60 * 60_000);
+
+  const startIso = new Date(startMs).toISOString();
+  const endIso = new Date(endMs).toISOString();
+
+  for (const feed of ["sip", "iex"] as const) {
+    let filledCount = 0;
+
+    for (const symbol of symbols) {
+      try {
+        const url =
+          `https://data.alpaca.markets/v2/stocks/${encodeURIComponent(symbol)}/bars` +
+          `?timeframe=1Min&start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}` +
+          `&limit=10000&feed=${encodeURIComponent(feed)}`;
+
+        const json = await httpGetJson(url, { "APCA-API-KEY-ID": KEY, "APCA-API-SECRET-KEY": SECRET });
+        const bars = (json?.bars || []) as Array<{ t: string; o: number; h: number; l: number; c: number; v: number }>;
+
+        let pmBarCount = 0;
+        for (const b of bars) {
+          const ts = new Date(b.t).getTime();
+          if (!Number.isFinite(ts)) continue;
+          if (!isPremarketNY(ts)) continue; // RTH bars already handled in main backfill
+          onBarUpdateLevels(getLevels(symbol), ts, b.h, b.l);
+          pmBarCount++;
+        }
+
+        if (pmBarCount > 0) {
+          filledCount++;
+          const lv = getLevels(symbol);
+          console.log(
+            `[premarket] ${symbol} feed=${feed} pmh=${lv.pmh?.toFixed(2) ?? "null"} pml=${lv.pml?.toFixed(2) ?? "null"} (${pmBarCount} bars)`
+          );
+        }
+      } catch {
+        // Per-symbol errors are non-fatal; continue to next symbol
+      }
+    }
+
+    if (filledCount > 0) {
+      console.log(`[premarket] seeded ${filledCount}/${symbols.length} symbols via ${feed} feed`);
+      return; // SIP worked — no need to fall back to IEX
+    }
+
+    if (feed === "sip") {
+      console.log("[premarket] sip returned no premarket bars — trying iex fallback");
+    }
+  }
+
+  console.log("[premarket] no premarket bars available — PMH/PML will be null (upgrade to Alpaca SIP for premarket data)");
 }
 
 // -----------------------------
@@ -1976,7 +2100,92 @@ const app = createHttpApp({
   saveBrokerConfig: (cfg: any, changedBy?: string) => setBrokerConfig(cfg, changedBy),
   getBrokerStatus: () => brokerExecution.getStatus(),
   getBrokerActivity: (limit?: number) => brokerExecution.getActivity(limit),
-  closeBrokerPosition: (symbol: string) => brokerExecution.closePosition(symbol),
+  closeBrokerPosition: async (symbol: string) => {
+    // Close at broker first — throws on failure so we don't touch outcomes on error.
+    const closeResult = await brokerExecution.closePosition(symbol);
+
+    const now = Date.now();
+
+    // Prefer actual broker fill; fall back to last candle close if poll times out.
+    let exitPx: number | undefined;
+    if (closeResult?.orderId && closeResult?.adapter?.pollFill) {
+      const fill = await closeResult.adapter.pollFill(closeResult.orderId, 6000);
+      if (fill != null) {
+        exitPx = fill;
+        console.log(`[outcomes] close fill from broker: ${symbol} ${fill}`);
+      }
+    }
+    if (exitPx == null) {
+      const lastCandles = getCandles1m(symbol, now - 5 * 60_000, now, 5);
+      exitPx = lastCandles.length > 0 ? lastCandles[lastCandles.length - 1].c : undefined;
+      if (exitPx != null) console.log(`[outcomes] close fill from candle fallback: ${symbol} ${exitPx}`);
+      else console.warn(`[outcomes] no fill price available for ${symbol} — P&L will be null`);
+    }
+
+    // --- Path 1: in-memory session exists (normal case + post-reconstruction) ---
+    let anyFinalized = false;
+    for (const r of runners.values()) {
+      const finalized = r.outcomeTracker.manualClose(symbol, exitPx, now);
+      for (const out of finalized) {
+        const idx = outcomes.findIndex((o) => o.alertId === out.alertId);
+        if (idx >= 0) outcomes[idx] = out; else outcomes.push(out);
+        dbInsertOutcome(out);
+        realtime?.broadcastOutcome(out);
+        console.log(`[outcomes] manual close: ${out.symbol} ${out.alertId} exitPx=${exitPx ?? "unknown"} pct=${out.exitReturnPct?.toFixed(2) ?? "?"}`);
+        anyFinalized = true;
+      }
+    }
+
+    // --- Path 2: no in-memory session found (edge case — reconstruction missed it) ---
+    // Write MANUAL_CLOSE outcome rows directly from the DB alert rows so the
+    // position never stays stuck as LIVE after an explicit user-initiated close.
+    if (!anyFinalized) {
+      console.log(`[outcomes] no in-memory session for ${symbol} — writing MANUAL_CLOSE from DB alerts`);
+      const openAlerts = db.prepare(`
+        SELECT a.id, a.symbol, a.ts, a.dir, a.level_price, a.structure_level, a.close
+        FROM alerts a
+        INNER JOIN broker_orders bo ON bo.alert_id = a.id AND bo.status = 'SUBMITTED'
+        LEFT JOIN outcomes o ON o.alert_id = a.id
+        WHERE a.symbol = ? AND a.dir IN ('CALL', 'PUT')
+          AND a.message NOT LIKE '%FORMING%' AND a.message NOT LIKE '%INVALID%'
+          AND o.alert_id IS NULL
+          AND a.ts >= ?
+      `).all(symbol, now - 24 * 60 * 60_000) as any[];
+
+      for (const row of openAlerts) {
+        const dir: TradeDirection = String(row.dir) === "CALL" ? "LONG" : "SHORT";
+        const entryRefPrice = Number(row.close ?? 0);
+        const exitReturnPct =
+          exitPx != null && entryRefPrice > 0
+            ? Number(((dir === "LONG" ? (exitPx - entryRefPrice) / entryRefPrice : (entryRefPrice - exitPx) / entryRefPrice) * 100).toFixed(4))
+            : null;
+
+        const fallbackOutcome: TradeOutcome = {
+          alertId:       String(row.id),
+          symbol:        String(row.symbol),
+          dir,
+          structureLevel: Number(row.structure_level ?? row.level_price ?? 0),
+          entryTs:       Number(row.ts),
+          entryRefPrice,
+          status:        "COMPLETED",
+          endTs:         now,
+          exitReason:    "MANUAL_CLOSE",
+          exitFill:      exitPx ?? null,
+          exitReturnPct,
+          stopMovedToBE: false,
+          mfeAbs: 0, maeAbs: 0, mfePct: 0, maePct: 0, timeToMfeSec: null,
+          stoppedOut: false, stopTs: null, stopClose: null, stopReturnPct: null, barsToStop: null,
+          returnsPct: {}
+        };
+
+        const idx = outcomes.findIndex((o) => o.alertId === fallbackOutcome.alertId);
+        if (idx >= 0) outcomes[idx] = fallbackOutcome; else outcomes.push(fallbackOutcome);
+        dbInsertOutcome(fallbackOutcome);
+        realtime?.broadcastOutcome(fallbackOutcome);
+        console.log(`[outcomes] fallback MANUAL_CLOSE: ${fallbackOutcome.symbol} ${fallbackOutcome.alertId} pct=${exitReturnPct?.toFixed(2) ?? "?"}`);
+      }
+    }
+  },
   setBrokerStop: (symbol: string, stopPrice: number, qty: number | null) => brokerExecution.setStopOrder(symbol, stopPrice, qty),
 
   httpGetJson: (url: string, headers: Record<string, string>) => httpGetJson(url, headers),
@@ -1992,6 +2201,131 @@ const app = createHttpApp({
   addSymbol: (s: string) => addSymbolToWatchlist(s),
   removeSymbol: (s: string) => removeSymbolFromWatchlist(s)
 });
+
+// -----------------------------
+// Startup session reconstruction
+// -----------------------------
+/**
+ * On every server start, recreate OutcomeTracker sessions for any positions
+ * that were opened in a previous process and haven't been finalized yet.
+ *
+ * Without this, a server restart while trades are live causes:
+ *   - Sessions wiped from memory
+ *   - EOD flatten / stop logic never fires for those positions
+ *   - "Sell Out" calls have no session to close → outcome never written
+ *   - Outcomes page shows those trades stuck LIVE forever with no P&L
+ *
+ * Recovery steps per open position:
+ *   1. Reconstruct the session in each matching runner
+ *   2. Replay all persisted 1m candles from entry→now to catch any
+ *      stop/EOD that should have already triggered
+ *   3. Finalize and persist any that closed during replay
+ *   4. Leave genuinely open sessions LIVE for ongoing bar tracking
+ */
+function reconstructLiveSessionsFromDb(): void {
+  const cutoff = Date.now() - 24 * 60 * 60_000; // Only look back 24 h
+  const now = Date.now();
+
+  const rows = db.prepare(`
+    SELECT DISTINCT
+      a.id, a.symbol, a.ts, a.dir,
+      a.level_price, a.structure_level, a.close, a.meta_json
+    FROM alerts a
+    INNER JOIN broker_orders bo ON bo.alert_id = a.id AND bo.status = 'SUBMITTED'
+    LEFT JOIN outcomes o ON o.alert_id = a.id
+    WHERE a.dir IN ('CALL', 'PUT')
+      AND a.message NOT LIKE '%FORMING%'
+      AND a.message NOT LIKE '%INVALID%'
+      AND o.alert_id IS NULL
+      AND a.ts >= ?
+    ORDER BY a.ts ASC
+  `).all(cutoff) as any[];
+
+  if (rows.length === 0) {
+    console.log("[recovery] no open sessions to reconstruct");
+    return;
+  }
+
+  console.log(`[recovery] reconstructing ${rows.length} open session(s) from DB`);
+
+  for (const row of rows) {
+    const alertId       = String(row.id);
+    const symbol        = String(row.symbol);
+    const dir: TradeDirection = String(row.dir) === "CALL" ? "LONG" : "SHORT";
+    const structureLevel = Number(row.structure_level ?? row.level_price ?? 0);
+    const entryTs        = Number(row.ts);
+    const entryRefPrice  = Number(row.close ?? 0);
+
+    let meta: any = {};
+    try { if (row.meta_json) meta = JSON.parse(String(row.meta_json)); } catch {}
+    const rulesetVersion: number | null = meta?.rulesetVersion ?? null;
+
+    const historicalBars = db.prepare(`
+      SELECT ts, high AS h, low AS l, close AS c
+      FROM candles_1m
+      WHERE ticker = ? AND ts > ? AND ts <= ?
+      ORDER BY ts ASC
+      LIMIT 2000
+    `).all(symbol, entryTs, now) as any[];
+
+    for (const r of runners.values()) {
+      // Only reconstruct for the strategy that originally fired this alert.
+      // If meta didn't capture rulesetVersion, reconstruct for all runners.
+      if (rulesetVersion != null && r.version !== rulesetVersion) continue;
+
+      // Guard: don't double-start if the session is somehow already tracked.
+      if (r.outcomeTracker.sessionSymbol(alertId) != null) continue;
+
+      r.outcomeTracker.startSession({
+        alertId,
+        symbol,
+        dir,
+        structureLevel,
+        entryTs,
+        entryRefPrice,
+        execRules: buildExecRulesFromCfg(r.cfg),
+      });
+
+      // Replay historical bars — reconstructs MFE/MAE and fires any exits
+      // (EOD at 2:59 PM, stop hit, structure break) that should have already happened.
+      // We intentionally skip broker actions (setStopOrder etc.) during this replay.
+      let sessionFinalized = false;
+      for (const bar of historicalBars) {
+        const { completed } = r.outcomeTracker.onMinuteBar({
+          symbol,
+          ts:    Number(bar.ts),
+          high:  Number(bar.h),
+          low:   Number(bar.l),
+          close: Number(bar.c),
+        });
+
+        for (const id of completed) {
+          const out = r.outcomeTracker.finalize(id);
+          if (out) {
+            const idx = outcomes.findIndex((o) => o.alertId === out.alertId);
+            if (idx >= 0) outcomes[idx] = out; else outcomes.push(out);
+            dbInsertOutcome(out);
+            realtime?.broadcastOutcome(out);
+            console.log(
+              `[recovery] finalized ${out.symbol} ${alertId} ` +
+              `reason=${out.exitReason ?? "?"} exitPct=${out.exitReturnPct?.toFixed(2) ?? "?"}`
+            );
+            if (id === alertId) sessionFinalized = true;
+          }
+        }
+
+        if (sessionFinalized) break;
+      }
+
+      if (!sessionFinalized) {
+        console.log(
+          `[recovery] ${symbol} ${alertId} — session live` +
+          ` (entry=${entryRefPrice} structure=${structureLevel})`
+        );
+      }
+    }
+  }
+}
 
 // -----------------------------
 // Server + realtime
@@ -2028,6 +2362,11 @@ server.listen(PORT, () => {
   console.log(`  Data feed  : Alpaca ${FEED.toUpperCase()}`);
   console.log(`  Auth       : ${process.env.AGENT_SECRET ? "AGENT_SECRET set (login required)" : "open (no AGENT_SECRET)"}`);
   console.log("─".repeat(56));
+
+  // Reconstruct in-memory sessions for any positions that survived a server
+  // restart. Must run before backfill so live bars arriving immediately after
+  // startup are tracked against the correct session state.
+  reconstructLiveSessionsFromDb();
 
   if (!HAS_KEYS) {
     console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");

@@ -1,0 +1,311 @@
+{
+  "startedAt": 1779030968494,
+  "finishedAt": 1779030968509,
+  "durationMs": 15,
+  "agentEnabled": false,
+  "agentReview": null,
+  "scenarioResults": [
+    {
+      "scenarioId": "real_2026-05-15_aapl",
+      "name": "AAPL real data, 2026-05-15",
+      "testSymbol": "AAPL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "a53aa2a718b23fb0da710246",
+            "ts": 1778854200000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778854200000,
+            "close": 299.085,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "21ffa8f161f54dd7ce733b8d",
+            "ts": 1778855100000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778854200000,
+            "close": 299.215,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "b6149f54ee78a9f048b11e4b",
+            "ts": 1778856000000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778856000000,
+            "close": 300.775,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "f427eec5f8ffaaea1ce629b1",
+            "ts": 1778856600000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778856000000,
+            "close": 300.96,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "94755dcd6e59dd7085a92e98",
+            "ts": 1778857500000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778857500000,
+            "close": 301.63,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "e305a095158fa7db316ec4ce",
+            "ts": 1778858700000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778857500000,
+            "close": 301.975,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "2bbf3bb99aaba4a6ac01fe0f",
+            "ts": 1778861400000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778861400000,
+            "close": 301.18,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "e2abe78002082200715d405d",
+            "ts": 1778861700000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "WEAK",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778861400000,
+            "close": 301.14,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "a7edb468192e4f4b2a169d72",
+            "ts": 1778862600000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778862600000,
+            "close": 302.085,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "cc213fd6f202837df882e981",
+            "ts": 1778862900000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778862600000,
+            "close": 301.775,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "ad41add8af71b256026868b1",
+            "ts": 1778863800000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778863800000,
+            "close": 301.785,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "6fb8094e29ca4cd637fe83cd",
+            "ts": 1778864100000,
+            "symbol": "AAPL",
+            "market": "BEARISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778863800000,
+            "close": 302,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "fe3d188f29bd8ee424bddcf5",
+            "ts": 1778865000000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778865000000,
+            "close": 302.66,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "e014cf809f087c2e79ea9574",
+            "ts": 1778865300000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778865000000,
+            "close": 302.48,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "a835c0137a858739908facd3",
+            "ts": 1778870400000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 297.94,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778870400000,
+            "close": 301.225,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        },
+        {
+          "alert": {
+            "id": "9e74c20e19d161f73eab4840",
+            "ts": 1778871600000,
+            "symbol": "AAPL",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 297.94,
+            "breakBarTime": 1778870400000,
+            "close": 301.13,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "real_2026-05-15_aapl"
+        }
+      ],
+      "fills": [],
+      "brokerCalls": [],
+      "errors": [],
+      "expect": null,
+      "observed": {
+        "formingAlerts": 8,
+        "entryAlerts": 0,
+        "invalidatedAlerts": 8,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": null
+      }
+    }
+  ],
+  "totals": {
+    "scenarios": 1,
+    "passed": 1,
+    "failed": 0,
+    "alerts": 16,
+    "fills": 0,
+    "brokerCalls": 0,
+    "errors": 0
+  }
+}

@@ -172,7 +172,7 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
     throw new Error("Alpaca does not support options orders");
   }
 
-  async closePosition(symbol: string): Promise<void> {
+  async closePosition(symbol: string): Promise<{ orderId: string } | null> {
     // Cancel any open orders for this symbol first so Alpaca has full qty available
     try {
       const openOrders: any[] = await requestJson({
@@ -195,11 +195,41 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
       // If order fetch fails, proceed anyway — Alpaca's DELETE position also tries to cancel
     }
 
-    await requestJson({
+    const closeOrder = await requestJson({
       method: "DELETE",
       url: `${this.baseUrl}/v2/positions/${encodeURIComponent(symbol)}`,
       headers: this.headers,
     });
+
+    const orderId = closeOrder?.id ? String(closeOrder.id) : null;
+    return orderId ? { orderId } : null;
+  }
+
+  // Poll for actual fill price after a close order. Returns filled_avg_price or null on timeout.
+  async pollFill(orderId: string, timeoutMs = 6000): Promise<number | null> {
+    const pollIntervalMs = 800;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const order = await requestJson({
+          method: "GET",
+          url: `${this.baseUrl}/v2/orders/${encodeURIComponent(orderId)}`,
+          headers: this.headers,
+        });
+        if (order?.status === "filled" && order?.filled_avg_price != null) {
+          const fill = Number(order.filled_avg_price);
+          if (Number.isFinite(fill) && fill > 0) return fill;
+        }
+        // If cancelled or rejected, no fill coming
+        if (order?.status === "canceled" || order?.status === "rejected" || order?.status === "expired") {
+          return null;
+        }
+      } catch {
+        // ignore transient errors, keep polling
+      }
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
+    }
+    return null;
   }
 
   async setStopOrder(symbol: string, stopPrice: number, qty: number | null): Promise<any> {
@@ -207,7 +237,7 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
       symbol,
       side: "sell",
       type: "stop",
-      time_in_force: "gtc",
+      time_in_force: "day",
       stop_price: String(stopPrice),
     };
     if (qty != null && qty > 0) {

@@ -1,0 +1,137 @@
+{
+  "startedAt": 1779030181970,
+  "finishedAt": 1779030181987,
+  "durationMs": 17,
+  "agentEnabled": false,
+  "agentReview": null,
+  "scenarioResults": [
+    {
+      "scenarioId": "clean_bull_break_retest_long",
+      "name": "Clean PMH break+retest, long entry should fire",
+      "testSymbol": "TEST_BULL",
+      "pass": true,
+      "failures": [],
+      "alerts": [
+        {
+          "alert": {
+            "id": "c97416cfa8b9b9044b4e0537",
+            "ts": 1778852100000,
+            "symbol": "TEST_BULL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 100,
+            "structureLevel": 100,
+            "breakBarTime": 1778852100000,
+            "close": 100.03333333333333,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "clean_bull_break_retest_long"
+        },
+        {
+          "alert": {
+            "id": "76a66a97c815cddc4d097e80",
+            "ts": 1778852400000,
+            "symbol": "TEST_BULL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 100,
+            "structureLevel": 100,
+            "breakBarTime": null,
+            "close": 100.06666666666666,
+            "message": "A+ ENTRY (1m TAP)"
+          },
+          "scenarioId": "clean_bull_break_retest_long"
+        },
+        {
+          "alert": {
+            "id": "2a0373b2db59702423986b79",
+            "ts": 1778853300000,
+            "symbol": "TEST_BULL",
+            "market": "BULLISH",
+            "rs": "STRONG",
+            "dir": "CALL",
+            "level": "PMH",
+            "levelPrice": 100,
+            "structureLevel": 100,
+            "breakBarTime": 1778853300000,
+            "close": 100.72826086956522,
+            "message": "A+ SETUP FORMING — WAIT FOR RETEST"
+          },
+          "scenarioId": "clean_bull_break_retest_long"
+        },
+        {
+          "alert": {
+            "id": "cee851f1ca8e03a5f48db36a",
+            "ts": 1778855100000,
+            "symbol": "TEST_BULL",
+            "market": "BULLISH",
+            "rs": "NONE",
+            "dir": "—",
+            "level": "—",
+            "levelPrice": null,
+            "structureLevel": 100,
+            "breakBarTime": 1778853300000,
+            "close": 102,
+            "message": "SETUP INVALID — STAND DOWN"
+          },
+          "scenarioId": "clean_bull_break_retest_long"
+        }
+      ],
+      "fills": [
+        {
+          "scenarioId": "clean_bull_break_retest_long",
+          "symbol": "TEST_BULL",
+          "dir": "LONG",
+          "entryTs": 1778852460000,
+          "entryPrice": 100.06666666666666,
+          "exitTs": 1778852640000,
+          "exitPrice": 100.19999999999999,
+          "exitReason": "TARGET",
+          "retPct": 0.13324450366421628,
+          "stopPrice": 100,
+          "targetPrice": 100.19999999999999
+        }
+      ],
+      "brokerCalls": [
+        {
+          "scenarioId": "clean_bull_break_retest_long",
+          "ts": 1778852460000,
+          "symbol": "TEST_BULL",
+          "side": "buy",
+          "qty": null,
+          "notional": 1000,
+          "clientOrderId": "replay-clean_bull_break_retest_long-76a66a97"
+        }
+      ],
+      "errors": [],
+      "expect": {
+        "expectFormingAlert": true,
+        "expectEntryAlert": true,
+        "expectedDir": "CALL",
+        "expectedLevel": "PMH",
+        "expectedExitReason": "TARGET"
+      },
+      "observed": {
+        "formingAlerts": 2,
+        "entryAlerts": 1,
+        "invalidatedAlerts": 1,
+        "firstDir": "CALL",
+        "firstLevel": "PMH",
+        "finalExitReason": "TARGET"
+      }
+    }
+  ],
+  "totals": {
+    "scenarios": 1,
+    "passed": 1,
+    "failed": 0,
+    "alerts": 4,
+    "fills": 1,
+    "brokerCalls": 1,
+    "errors": 0
+  }
+}

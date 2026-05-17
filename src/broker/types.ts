@@ -214,6 +214,7 @@ export interface BrokerAdapter {
   }>;
   submitMarketOrder(input: BrokerSubmitOrderRequest): Promise<BrokerSubmitOrderResult>;
   submitOptionsOrder?(input: BrokerSubmitOptionsOrderRequest): Promise<BrokerSubmitOrderResult>;
-  closePosition?(symbol: string): Promise<void>;
+  closePosition?(symbol: string): Promise<{ orderId: string } | null>;
+  pollFill?(orderId: string, timeoutMs?: number): Promise<number | null>;
   setStopOrder?(symbol: string, stopPrice: number, qty: number | null): Promise<any>;
 }

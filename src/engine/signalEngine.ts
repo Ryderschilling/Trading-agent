@@ -277,6 +277,14 @@ export class SignalEngine {
     if (ctx.state.state === "BROKEN") {
       const s = ctx.state;
 
+      // NOTE (2026-05-17): we A/B-tested making the RS check sticky here
+      // (i.e. removing the rs !== "STRONG"/WEAK invalidations below). It
+      // sounded right — "don't kill a setup on noise" — but across 20 real
+      // scenarios it cost a winner net and unlocked zero new entries on
+      // AAPL/PLTR/META (those symbols just didn't retest down to the tap
+      // window). The invalidate→cooldown→re-arm cycle is actually catching
+      // valid fresh breaks. Leaving the original logic in place.
+
       if (s.dir !== dir) {
         return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
