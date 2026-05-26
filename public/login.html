@@ -112,13 +112,27 @@
           <span>Trading Agent</span>
         </div>
         <div class="login-title">Sign in</div>
-        <div class="login-sub">Enter your access token to continue.</div>
+        <div class="login-sub" id="loginSub">Enter your credentials to continue.</div>
 
-        <form id="loginForm" autocomplete="off">
-          <div class="login-field">
-            <label for="tokenInput">Access Token</label>
+        <form id="loginForm" autocomplete="on">
+          <div class="login-field" id="userField">
+            <label for="usernameInput">Username</label>
             <input
-              id="tokenInput"
+              id="usernameInput"
+              name="username"
+              type="text"
+              autocomplete="username"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              required
+            />
+          </div>
+          <div class="login-field">
+            <label for="passwordInput" id="passwordLabel">Password</label>
+            <input
+              id="passwordInput"
+              name="password"
               type="password"
               placeholder="••••••••"
               autocomplete="current-password"
@@ -134,41 +148,83 @@
 
     <script>
       const form = document.getElementById("loginForm");
-      const tokenInput = document.getElementById("tokenInput");
+      const userField = document.getElementById("userField");
+      const usernameInput = document.getElementById("usernameInput");
+      const passwordInput = document.getElementById("passwordInput");
+      const passwordLabel = document.getElementById("passwordLabel");
+      const loginSub = document.getElementById("loginSub");
       const loginBtn = document.getElementById("loginBtn");
       const loginError = document.getElementById("loginError");
+
+      // Default to username+password. If the server is in legacy token mode,
+      // hide the username field and treat the password input as a token.
+      let authMode = "userpass";
 
       function showError(msg) {
         loginError.textContent = msg;
         loginError.style.display = "block";
       }
-
       function hideError() {
         loginError.style.display = "none";
       }
 
+      function getNextUrl() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const next = params.get("next");
+          if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+        } catch {}
+        return "/";
+      }
+
+      async function detectMode() {
+        try {
+          const r = await fetch("/api/auth/mode", { credentials: "same-origin" });
+          if (r.ok) {
+            const j = await r.json();
+            if (j && typeof j.mode === "string") authMode = j.mode;
+          }
+        } catch {}
+        if (authMode === "token") {
+          userField.style.display = "none";
+          usernameInput.required = false;
+          passwordLabel.textContent = "Access Token";
+          loginSub.textContent = "Enter your access token to continue.";
+          passwordInput.focus();
+        } else {
+          usernameInput.focus();
+        }
+      }
+
+      detectMode();
+
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         hideError();
-        const token = tokenInput.value.trim();
-        if (!token) return;
+
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+        if (authMode === "userpass" && (!username || !password)) return;
+        if (authMode === "token" && !password) return;
 
         loginBtn.disabled = true;
         loginBtn.textContent = "Signing in…";
 
+        const body = authMode === "token" ? { token: password } : { username, password };
+
         try {
           const res = await fetch("/api/login", {
             method: "POST",
+            credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token })
+            body: JSON.stringify(body),
           });
 
           if (res.ok) {
-            try { sessionStorage.setItem("agent_token", token); } catch {}
-            window.location.replace("/");
+            window.location.replace(getNextUrl());
           } else {
             const j = await res.json().catch(() => ({}));
-            showError(j?.error || "Invalid token. Please try again.");
+            showError(j?.error || "Invalid credentials. Please try again.");
           }
         } catch {
           showError("Could not connect to server. Try again.");

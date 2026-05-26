@@ -54,3 +54,4 @@ data/*.sqlite-shm
 
 # macOS FUSE filesystem artifacts
 data/.fuse_hidden*
+.claude/worktrees/

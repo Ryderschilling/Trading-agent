@@ -21,7 +21,7 @@ import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { computeMarketDirection, Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY, isRegularSessionNY } from "./market/time";
+import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY, isRegularSessionNY, isPastEodFlattenNY } from "./market/time";
 import { computeRS } from "./engine/rs";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
@@ -33,6 +33,7 @@ import { attachRealtime } from "./server/realtime";
 import { BrokerExecutionService } from "./broker/service";
 import { maskSecretConfig, mergeSecretConfig, normalizeExecutionPolicy } from "./broker/config";
 import { BrokerConfig } from "./broker/types";
+import { reconcileBrokerPositions, ReconcileResult } from "./broker/reconciler";
 import { normalizeRulesetConfig } from "./rules/executionPolicy";
 import { AiOperatorService } from "./agent/service";
 import {
@@ -319,7 +320,12 @@ function buildRunner(rs: { version: number; name: string; config: StrategyDefini
       timeframeMin,
       retestTolerancePct,
       rsWindowBars5m,
-      emaPeriods: getStrategyEmaPeriods(rs.config)
+      emaPeriods: getStrategyEmaPeriods(rs.config),
+      // 4h trend regime filter. Env-gated so we can A/B test without code edits.
+      // Default OFF until the replay A/B comparison shows it's net positive.
+      trendFilter4h: String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "1"
+        || String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "true"
+        || String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "on",
     }),
 
     outcomeTracker: new OutcomeTracker({
@@ -504,7 +510,9 @@ let outcomes: TradeOutcome[] = db
       alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
       exit_reason, exit_fill, exit_return_pct, stop_moved_to_be,
       mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
-      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
+      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop,
+      entry_fill, qty, realized_pnl_usd,
+      returns_json
      FROM outcomes
      ORDER BY entry_ts DESC
      LIMIT 50000`
@@ -538,6 +546,10 @@ let outcomes: TradeOutcome[] = db
     stopReturnPct: r.stop_return_pct == null ? null : Number(r.stop_return_pct),
     barsToStop: r.bars_to_stop == null ? null : Number(r.bars_to_stop),
 
+    entryFill: r.entry_fill == null ? null : Number(r.entry_fill),
+    qty: r.qty == null ? null : Number(r.qty),
+    realizedPnlUsd: r.realized_pnl_usd == null ? null : Number(r.realized_pnl_usd),
+
     returnsPct: r.returns_json ? JSON.parse(String(r.returns_json)) : {}
   }));
 
@@ -569,8 +581,10 @@ function dbInsertOutcome(o: TradeOutcome) {
       alert_id, symbol, dir, structure_level, entry_ts, entry_ref_price, status, end_ts,
       exit_reason, exit_fill, exit_return_pct, stop_moved_to_be,
       mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
-      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop, returns_json
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop,
+      entry_fill, qty, realized_pnl_usd,
+      returns_json
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     o.alertId,
     o.symbol,
@@ -598,8 +612,77 @@ function dbInsertOutcome(o: TradeOutcome) {
     (o as any).stopReturnPct ?? null,
     (o as any).barsToStop ?? null,
 
+    (o as any).entryFill ?? null,
+    (o as any).qty ?? null,
+    (o as any).realizedPnlUsd ?? null,
+
     JSON.stringify(o.returnsPct || {})
   );
+}
+
+/**
+ * Close the position at the broker, poll for the real exit fill, and patch the
+ * outcome row with broker-truth values (exit_fill, exit_return_pct, qty,
+ * realized_pnl_usd). The OutcomeTracker session has already been finalized by
+ * the caller — we just persist the result. If the poll fails we still record
+ * the simulated row so the alert never gets stuck in LIVE.
+ *
+ * Used by every auto-close path: STOP, TARGET, STRUCTURE_BREAK, EOD.
+ *
+ * Fire-and-forget; never blocks the signal-engine tick.
+ */
+function finalizeOutcomeWithBrokerFill(out: TradeOutcome): void {
+  // Insert the simulated outcome immediately so the alert clears LIVE state
+  // even if the broker poll fails. We'll overwrite with broker truth below.
+  outcomes.push(out);
+  dbInsertOutcome(out);
+  realtime?.broadcastOutcome(out);
+
+  void (async () => {
+    try {
+      const closeResult = await brokerExecution.closePosition(out.symbol);
+      if (!closeResult?.orderId) {
+        console.warn(`[broker] closePosition returned no orderId for ${out.symbol}`);
+        return;
+      }
+      const fill = await brokerExecution.pollOrderFill(closeResult.orderId, 6000);
+      if (fill?.price == null) {
+        console.warn(`[broker] exit fill poll timed out for ${out.symbol} — keeping simulated values`);
+        return;
+      }
+
+      // Pull broker-truth qty if we never captured it on entry.
+      const qty = (out as any).qty ?? fill.qty ?? null;
+      const entryForPnl = (out as any).entryFill ?? out.entryRefPrice;
+      const realizedPnlUsd =
+        qty != null && Number.isFinite(qty) && Number.isFinite(entryForPnl)
+          ? Number(((out.dir === "LONG" ? fill.price - entryForPnl : entryForPnl - fill.price) * qty).toFixed(2))
+          : null;
+      const exitReturnPct = Number.isFinite(entryForPnl) && entryForPnl > 0
+        ? Number((((out.dir === "LONG" ? fill.price - entryForPnl : entryForPnl - fill.price) / entryForPnl) * 100).toFixed(4))
+        : (out as any).exitReturnPct ?? null;
+
+      const patched: TradeOutcome = {
+        ...out,
+        exitFill: fill.price,
+        exitReturnPct,
+        qty,
+        entryFill: (out as any).entryFill ?? null,
+        realizedPnlUsd,
+      };
+
+      const idx = outcomes.findIndex((o) => o.alertId === patched.alertId);
+      if (idx >= 0) outcomes[idx] = patched; else outcomes.push(patched);
+      dbInsertOutcome(patched);
+      realtime?.broadcastOutcome(patched);
+      console.log(
+        `[outcomes] broker fill patched: ${patched.symbol} ` +
+        `entry=${entryForPnl} exit=${fill.price} qty=${qty} pnl$=${realizedPnlUsd}`
+      );
+    } catch (e: any) {
+      console.log("[broker] auto-close+poll error", e?.message || e);
+    }
+  })();
 }
 
 // -----------------------------
@@ -974,6 +1057,10 @@ function getDbRows() {
         o.mae_pct           AS o_mae_pct,
         o.time_to_mfe_sec   AS o_time_to_mfe_sec,
 
+        o.entry_fill        AS o_entry_fill,
+        o.qty               AS o_qty,
+        o.realized_pnl_usd  AS o_realized_pnl_usd,
+
         o.returns_json      AS o_returns_json
        FROM alerts a
        LEFT JOIN outcomes o ON o.alert_id = a.id
@@ -1059,6 +1146,13 @@ function getDbRows() {
       exitReturnPct,
       stopMovedToBE: Boolean(r.o_stop_moved_to_be),
 
+      // Broker-truth fills. These are the prices the BROKER actually filled at.
+      // entryFill, qty, realizedPnlUsd are populated by finalizeOutcomeWithBrokerFill.
+      // The UI prefers these over the simulated entryRef/exitFill when present.
+      entryFill: r.o_entry_fill == null ? "" : Number(r.o_entry_fill),
+      qty: r.o_qty == null ? "" : Number(r.o_qty),
+      realizedPnlUsd: r.o_realized_pnl_usd == null ? "" : Number(r.o_realized_pnl_usd),
+
       // metrics
       mfePct: r.o_mfe_pct == null ? "" : Number(r.o_mfe_pct),
       maePct: r.o_mae_pct == null ? "" : Number(r.o_mae_pct),
@@ -1087,6 +1181,162 @@ function getDbRows() {
 
     return out;
   });
+}
+
+// -----------------------------
+// Analytics (Analytics page) — aggregated from getDbRows()
+// -----------------------------
+//
+// Strategy performance analytics. Built on top of getDbRows() so there is a
+// single source of truth for the outcome set (SKIPPED/FORMING/INVALID already
+// excluded there).
+//
+// Scoring unit: exit_return_pct (PERCENT). ~129 closed trades carry it.
+// realized_pnl_usd is only on ~13 rows, so it is reported as a secondary
+// metric, never the primary score.
+//
+// R-multiple is reconstructed from the structure stop:
+//   oneRpct = |entryRef - structureLevel| / entryRef * 100
+//   R       = exitReturnPct / oneRpct
+//
+// Returns are summed (additive), not compounded — a simple, honest expectancy
+// view. The equity curve is the running sum of per-trade % returns.
+function getAnalytics() {
+  type T = {
+    ts: number;
+    endTs: number;
+    symbol: string;
+    dir: string; // LONG | SHORT | —
+    exitReason: string;
+    strategy: string;
+    retPct: number; // exit_return_pct, percent units
+    r: number | null; // R-multiple
+    pnlUsd: number | null; // realized $ if present
+  };
+
+  const trades: T[] = [];
+  for (const row of getDbRows()) {
+    // A closed trade has a finite exit return and is not still LIVE.
+    const retPct = typeof row.exitReturnPct === "number" ? row.exitReturnPct : Number(row.exitReturnPct);
+    if (!Number.isFinite(retPct)) continue;
+    if (row.status === "LIVE") continue;
+
+    const entryRef = Number(row.entryRef);
+    const structure = Number(row.structureLevel);
+    let rMultiple: number | null = null;
+    if (Number.isFinite(entryRef) && Number.isFinite(structure) && entryRef > 0) {
+      const oneRpct = (Math.abs(entryRef - structure) / entryRef) * 100;
+      if (oneRpct > 1e-9) rMultiple = retPct / oneRpct;
+    }
+
+    const pnlUsd =
+      typeof row.realizedPnlUsd === "number" && Number.isFinite(row.realizedPnlUsd)
+        ? row.realizedPnlUsd
+        : null;
+
+    const strategy =
+      (row.strategyName && String(row.strategyName)) ||
+      (row.strategyVersion ? `v${row.strategyVersion}` : "Unknown");
+
+    trades.push({
+      ts: Number(row.ts) || 0,
+      endTs: Number(row.endTs) || Number(row.ts) || 0,
+      symbol: String(row.symbol || "?"),
+      dir: String(row.dir || "—"),
+      exitReason: String(row.exitReason || "UNKNOWN") || "UNKNOWN",
+      strategy,
+      retPct,
+      r: rMultiple,
+      pnlUsd,
+    });
+  }
+
+  const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
+  const mean = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
+  const r2 = (x: number) => Number(x.toFixed(2));
+  const r4 = (x: number) => Number(x.toFixed(4));
+
+  function summarize(list: T[]) {
+    const n = list.length;
+    const wins = list.filter((t) => t.retPct > 0);
+    const losses = list.filter((t) => t.retPct < 0);
+    const flats = list.filter((t) => t.retPct === 0);
+    const decided = wins.length + losses.length;
+
+    const rets = list.map((t) => t.retPct);
+    const grossWin = sum(wins.map((t) => t.retPct));
+    const grossLoss = Math.abs(sum(losses.map((t) => t.retPct)));
+
+    const rVals = list
+      .map((t) => t.r)
+      .filter((x): x is number => x != null && Number.isFinite(x));
+    const pnlVals = list.map((t) => t.pnlUsd).filter((x): x is number => x != null);
+
+    return {
+      trades: n,
+      wins: wins.length,
+      losses: losses.length,
+      breakeven: flats.length,
+      winRate: decided ? r4(wins.length / decided) : 0,
+      avgReturnPct: r4(mean(rets)), // expectancy per trade, %
+      avgWinPct: r4(mean(wins.map((t) => t.retPct))),
+      avgLossPct: r4(mean(losses.map((t) => t.retPct))),
+      totalReturnPct: r4(sum(rets)),
+      profitFactor: grossLoss > 1e-9 ? r2(grossWin / grossLoss) : null, // null = no losses
+      avgR: rVals.length ? r2(mean(rVals)) : null,
+      bestPct: n ? r4(Math.max(...rets)) : 0,
+      worstPct: n ? r4(Math.min(...rets)) : 0,
+      pnlUsd: pnlVals.length ? r2(sum(pnlVals)) : null,
+      pnlCount: pnlVals.length,
+    };
+  }
+
+  function groupBy(keyFn: (t: T) => string) {
+    const m = new Map<string, T[]>();
+    for (const t of trades) {
+      const k = keyFn(t);
+      const arr = m.get(k);
+      if (arr) arr.push(t);
+      else m.set(k, [t]);
+    }
+    return [...m.entries()]
+      .map(([key, list]) => ({ key, ...summarize(list) }))
+      .sort((a, b) => b.trades - a.trades);
+  }
+
+  // Equity curve = running sum of % returns, chronological. Max drawdown is
+  // the largest peak-to-trough decline on that curve.
+  const chrono = [...trades].sort((a, b) => a.ts - b.ts);
+  let cum = 0;
+  let peak = 0;
+  let maxDrawdownPct = 0;
+  const equityCurve = chrono.map((t) => {
+    cum += t.retPct;
+    if (cum > peak) peak = cum;
+    const dd = peak - cum;
+    if (dd > maxDrawdownPct) maxDrawdownPct = dd;
+    return {
+      ts: t.ts,
+      symbol: t.symbol,
+      dir: t.dir,
+      exitReason: t.exitReason,
+      retPct: r4(t.retPct),
+      cumPct: r4(cum),
+    };
+  });
+
+  return {
+    generatedAt: Date.now(),
+    firstTradeTs: chrono.length ? chrono[0].ts : null,
+    lastTradeTs: chrono.length ? chrono[chrono.length - 1].ts : null,
+    overall: summarize(trades),
+    maxDrawdownPct: r4(maxDrawdownPct),
+    equityCurve,
+    byExitReason: groupBy((t) => t.exitReason),
+    byDirection: groupBy((t) => t.dir),
+    bySymbol: groupBy((t) => t.symbol),
+    byStrategy: groupBy((t) => t.strategy),
+  };
 }
 
 // -----------------------------
@@ -1287,7 +1537,7 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
   if (!isTradeSignal(alert)) return;
 
   void brokerExecution.executeConfirmedAlert(alert)
-    .then((record) => {
+    .then(async (record) => {
       // Outcomes only track ORDERS THAT REACHED THE BROKER AS SUBMITTED.
       // If the order was skipped (duplicate, kill switch, max trades, etc.),
       // rejected (e.g. fractional shorts, validation), or errored at submit,
@@ -1324,6 +1574,33 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
           returnsPct: {}
         };
         dbInsertOutcome(skippedOutcome);
+        return;
+      }
+
+      // SUBMITTED: poll the broker for the real entry fill so the OutcomeTracker
+      // session uses the actual filled_avg_price instead of alert.close. If the
+      // poll times out, the session keeps the simulated entry and the outcome
+      // row falls back to simulation — we never block on this path.
+      if (record?.status === "SUBMITTED" && record.brokerOrderId) {
+        try {
+          const fill = await brokerExecution.pollOrderFill(record.brokerOrderId, 6000);
+          if (fill?.price != null) {
+            // Best effort qty: prefer broker's filled_qty, else compute from
+            // notional, else fall back to record.qty.
+            const fallbackQty = record.qty != null
+              ? Number(record.qty)
+              : (record.notional != null && fill.price > 0 ? record.notional / fill.price : 0);
+            const qty = fill.qty ?? (Number.isFinite(fallbackQty) && fallbackQty > 0 ? fallbackQty : 0);
+            for (const r of runners.values()) {
+              r.outcomeTracker.setBrokerEntry(alert.id, fill.price, qty);
+            }
+            console.log(`[outcomes] entry fill: ${alert.symbol} px=${fill.price} qty=${qty}`);
+          } else {
+            console.warn(`[outcomes] entry fill poll timed out for ${alert.symbol} — using alert.close`);
+          }
+        } catch (e: any) {
+          console.warn(`[outcomes] entry fill error for ${alert.symbol}: ${e?.message ?? e}`);
+        }
       }
     })
     .catch((e) => {
@@ -1419,6 +1696,7 @@ function ingestMinuteBar(
   updateVwap(symbol, ts, h, l, c, v);
   onBarUpdateLevels(getLevels(symbol), ts, h, l);
   persistCandle1m(symbol, ts, o, h, l, c, v);
+  recordCoverageBar(symbol, ts);
 
   const allowSignals = !warmup && isRegularMarketHours(ts);
   // Entries only fire during the first hour of the session (9:30–10:30 AM ET)
@@ -1467,13 +1745,21 @@ function ingestMinuteBar(
       }
       for (const id of doneFromMinute) {
         const out = r.outcomeTracker.finalize(id);
-        if (out) {
-          if (out.stoppedOut || (out as any).exitReason === "TARGET") {
-            console.log(`[broker] auto-close ${out.symbol} — reason: ${(out as any).exitReason ?? "STOP"}`);
-            void brokerExecution.closePosition(out.symbol).catch((e) => {
-              console.log("[broker] auto-close error", e?.message || e);
-            });
-          }
+        if (!out) continue;
+        // Auto-close at broker on every terminal state except SKIPPED (which
+        // never had a real position). Previously EOD outcomes were recorded
+        // but the broker position was left open — that's the bug being fixed.
+        const reason = (out as any).exitReason as string | null | undefined;
+        const shouldClose =
+          out.stoppedOut ||
+          reason === "TARGET" ||
+          reason === "TIME" ||
+          reason === "EOD" ||
+          reason === "STRUCTURE_BREAK";
+        if (shouldClose) {
+          console.log(`[broker] auto-close ${out.symbol} — reason: ${reason ?? "STOP"}`);
+          finalizeOutcomeWithBrokerFill(out);
+        } else {
           outcomes.push(out);
           dbInsertOutcome(out);
           realtime?.broadcastOutcome(out);
@@ -1497,13 +1783,11 @@ function ingestMinuteBar(
             const doneFromBar = r.outcomeTracker.onBar5Close({ symbol, ts: closeTs, open: cur.o, close: cur.c });
             for (const id of doneFromBar) {
               const out = r.outcomeTracker.finalize(id);
-              if (out) {
-                if (out.stoppedOut) {
-                  console.log(`[broker] auto-close ${out.symbol} — bar5 stop hit`);
-                  void brokerExecution.closePosition(out.symbol).catch((e) => {
-                    console.log("[broker] auto-close error", e?.message || e);
-                  });
-                }
+              if (!out) continue;
+              if (out.stoppedOut) {
+                console.log(`[broker] auto-close ${out.symbol} — bar5 stop hit`);
+                finalizeOutcomeWithBrokerFill(out);
+              } else {
                 outcomes.push(out);
                 dbInsertOutcome(out);
                 realtime?.broadcastOutcome(out);
@@ -2208,13 +2492,192 @@ const app = createHttpApp({
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
+  getAnalytics,
   getCandles1m,
+
+  // reconciler + coverage (Fix #1 / Fix #4)
+  getGhostPositions,
+  reconcileNow: () => runOrphanReconciler("manual"),
+  getDataCoverage,
 
   getMarketState: () => computeMarketState(),
 
   addSymbol: (s: string) => addSymbolToWatchlist(s),
   removeSymbol: (s: string) => removeSymbolFromWatchlist(s)
 });
+
+// -----------------------------
+// Orphan position reconciler (Fix #1 — wired 2026-05-19)
+// -----------------------------
+//
+// Caches the last reconcile run so the UI/HTTP layer can read the ghost set
+// without re-hitting the broker. Refreshed on startup and every 5 min RTH.
+let lastReconcile: ReconcileResult = { checkedAt: 0, ghosts: [], flattened: [], errors: [] };
+
+function collectTrackedSymbols(): Set<string> {
+  const set = new Set<string>();
+  for (const r of runners.values()) {
+    for (const id of r.outcomeTracker.liveSessionIds()) {
+      const sym = r.outcomeTracker.sessionSymbol(id);
+      if (sym) set.add(sym.toUpperCase());
+    }
+  }
+  return set;
+}
+
+async function runOrphanReconciler(reason: string): Promise<ReconcileResult> {
+  try {
+    const policy = brokerExecution.getPolicy();
+    const result = await reconcileBrokerPositions({
+      getBrokerPositions: () => brokerExecution.getLivePositions(),
+      getTrackedSymbols: collectTrackedSymbols,
+      closePosition: async (symbol: string) => {
+        const r = await brokerExecution.closePosition(symbol);
+        return r ? { orderId: r.orderId } : null;
+      },
+      autoFlatten: Boolean(policy.autoFlattenOrphans),
+      log: (msg) => console.log(`${msg} (trigger=${reason})`),
+    });
+    lastReconcile = result;
+
+    // Stale-session detection (Fix B). A LIVE session with no recent bar is
+    // not a "ghost" (it still has a session) but is just as dangerous — it is
+    // no longer being risk-managed. Surfaced via /api/ghost-positions; the
+    // clock-driven EOD sweep is the hard backstop. Not auto-flattened during
+    // RTH — a transient feed blip should not force-close a good position.
+    const stale = collectStaleSessions();
+    if (stale.length > 0) {
+      console.warn(
+        `[reconciler] ${stale.length} stale session(s) — no bar > ${STALE_SESSION_MS / 60000}min: ` +
+        stale.map((s) => `${s.symbol}(${Math.round(s.ageMs / 60000)}min)`).join(", ") +
+        ` (trigger=${reason})`
+      );
+    }
+    return result;
+  } catch (e: any) {
+    console.log(`[reconciler] error: ${e?.message || e} (trigger=${reason})`);
+    return lastReconcile;
+  }
+}
+
+// A LIVE session is "stale" if it hasn't received a bar update in this long
+// during RTH — its data feed has stalled and it is no longer being risk-managed.
+const STALE_SESSION_MS = 5 * 60_000;
+
+function collectStaleSessions(): Array<{ alertId: string; symbol: string; lastBarTs: number; ageMs: number }> {
+  const now = Date.now();
+  // Outside RTH every session trivially looks stale (no bars overnight) — only
+  // meaningful during the session. The EOD sweep is the after-hours backstop.
+  if (!isRegularSessionNY(now)) return [];
+  const out: Array<{ alertId: string; symbol: string; lastBarTs: number; ageMs: number }> = [];
+  for (const r of runners.values()) {
+    for (const s of r.outcomeTracker.staleSessions(now, STALE_SESSION_MS)) out.push(s);
+  }
+  return out;
+}
+
+function getGhostPositions() {
+  return {
+    checkedAt: lastReconcile.checkedAt,
+    ghosts: lastReconcile.ghosts,
+    flattened: lastReconcile.flattened,
+    errors: lastReconcile.errors,
+    staleSessions: collectStaleSessions(),
+  };
+}
+
+// -----------------------------
+// Clock-driven EOD flatten (Fix A — wired 2026-05-20)
+// -----------------------------
+//
+// The bar-driven EOD branch in OutcomeTracker.onMinuteBar only fires when a
+// bar arrives. If a symbol's data feed dies mid-session it never flattens at
+// 14:59 (2026-05-20: AMZN + IWM lost their feed at 13:10 and hung open). This
+// wall-clock sweep finalizes every live session and closes any uncovered
+// broker position, independent of bar flow. Runs at most once per NY day.
+let eodFlattenDayDone: string | null = null;
+
+async function runEodFlattenSweep(): Promise<void> {
+  const now = Date.now();
+  if (!isPastEodFlattenNY(now)) return;
+  const dayKey = nyDayKey(now);
+  if (eodFlattenDayDone === dayKey) return;
+  eodFlattenDayDone = dayKey;
+
+  console.log(`[eod] clock-driven flatten sweep starting (${dayKey})`);
+
+  // 1. Finalize every live session across every runner, close each at broker.
+  const flattenedSymbols = new Set<string>();
+  for (const r of runners.values()) {
+    const flattened = r.outcomeTracker.eodFlattenAll(now);
+    for (const out of flattened) {
+      flattenedSymbols.add(out.symbol.toUpperCase());
+      console.log(`[eod] flattening live session ${out.symbol} ${out.alertId}`);
+      finalizeOutcomeWithBrokerFill(out);
+    }
+  }
+
+  // 2. Belt-and-suspenders: close any broker position NOT covered by a session
+  //    we just flattened — true ghost (stale feed, manual trade, restart miss).
+  try {
+    const positions = await brokerExecution.getLivePositions();
+    for (const pos of positions) {
+      const sym = String(pos.symbol || "").toUpperCase();
+      if (!sym || flattenedSymbols.has(sym)) continue;
+      const qty = Number(pos.qty);
+      if (!Number.isFinite(qty) || qty === 0) continue;
+      console.log(`[eod] closing untracked broker position ${sym} qty=${qty}`);
+      try {
+        await brokerExecution.closePosition(sym);
+      } catch (e: any) {
+        console.warn(`[eod] failed to close ${sym}: ${e?.message || e}`);
+      }
+    }
+  } catch (e: any) {
+    console.warn(`[eod] broker position sweep failed: ${e?.message || e}`);
+  }
+
+  console.log(`[eod] clock-driven flatten sweep complete (${dayKey})`);
+}
+
+// -----------------------------
+// Data coverage monitor (Fix #4 — wired 2026-05-19)
+// -----------------------------
+//
+// During RTH, every watchlist symbol should produce a 1m bar each minute.
+// Track the last bar timestamp per symbol and flag any watchlist symbol whose
+// most recent bar is older than COVERAGE_STALE_MS.
+const lastBarTsBySymbol = new Map<string, number>();
+const COVERAGE_STALE_MS = 3 * 60_000; // 3 min stale = warn
+
+function recordCoverageBar(symbol: string, ts: number) {
+  const prev = lastBarTsBySymbol.get(symbol) || 0;
+  if (ts > prev) lastBarTsBySymbol.set(symbol, ts);
+}
+
+function getDataCoverage() {
+  const now = Date.now();
+  const watch = normalizedWatchlist();
+  const symbols = watch.map((sym) => {
+    const last = lastBarTsBySymbol.get(sym) || 0;
+    const ageMs = last > 0 ? now - last : null;
+    return {
+      symbol: sym,
+      lastBarTs: last || null,
+      ageMs,
+      stale: ageMs == null ? true : ageMs > COVERAGE_STALE_MS,
+    };
+  });
+  const stale = symbols.filter((s) => s.stale).map((s) => s.symbol);
+  return {
+    checkedAt: now,
+    watchlistCount: watch.length,
+    staleCount: stale.length,
+    staleSymbols: stale,
+    symbols,
+    thresholdMs: COVERAGE_STALE_MS,
+  };
+}
 
 // -----------------------------
 // Startup session reconstruction
@@ -2374,13 +2837,45 @@ server.listen(PORT, () => {
   console.log(`  Strategies : ${strategyNames}`);
   console.log(`  Watchlist  : ${watchSyms.length ? watchSyms.join(", ") : "empty"}`);
   console.log(`  Data feed  : Alpaca ${FEED.toUpperCase()}`);
-  console.log(`  Auth       : ${process.env.AGENT_SECRET ? "AGENT_SECRET set (login required)" : "open (no AGENT_SECRET)"}`);
+  const authLabel =
+    process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD
+      ? `username/password (user=${process.env.AUTH_USERNAME})`
+      : process.env.AGENT_SECRET
+      ? "AGENT_SECRET token (legacy)"
+      : "open (no auth set)";
+  console.log(`  Auth       : ${authLabel}`);
   console.log("─".repeat(56));
 
   // Reconstruct in-memory sessions for any positions that survived a server
   // restart. Must run before backfill so live bars arriving immediately after
   // startup are tracked against the correct session state.
   reconstructLiveSessionsFromDb();
+
+  // Orphan position reconciler — run once at startup (after session
+  // reconstruction so we don't false-positive on positions we just adopted),
+  // then every 5 minutes. The function is safe to call when the broker is
+  // disabled — it returns an empty result.
+  void runOrphanReconciler("startup");
+  setInterval(() => {
+    void runOrphanReconciler("heartbeat");
+  }, 5 * 60_000);
+
+  // Coverage monitor — every minute during RTH, log loud warning when any
+  // watchlist symbol has gone stale. UI surfaces via /api/data-coverage.
+  setInterval(() => {
+    const cov = getDataCoverage();
+    if (cov.staleCount > 0) {
+      console.warn(`[coverage] ${cov.staleCount}/${cov.watchlistCount} symbol(s) stale > ${cov.thresholdMs / 1000}s: ${cov.staleSymbols.join(", ")}`);
+    }
+  }, 60_000);
+
+  // Clock-driven EOD flatten — every 30s, checks wall-clock time and force-
+  // flattens once past 14:59 NY. Independent of bar flow so a dead data feed
+  // can't strand an open position. Also catches positions left by a restart
+  // after the bar-driven flatten window.
+  setInterval(() => {
+    void runEodFlattenSweep();
+  }, 30_000);
 
   if (!HAS_KEYS) {
     console.log("NOTE: Alpaca keys missing in .env. UI will load, but no live data will stream yet.");

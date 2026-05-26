@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Bar5, MarketDirection } from "../market/marketDirection";
 import { LevelType, Levels, getLevelPrice } from "../market/levels";
 import { computeRS } from "./rs";
+import { compute4hRegime, trendAllowsDirection } from "./trendFilter";
 import { Alert, Direction, OutputMessage, RelativeStrength, SignalState } from "./types";
 
 export type EngineConfig = {
@@ -15,6 +16,15 @@ export type EngineConfig = {
    * Example: [9, 20, 50, 200]
    */
   emaPeriods?: number[];
+
+  /**
+   * 4-hour trend regime filter. When enabled, the engine blocks LONG setups
+   * during BEAR regime and SHORT setups during BULL regime, computed off the
+   * symbol's own 4h chart (EMA9 vs SMA21 on 4h bars).
+   *
+   * Default: false (off). Production toggles via env TREND_4H_FILTER=1.
+   */
+  trendFilter4h?: boolean;
 };
 
 export type SymbolContext = {
@@ -211,7 +221,11 @@ export class SignalEngine {
     if (!c) return;
 
     c.bars5.push(bar);
-    if (c.bars5.length > 500) c.bars5.shift();
+    // Keep ~21 trading days of 5m history (21 * 78 = 1638 bars). The 4h trend
+    // filter aggregates these into 4h buckets and needs 21+ 4h bars (~14 days)
+    // worth of input to produce a meaningful regime. 2500 leaves comfortable
+    // margin; older bars are pure memory cost with no downstream consumer.
+    if (c.bars5.length > 2500) c.bars5.shift();
 
     // Update EMA snapshot incrementally
     if (this.emaPeriods.length) {
@@ -306,6 +320,15 @@ export class SignalEngine {
       return null;
     }
 
+    // 4h trend regime filter. When enabled, blocks counter-trend setups before
+    // any break detection — wrong-direction breaks never enter BROKEN state, so
+    // no tap entries can fire either. UNKNOWN regime (insufficient 4h history)
+    // passes through to avoid silent dark-zones during cold start.
+    if (this.cfg.trendFilter4h) {
+      const regime = compute4hRegime(symBars5);
+      if (!trendAllowsDirection(regime, dir)) return null;
+    }
+
     // EMA8 + VWAP confirmation filters (PB Investing style):
     // CALL: price must be above 8 EMA and above VWAP to confirm bullish bias
     // PUT:  price must be below 8 EMA and below VWAP to confirm bearish bias
@@ -380,6 +403,13 @@ export class SignalEngine {
     const rs = ctx.lastRS ?? "NONE";
     if (s.dir === "CALL" && rs !== "STRONG") return null;
     if (s.dir === "PUT" && rs !== "WEAK") return null;
+
+    // 4h trend gate at tap time. Catches the case where a BROKEN setup was
+    // recorded under one regime and the regime flips before the retest taps.
+    if (this.cfg.trendFilter4h) {
+      const regime = compute4hRegime(ctx.bars5);
+      if (!trendAllowsDirection(regime, s.dir)) return null;
+    }
 
     // ensure tap state
     const key = `${symbol}|${s.dir}|${s.levelType}|${s.levelPrice}`;

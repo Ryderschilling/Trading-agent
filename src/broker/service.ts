@@ -286,11 +286,59 @@ function makeActivity(args: Partial<BrokerOrderRecord> & Pick<BrokerOrderRecord,
   };
 }
 
+// Rolling window of recent SUBMITTED entries — used by the anti-cluster gate
+// inside executeConfirmedAlert. Lives in-process; cleared on restart, which is
+// fine because clusters only matter intraday.
+type RecentSubmission = { ts: number; symbol: string; direction: "LONG" | "SHORT" };
+const recentSubmissions: RecentSubmission[] = [];
+const ONE_MINUTE_MS = 60_000;
+const FIVE_MINUTES_MS = 5 * ONE_MINUTE_MS;
+
+function pruneRecentSubmissions(now: number): void {
+  while (recentSubmissions.length && now - recentSubmissions[0].ts > FIVE_MINUTES_MS) {
+    recentSubmissions.shift();
+  }
+}
+
+function countRecentSubmissions(now: number, withinMs: number, direction?: "LONG" | "SHORT"): number {
+  let n = 0;
+  for (let i = recentSubmissions.length - 1; i >= 0; i--) {
+    const r = recentSubmissions[i];
+    if (now - r.ts > withinMs) break;
+    if (direction && r.direction !== direction) continue;
+    n++;
+  }
+  return n;
+}
+
 export class BrokerExecutionService {
   constructor(private db: Database.Database) {}
 
   getActivity(limit = 25): BrokerActivityRow[] {
     return listBrokerOrders(this.db, limit);
+  }
+
+  /**
+   * Returns the active broker policy. Useful for callers (e.g. the orphan
+   * reconciler) that need to know flags like autoFlattenOrphans without
+   * re-reading the DB themselves.
+   */
+  getPolicy() {
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    return cfg.execution;
+  }
+
+  /**
+   * Fetch live broker positions (used by the orphan reconciler). Returns an
+   * empty array if the broker isn't configured or the status call fails — the
+   * caller decides what to do with that.
+   */
+  async getLivePositions() {
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    if (!cfg.brokerKey || cfg.mode === "disabled") return [];
+    const adapter = buildAdapter(cfg);
+    const status = await adapter.getStatus();
+    return status.positions;
   }
 
   async closePosition(symbol: string): Promise<{ orderId: string; adapter: any } | null> {
@@ -311,6 +359,41 @@ export class BrokerExecutionService {
     const adapter = buildAdapter(cfg);
     if (!adapter.setStopOrder) throw new Error("broker does not support stop orders");
     return adapter.setStopOrder(symbol, stopPrice, qty);
+  }
+
+  /**
+   * Poll the broker for filled_avg_price + filled_qty of a given order. Returns
+   * null on timeout or if the order never filled. Used to capture broker-truth
+   * entry/exit fills so the Outcomes page shows what actually happened at the
+   * broker, not just the simulated price the OutcomeTracker computed.
+   */
+  async pollOrderFill(orderId: string, timeoutMs = 6000): Promise<{ price: number; qty: number | null } | null> {
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    if (!cfg.brokerKey) return null;
+    if (cfg.mode === "disabled") return null;
+    let adapter: BrokerAdapter;
+    try {
+      adapter = buildAdapter(cfg);
+    } catch {
+      return null;
+    }
+    if (!adapter.pollFill) return null;
+    const price = await adapter.pollFill(orderId, timeoutMs);
+    if (price == null) return null;
+    // Best-effort qty grab: the alpaca adapter's pollFill doesn't return qty,
+    // so we re-fetch the order. If that fails we still return the price.
+    let qty: number | null = null;
+    try {
+      const a: any = adapter as any;
+      if (a?.getOrder) {
+        const order = await a.getOrder(orderId);
+        const q = Number(order?.filled_qty ?? order?.qty);
+        if (Number.isFinite(q) && q > 0) qty = q;
+      }
+    } catch {
+      qty = null;
+    }
+    return { price, qty };
   }
 
   private listEnabledStrategyPolicies(): StrategyPolicyRow[] {
@@ -519,7 +602,23 @@ export class BrokerExecutionService {
       },
     });
 
+    // Anti-cluster reservation (Fix C, 2026-05-20). The cluster gate below
+    // reserves a slot in `recentSubmissions` SYNCHRONOUSLY the instant its
+    // checks pass — no await between check and reserve — so concurrent entries
+    // firing in the same tick can't all pass a stale count. If the order then
+    // fails to reach SUBMITTED for any reason, `persist` releases the slot.
+    let clusterReservation: RecentSubmission | null = null;
+    const releaseClusterReservation = () => {
+      if (!clusterReservation) return;
+      const i = recentSubmissions.indexOf(clusterReservation);
+      if (i >= 0) recentSubmissions.splice(i, 1);
+      clusterReservation = null;
+    };
+
     const persist = (record: BrokerOrderRecord) => {
+      // Any terminal record that isn't a live SUBMITTED order must give the
+      // reserved cluster slot back.
+      if (record.status !== "SUBMITTED") releaseClusterReservation();
       insertBrokerOrder(this.db, record);
       return record;
     };
@@ -577,6 +676,54 @@ export class BrokerExecutionService {
     if (findSubmittedBrokerOrderBySetup(this.db, dayKey, setupKey)) {
       return persist({ ...baseActivity, status: "SKIPPED", reason: "duplicate setup blocked" });
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ANTI-CLUSTER GATE (Fix #5, wired 2026-05-19)
+    //
+    // 2026-05-19 fired 4 nearly-identical bearish PML-weak shorts in the same
+    // minute (IWM, SPY, TSLA, GOOGL). All hit a reversal and stopped out for
+    // a combined -$120. Strategy quality issue, but the broker layer should
+    // also cap correlated-bunch risk.
+    //
+    //   - maxEntriesPerMinute: total entries across all symbols per 60s
+    //   - maxSameDirEntriesPer5Min: directional concentration
+    //
+    // Either set to null disables the gate. Rolling window is in-process.
+    // ──────────────────────────────────────────────────────────────────────
+    const now = Date.now();
+    pruneRecentSubmissions(now);
+    const direction: "LONG" | "SHORT" = alert.dir === "CALL" ? "LONG" : "SHORT";
+
+    // The check + reserve below is a single synchronous block. JS is
+    // single-threaded, so no other executeConfirmedAlert call can interleave
+    // between countRecentSubmissions() and recentSubmissions.push(). That makes
+    // the gate race-free even when N entries fire in the same tick.
+    if (cfg.execution.maxEntriesPerMinute != null) {
+      const recentTotal = countRecentSubmissions(now, ONE_MINUTE_MS);
+      if (recentTotal >= cfg.execution.maxEntriesPerMinute) {
+        return persist({
+          ...baseActivity,
+          status: "SKIPPED",
+          reason: `max entries per minute reached (${recentTotal}/${cfg.execution.maxEntriesPerMinute})`,
+        });
+      }
+    }
+
+    if (cfg.execution.maxSameDirEntriesPer5Min != null) {
+      const recentSameDir = countRecentSubmissions(now, FIVE_MINUTES_MS, direction);
+      if (recentSameDir >= cfg.execution.maxSameDirEntriesPer5Min) {
+        return persist({
+          ...baseActivity,
+          status: "SKIPPED",
+          reason: `max ${direction} entries per 5 min reached (${recentSameDir}/${cfg.execution.maxSameDirEntriesPer5Min})`,
+        });
+      }
+    }
+
+    // Gate passed — reserve the slot NOW, before any await. persist() releases
+    // it if the order doesn't end up SUBMITTED.
+    clusterReservation = { ts: now, symbol: alert.symbol, direction };
+    recentSubmissions.push(clusterReservation);
 
     const ordersForSymbol = countBrokerOrdersForSymbolDay(this.db, dayKey, alert.symbol);
     if (cfg.execution.maxOrdersPerSymbolPerDay != null && ordersForSymbol >= cfg.execution.maxOrdersPerSymbolPerDay) {
@@ -649,6 +796,8 @@ export class BrokerExecutionService {
         extendedHours: false,
       });
 
+      // SUBMITTED — the cluster reservation made at the gate stands (persist
+      // only releases it on non-SUBMITTED outcomes).
       return persist({
         ...baseActivity,
         status: "SUBMITTED",

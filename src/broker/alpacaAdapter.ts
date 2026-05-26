@@ -205,6 +205,20 @@ export class AlpacaBrokerAdapter implements BrokerAdapter {
     return orderId ? { orderId } : null;
   }
 
+  // Fetch a single order by id. Used to read filled_qty / filled_avg_price
+  // for broker-truth reconciliation. Returns null if not found / on error.
+  async getOrder(orderId: string): Promise<any | null> {
+    try {
+      return await requestJson({
+        method: "GET",
+        url: `${this.baseUrl}/v2/orders/${encodeURIComponent(orderId)}`,
+        headers: this.headers,
+      });
+    } catch {
+      return null;
+    }
+  }
+
   // Poll for actual fill price after a close order. Returns filled_avg_price or null on timeout.
   async pollFill(orderId: string, timeoutMs = 6000): Promise<number | null> {
     const pollIntervalMs = 800;

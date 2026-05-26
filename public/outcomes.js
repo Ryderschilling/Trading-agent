@@ -1,4 +1,4 @@
-/* global io, LightweightCharts */
+/* global io */
 
 let socket = null;
 try {
@@ -30,18 +30,26 @@ const DISPLAY_BAR_TARGET_IDEAL = 140;
 
 function fmtTime(ts) {
   try {
-    return new Date(ts).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch { return "—"; }
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    const ss = String(d.getSeconds()).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return "—";
+  }
 }
 
-function fmtDatetime(ts) {
-  if (!ts) return "—";
+// "18 May, 2026" — short month, no leading zero on day.
+function fmtDate(ts) {
   try {
-    return new Date(ts).toLocaleString("en-US", {
-      month: "numeric", day: "numeric", year: "numeric",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
-    });
-  } catch { return "—"; }
+    const d = new Date(ts);
+    if (!Number.isFinite(d.getTime())) return "—";
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${d.getFullYear()}`;
+  } catch {
+    return "—";
+  }
 }
 
 function fmtDateTime(ts) {
@@ -53,11 +61,6 @@ function fmtDateTime(ts) {
 function fmt2(x) {
   if (x == null || x === "" || Number.isNaN(Number(x))) return "—";
   return Number(x).toFixed(2);
-}
-
-function fmt2pct(x) {
-  const v = fmt2(x);
-  return v === "—" ? "—" : v + "%";
 }
 
 function escapeHtml(s) {
@@ -113,29 +116,8 @@ function modalClose() {
 }
 
 modalCloseEl?.addEventListener("click", modalClose);
-modalEl?.addEventListener("click", (e) => { if (e.target === modalEl) modalClose(); });
-
-// ─── Chart toggle buttons ──────────────────────────────────────────────────
-let entryTs = null;
-let exitTs = null;
-let candleSeries = null;
-let entryMarkerVisible = true;
-let exitMarkerVisible = false;
-
-document.getElementById("btnEntry")?.addEventListener("click", () => {
-  entryMarkerVisible = !entryMarkerVisible;
-  document.getElementById("btnEntry").classList.toggle("active", entryMarkerVisible);
-  updateMarkers();
-});
-document.getElementById("btnExit")?.addEventListener("click", () => {
-  exitMarkerVisible = !exitMarkerVisible;
-  document.getElementById("btnExit").classList.toggle("active", exitMarkerVisible);
-  updateMarkers();
-});
-document.getElementById("btnVwap")?.addEventListener("click", () => {
-  showVwap = !showVwap;
-  document.getElementById("btnVwap").classList.toggle("active", showVwap);
-  if (activeVwapSeries) activeVwapSeries.applyOptions({ visible: showVwap });
+modalEl?.addEventListener("click", (e) => {
+  if (e.target === modalEl) modalClose();
 });
 
 function normalizeBars(bars1m) {
@@ -730,15 +712,32 @@ async function openModalForRow(r) {
   const statusText = escapeHtml(r.status || "—");
   const pnlText = r.pnlPct != null ? `${fmt2(r.pnlPct)}%` : "—";
 
+  // Broker-truth display values. Prefer broker fills; fall back to simulated.
+  const hasEntryFill = r.entryFill !== "" && r.entryFill != null && Number.isFinite(Number(r.entryFill));
+  const hasExitFill  = r.exitFill  !== "" && r.exitFill  != null && Number.isFinite(Number(r.exitFill));
+  const entryFillTxt = hasEntryFill
+    ? `$${fmt2(Number(r.entryFill))}`
+    : (r.entryRef !== "" && r.entryRef != null ? `$${fmt2(Number(r.entryRef))} <span style="color:rgba(255,255,255,0.45);font-style:italic;">(sim)</span>` : "—");
+  const exitFillTxt = hasExitFill ? `$${fmt2(Number(r.exitFill))}` : "—";
+  const qtyTxt = (r.qty !== "" && r.qty != null && Number.isFinite(Number(r.qty))) ? String(Number(r.qty)) : "—";
+  const pnlUsdNum = (r.realizedPnlUsd !== "" && r.realizedPnlUsd != null && Number.isFinite(Number(r.realizedPnlUsd))) ? Number(r.realizedPnlUsd) : null;
+  const pnlUsdTxt = pnlUsdNum == null
+    ? "—"
+    : `<span style="color:${pnlUsdNum > 0 ? "#34d399" : pnlUsdNum < 0 ? "#f87171" : "inherit"};font-weight:700;">${pnlUsdNum > 0 ? "+$" : pnlUsdNum < 0 ? "-$" : "$"}${Math.abs(pnlUsdNum).toFixed(2)}</span>`;
+
   modalBodyEl.innerHTML = `
     <div class="outcome-detail">
       <div class="outcome-metrics">
         ${buildMetric("Symbol", `<b>${escapeHtml(r.symbol || "—")}</b>`)}
         ${buildMetric("Strategy", escapeHtml(strat))}
         ${buildMetric("Status", `<b>${statusText}</b>`)}
-        ${buildMetric("PnL", `<b>${escapeHtml(pnlText)}</b>`)}
-        ${buildMetric("Entry", escapeHtml(fmtDateTime(entryTs)))}
-        ${buildMetric("Exit", escapeHtml(exitTs ? fmtDateTime(exitTs) : "Still open / checkpoint"))}
+        ${buildMetric("PnL %", `<b>${escapeHtml(pnlText)}</b>`)}
+        ${buildMetric("PnL $", pnlUsdTxt)}
+        ${buildMetric("Entry Fill", entryFillTxt)}
+        ${buildMetric("Exit Fill", exitFillTxt)}
+        ${buildMetric("Qty", escapeHtml(qtyTxt))}
+        ${buildMetric("Entry Time", escapeHtml(fmtDateTime(entryTs)))}
+        ${buildMetric("Exit Time", escapeHtml(exitTs ? fmtDateTime(exitTs) : "Still open / checkpoint"))}
       </div>
 
       <section class="outcome-chart-panel">
@@ -985,93 +984,6 @@ function applyDbFilters(rows) {
   else if (activeRange === "month") cutoff = now - 30 * 24 * 60 * 60_000;
   else if (activeRange === "year") cutoff = now - 365 * 24 * 60 * 60_000;
 
-  // Destroy previous
-  if (returnsChart) { returnsChart.remove(); returnsChart = null; }
-
-  // Bucket 5m returns
-  const buckets = [
-    { label: "< -3%", min: -Infinity, max: -3, color: "#ef5350" },
-    { label: "-3 to -1%", min: -3, max: -1, color: "#f87171" },
-    { label: "-1 to 0%", min: -1, max: 0, color: "#fca5a5" },
-    { label: "0 to 1%", min: 0, max: 1, color: "#6ee7b7" },
-    { label: "1 to 3%", min: 1, max: 3, color: "#34d399" },
-    { label: "> 3%", min: 3, max: Infinity, color: "#10b981" },
-  ];
-
-  const counts = buckets.map(() => 0);
-  for (const r of rows) {
-    const v = Number(r.ret5m);
-    if (r.ret5m === "" || isNaN(v)) continue;
-    for (let i = 0; i < buckets.length; i++) {
-      if (v >= buckets[i].min && v < buckets[i].max) { counts[i]++; break; }
-    }
-  }
-
-  // Build chart with a baseline histogram using fake time keys
-  const chart = LightweightCharts.createChart(container, {
-    width: container.clientWidth,
-    height: 140,
-    layout: { background: { color: "transparent" }, textColor: "#64748b", fontSize: 10 },
-    grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,0.04)" } },
-    rightPriceScale: { borderVisible: false },
-    timeScale: {
-      borderVisible: false,
-      tickMarkFormatter: (time) => {
-        const idx = time - 1;
-        return buckets[idx]?.label || "";
-      },
-    },
-    handleScroll: false,
-    handleScale: false,
-  });
-  returnsChart = chart;
-
-  const hist = chart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
-  const data = buckets.map((b, i) => ({
-    time: i + 1,
-    value: counts[i],
-    color: b.color + (counts[i] === 0 ? "44" : "cc"),
-  }));
-  hist.setData(data);
-
-  chart.timeScale().fitContent();
-
-  const ro = new ResizeObserver(() => { if (returnsChart) returnsChart.applyOptions({ width: container.clientWidth }); });
-  ro.observe(container);
-}
-
-// ─── Stats strip ───────────────────────────────────────────────────────────
-function renderStats(rows) {
-  const total = rows.length;
-  document.getElementById("statTotal").textContent = total || "0";
-
-  const withMfe = rows.filter((r) => r.mfePct !== "" && Number(r.mfePct) > 0);
-  const winRate = total > 0 ? Math.round((withMfe.length / total) * 100) : null;
-  const statWr = document.getElementById("statWinRate");
-  statWr.textContent = winRate != null ? winRate + "%" : "—";
-  statWr.className = "stat-value " + (winRate != null ? (winRate >= 50 ? "pos" : "neg") : "");
-
-  const ret5vals = rows.map((r) => Number(r.ret5m)).filter((v) => !isNaN(v) && v !== 0);
-  const avgRet = ret5vals.length ? ret5vals.reduce((a, b) => a + b, 0) / ret5vals.length : null;
-  const statAvg = document.getElementById("statAvgRet");
-  statAvg.textContent = avgRet != null ? fmt2pct(avgRet) : "—";
-  statAvg.className = "stat-value " + (avgRet != null ? (avgRet > 0 ? "pos" : "neg") : "");
-
-  const mfeVals = rows.map((r) => Number(r.mfePct)).filter((v) => !isNaN(v));
-  const bestMfe = mfeVals.length ? Math.max(...mfeVals) : null;
-  const statBest = document.getElementById("statBestMfe");
-  statBest.textContent = bestMfe != null ? fmt2pct(bestMfe) : "—";
-  statBest.className = "stat-value pos";
-
-  const stops = rows.filter((r) => r.stoppedOut).length;
-  document.getElementById("statStops").textContent = total > 0 ? `${stops} / ${total}` : "—";
-}
-
-// ─── DB table render ───────────────────────────────────────────────────────
-function applyDbFilters(rows) {
-  const sym = String(document.getElementById("dbSym")?.value || "").trim().toUpperCase();
-  const status = String(document.getElementById("dbStatus")?.value || "").trim().toUpperCase();
-  const stoppedOnly = Boolean(document.getElementById("dbStoppedOnly")?.checked);
   return (rows || []).filter((r) => {
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
     return true;
@@ -1141,8 +1053,6 @@ function renderStats(rows) {
 }
 
 function renderDbTable() {
-  const dbBodyEl = document.getElementById("dbBody");
-  const dbEmptyEl = document.getElementById("dbEmpty");
   if (!dbBodyEl || !dbEmptyEl) return;
 
   const rows = applyDbFilters(dbRowsRaw);
@@ -1155,24 +1065,25 @@ function renderDbTable() {
 
   dbBodyEl.innerHTML = "";
 
-  if (!rows.length) { dbEmptyEl.style.display = "block"; return; }
+  if (!rows.length) {
+    dbEmptyEl.style.display = "block";
+    return;
+  }
   dbEmptyEl.style.display = "none";
 
   for (const r of rows) {
     const tr = document.createElement("tr");
     tr.className = "clickable";
 
-    const td = (text, cls) => {
+    const td = (t) => {
       const el = document.createElement("td");
-      el.textContent = text;
-      if (cls) el.className = cls;
+      el.textContent = t;
       return el;
     };
 
-    const stratLabel = r.strategyName || (r.strategyVersion != null ? `v${r.strategyVersion}` : "");
     const pnl = r.pnlPct;
 
-    tr.appendChild(td(stratLabel));
+    tr.appendChild(td(fmtDate(r.ts)));
     tr.appendChild(td(r.symbol || ""));
     tr.appendChild(td(fmtTime(r.ts)));
     tr.appendChild(td(r.market || "—"));
@@ -1195,7 +1106,39 @@ function renderDbTable() {
       : `<span style="color:rgba(255,255,255,0.3);">NO</span>`;
     tr.appendChild(stopTd);
 
-    // PnL — green/red
+    // Entry Fill — broker truth (filled_avg_price). Falls back to alert close
+    // when broker fill not available. Italicized in muted color when simulated.
+    const entryFillTd = document.createElement("td");
+    const hasEntryFill = r.entryFill !== "" && r.entryFill != null && Number.isFinite(Number(r.entryFill));
+    if (hasEntryFill) {
+      entryFillTd.textContent = fmt2(Number(r.entryFill));
+    } else if (r.entryRef !== "" && r.entryRef != null && Number.isFinite(Number(r.entryRef))) {
+      entryFillTd.innerHTML = `<span style="color:rgba(255,255,255,0.4);font-style:italic;" title="Simulated — broker fill not available">${fmt2(Number(r.entryRef))}</span>`;
+    } else {
+      entryFillTd.textContent = "—";
+    }
+    tr.appendChild(entryFillTd);
+
+    // Exit Fill — broker truth on close. Simulated if no broker fill.
+    const exitFillTd = document.createElement("td");
+    const hasExitFill = r.exitFill !== "" && r.exitFill != null && Number.isFinite(Number(r.exitFill));
+    if (hasExitFill) {
+      exitFillTd.textContent = fmt2(Number(r.exitFill));
+    } else {
+      exitFillTd.textContent = "—";
+    }
+    tr.appendChild(exitFillTd);
+
+    // Qty
+    const qtyTd = document.createElement("td");
+    if (r.qty !== "" && r.qty != null && Number.isFinite(Number(r.qty))) {
+      qtyTd.textContent = String(Number(r.qty));
+    } else {
+      qtyTd.textContent = "—";
+    }
+    tr.appendChild(qtyTd);
+
+    // PnL % — green/red
     const pnlTd = document.createElement("td");
     if (pnl == null) {
       pnlTd.textContent = "—";
@@ -1204,6 +1147,20 @@ function renderDbTable() {
       pnlTd.innerHTML = `<span style="color:${pnlColor};font-weight:700;">${fmt2(pnl)}%</span>`;
     }
     tr.appendChild(pnlTd);
+
+    // PnL $ — realized dollar P&L from broker fills
+    const pnlUsdTd = document.createElement("td");
+    const pnlUsd = (r.realizedPnlUsd !== "" && r.realizedPnlUsd != null && Number.isFinite(Number(r.realizedPnlUsd)))
+      ? Number(r.realizedPnlUsd)
+      : null;
+    if (pnlUsd == null) {
+      pnlUsdTd.textContent = "—";
+    } else {
+      const c = pnlUsd > 0 ? "#34d399" : pnlUsd < 0 ? "#f87171" : "inherit";
+      const sign = pnlUsd > 0 ? "+$" : pnlUsd < 0 ? "-$" : "$";
+      pnlUsdTd.innerHTML = `<span style="color:${c};font-weight:700;">${sign}${Math.abs(pnlUsd).toFixed(2)}</span>`;
+    }
+    tr.appendChild(pnlUsdTd);
 
     tr.addEventListener("click", () => openModalForRow(r));
     dbBodyEl.appendChild(tr);
@@ -1223,9 +1180,9 @@ async function fetchDbRowsStable() {
     lastDbrowsHash = hash;
     dbRowsRaw = rows;
     renderDbTable();
-    renderStats(dbRowsRaw);
-    renderReturnsChart(dbRowsRaw);
-  } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
 }
 
 for (const btn of rangeToggleEls) {

@@ -248,6 +248,7 @@
         <nav class="tabs">
           <a class="tab" href="/">Workspace</a>
           <a class="tab active" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/analytics">Analytics</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
@@ -288,7 +289,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Strategy</th>
+                  <th>Date</th>
                   <th>Symbol</th>
                   <th>Time</th>
                   <th>Market</th>
@@ -296,7 +297,11 @@
                   <th>Level</th>
                   <th>Status</th>
                   <th>Stopped</th>
+                  <th title="Broker filled_avg_price on entry. Falls back to alert close if broker fill not available.">Entry Fill</th>
+                  <th title="Broker filled_avg_price on exit. Falls back to simulated exit price if broker fill not available.">Exit Fill</th>
+                  <th title="Broker filled qty">Qty</th>
                   <th>PnL %</th>
+                  <th title="Realized dollar P&amp;L from broker fills (qty × (exit - entry), signed by direction).">PnL $</th>
                 </tr>
               </thead>
               <tbody id="dbBody"></tbody>

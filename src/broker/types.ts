@@ -22,6 +22,15 @@ export type BrokerExecutionPolicy = {
   maxOrdersPerSymbolPerDay: number | null;
   avoidExistingPosition: boolean;
   avoidOpenOrders: boolean;
+  // Reconciler — when true, the orphan reconciler auto-flattens any broker
+  // position with no matching OutcomeTracker session. Default false (log + ghost
+  // banner only). Flip to true once you've validated the reconciler isn't
+  // misclassifying legitimate sessions.
+  autoFlattenOrphans: boolean;
+  // Anti-cluster gates — cap concurrent entries fired by the engine.
+  // null disables the gate. Both checks live in BrokerExecutionService.
+  maxEntriesPerMinute: number | null;
+  maxSameDirEntriesPer5Min: number | null;
 };
 
 export type BrokerConfig = {

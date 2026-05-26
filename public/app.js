@@ -22,6 +22,12 @@ const dataHealthBannerEl = document.getElementById("dataHealthBanner");
 const dataHealthTitleEl = document.getElementById("dataHealthTitle");
 const dataHealthMetaEl = document.getElementById("dataHealthMeta");
 const dataHealthBodyEl = document.getElementById("dataHealthBody");
+const ghostBannerEl = document.getElementById("ghostPositionsBanner");
+const ghostBannerMetaEl = document.getElementById("ghostBannerMeta");
+const ghostBannerBodyEl = document.getElementById("ghostBannerBody");
+const coverageBannerEl = document.getElementById("coverageBanner");
+const coverageBannerMetaEl = document.getElementById("coverageBannerMeta");
+const coverageBannerBodyEl = document.getElementById("coverageBannerBody");
 const strongListEl = document.getElementById("strongList");
 const weakListEl = document.getElementById("weakList");
 const formingListEl = document.getElementById("formingList");
@@ -199,6 +205,74 @@ function renderDataHealthBanner(state) {
   dataHealthBodyEl.textContent = `${reason} ${detail}`.trim();
   dataHealthBannerEl.style.display = "block";
 }
+
+function renderGhostBanner(payload) {
+  if (!ghostBannerEl || !ghostBannerMetaEl || !ghostBannerBodyEl) return;
+  const ghosts = Array.isArray(payload?.ghosts) ? payload.ghosts : [];
+  const stale = Array.isArray(payload?.staleSessions) ? payload.staleSessions : [];
+  if (ghosts.length === 0 && stale.length === 0) {
+    ghostBannerEl.style.display = "none";
+    return;
+  }
+  const chip = (txt) => `<code style="background:#1a0a0a; padding:2px 6px; border-radius:3px; margin-right:6px;">${txt}</code>`;
+  const fmtGhost = (g) => {
+    const qty = g.qty != null ? Number(g.qty).toFixed(2) : "?";
+    const px = g.avgEntryPrice != null ? `@$${Number(g.avgEntryPrice).toFixed(2)}` : "";
+    const pnl = g.unrealizedPlPct != null ? ` (${Number(g.unrealizedPlPct).toFixed(2)}%)` : "";
+    return `${g.symbol} ${String(g.side || "?").toUpperCase()} ${qty} ${px}${pnl}`.trim();
+  };
+  const fmtStale = (s) => `${s.symbol} — no bar ${Math.round(Number(s.ageMs || 0) / 60000)}min`;
+
+  const metaBits = [];
+  if (ghosts.length) metaBits.push(`${ghosts.length} untracked`);
+  if (stale.length) metaBits.push(`${stale.length} stale session${stale.length === 1 ? "" : "s"}`);
+  ghostBannerMetaEl.textContent = metaBits.join(" · ");
+
+  const parts = [];
+  if (ghosts.length) {
+    parts.push(`<div style="margin-bottom:6px;"><strong>Untracked broker positions:</strong> ${ghosts.map((g) => chip(fmtGhost(g))).join(" ")}</div>`);
+  }
+  if (stale.length) {
+    parts.push(`<div style="margin-bottom:6px;"><strong>Stale sessions (data feed stalled):</strong> ${stale.map((s) => chip(fmtStale(s))).join(" ")}</div>`);
+  }
+  parts.push(`<div class="small" style="opacity:0.85;">Untracked positions are not driven by the OutcomeTracker. Stale sessions have lost their data feed and are no longer risk-managed. The clock-driven EOD sweep will flatten both at 14:59 ET — but check the broker now.</div>`);
+  ghostBannerBodyEl.innerHTML = parts.join("");
+  ghostBannerEl.style.display = "block";
+}
+
+function renderCoverageBanner(payload) {
+  if (!coverageBannerEl || !coverageBannerMetaEl || !coverageBannerBodyEl) return;
+  const stale = Array.isArray(payload?.staleSymbols) ? payload.staleSymbols : [];
+  if (stale.length === 0) {
+    coverageBannerEl.style.display = "none";
+    return;
+  }
+  const threshold = Number(payload?.thresholdMs || 180000) / 1000;
+  coverageBannerMetaEl.textContent = `${stale.length}/${payload.watchlistCount} symbol${stale.length === 1 ? "" : "s"} stale`;
+  coverageBannerBodyEl.innerHTML =
+    `<div>No fresh bars in &gt;${threshold.toFixed(0)}s for: <strong>${stale.join(", ")}</strong>.</div>` +
+    `<div class="small" style="opacity:0.85; margin-top:4px;">Strategy will not evaluate setups on stale symbols. Check the data feed.</div>`;
+  coverageBannerEl.style.display = "block";
+}
+
+async function pollGhostAndCoverage() {
+  try {
+    const [g, c] = await Promise.all([
+      fetch("/api/ghost-positions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      fetch("/api/data-coverage").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
+    if (g) renderGhostBanner(g);
+    if (c) renderCoverageBanner(c);
+  } catch {
+    // best effort — banners stay in last state
+  }
+}
+
+// Start polling after a short delay so it doesn't compete with initial bootstrap.
+setTimeout(() => {
+  void pollGhostAndCoverage();
+  setInterval(pollGhostAndCoverage, 30_000);
+}, 2000);
 
 function loadAiChatHistory() {
   try {

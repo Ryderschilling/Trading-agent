@@ -22,6 +22,7 @@
         <nav class="tabs">
           <a class="tab active" href="/">Workspace</a>
           <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/analytics">Analytics</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
@@ -68,6 +69,24 @@
           <div id="dataHealthBody" class="feed-banner-body">
             Fresh bars are required before the platform can surface new setups or submit trades.
           </div>
+        </section>
+
+        <section id="ghostPositionsBanner" class="feed-banner" style="display:none; background:#3a1a1a; border:1px solid #b04040;" aria-live="polite">
+          <div class="feed-banner-head">
+            <div class="feed-banner-title" style="color:#ff8080;">Ghost Positions Detected</div>
+            <div id="ghostBannerMeta" class="feed-banner-meta"></div>
+          </div>
+          <div id="ghostBannerBody" class="feed-banner-body">
+            One or more broker positions are not tracked by the engine. They consume position slots and will not auto-close at EOD.
+          </div>
+        </section>
+
+        <section id="coverageBanner" class="feed-banner" style="display:none; background:#3a3320; border:1px solid #b08a40;" aria-live="polite">
+          <div class="feed-banner-head">
+            <div class="feed-banner-title" style="color:#ffd070;">Data Coverage Warning</div>
+            <div id="coverageBannerMeta" class="feed-banner-meta"></div>
+          </div>
+          <div id="coverageBannerBody" class="feed-banner-body"></div>
         </section>
 
         <!-- ROW 1: Activity feed (full width) -->

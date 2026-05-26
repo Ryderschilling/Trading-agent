@@ -50,6 +50,7 @@ type CliArgs = {
   agent: boolean;
   verbose: boolean;
   quiet: boolean;
+  trendFilter: boolean;    // --trend-filter=on|off — gates entries by 4h regime
   reportDir: string;
 };
 
@@ -64,6 +65,7 @@ function parseArgs(argv: string[]): CliArgs {
   let agent = false;
   let verbose = false;
   let quiet = false;
+  let trendFilter = false;
   let reportDir = path.join(process.cwd(), "data", "replay-reports");
 
   for (const arg of argv) {
@@ -87,10 +89,12 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg === "--agent=off") agent = false;
     else if (arg === "--verbose" || arg === "-v") verbose = true;
     else if (arg === "--quiet" || arg === "-q") quiet = true;
+    else if (arg === "--trend-filter" || arg === "--trend-filter=on" || arg === "--trend-filter=1") trendFilter = true;
+    else if (arg === "--trend-filter=off" || arg === "--trend-filter=0") trendFilter = false;
     else if (arg.startsWith("--out=")) reportDir = arg.slice("--out=".length);
   }
 
-  return { scenario, scenarioFile, scenarioDir, date, dateRange, symbols, compareTo, agent, verbose, quiet, reportDir };
+  return { scenario, scenarioFile, scenarioDir, date, dateRange, symbols, compareTo, agent, verbose, quiet, trendFilter, reportDir };
 }
 
 /** Expand "2026-05-01..2026-05-15" to weekday dates inclusive. */
@@ -256,6 +260,7 @@ async function main() {
   const opts: HarnessOptions = {
     enableAgentReview: args.agent,
     verbose: args.verbose,
+    trendFilter4h: args.trendFilter,
   };
 
   if (!args.quiet) {

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analytics • Trading Agent</title>
+
+    <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="/ui.js" defer></script>
+
+    <style>
+      .stats-bar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin: 4px 0 14px;
+      }
+
+      .stat-card {
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+        padding: 10px 12px;
+      }
+
+      .stat-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .stat-value {
+        margin-top: 6px;
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .stat-sub {
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .stat-value.pos { color: #4ade80; }
+      .stat-value.neg { color: #f87171; }
+
+      .chart-stage {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        overflow: hidden;
+        background: rgba(7, 11, 18, 0.9);
+      }
+
+      #equityChart {
+        display: block;
+        width: 100%;
+        height: 320px;
+        cursor: crosshair;
+      }
+
+      .breakdown-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      @media (max-width: 920px) {
+        .breakdown-grid { grid-template-columns: 1fr; }
+      }
+
+      table td.num, table th.num { text-align: right; }
+      .pos { color: #4ade80; }
+      .neg { color: #f87171; }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(255,255,255,0.05);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .empty-note {
+        padding: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="bg-wash"></div>
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <img src="/logo.PNG" class="brand-logo" alt="Logo" />
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab active" href="/analytics">Analytics</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab" href="/brokers">Brokers</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Strategy Performance</div>
+              <div class="card-hint" id="rangeHint">
+                Closed trades only. Scored on exit return %. Realized $ shown where broker fills exist.
+              </div>
+            </div>
+            <button type="button" class="btn" id="refreshBtn">Refresh</button>
+          </div>
+
+          <div id="headStats" class="stats-bar"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Equity Curve</div>
+              <div class="card-hint">Cumulative sum of per-trade returns (%), oldest → newest.</div>
+            </div>
+          </div>
+          <div class="chart-stage">
+            <canvas id="equityChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">By Exit Reason</div>
+              <div class="card-hint">Where the money is made and lost. The bleed shows up here first.</div>
+            </div>
+          </div>
+          <div class="table-wrap" id="exitReasonWrap"></div>
+        </div>
+
+        <div class="breakdown-grid">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">By Direction</div>
+                <div class="card-hint">Long vs short edge.</div>
+              </div>
+            </div>
+            <div class="table-wrap" id="directionWrap"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">By Strategy</div>
+                <div class="card-hint">Per ruleset version.</div>
+              </div>
+            </div>
+            <div class="table-wrap" id="strategyWrap"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">By Symbol</div>
+              <div class="card-hint">Which tickers carry the strategy and which drag it.</div>
+            </div>
+          </div>
+          <div class="table-wrap" id="symbolWrap"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/analytics.js?v=BUILD_TS"></script>
+  </body>
+</html>

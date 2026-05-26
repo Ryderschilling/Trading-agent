@@ -1,7 +1,15 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
-import { requireAuth } from "./auth";
+import {
+  requireAuth,
+  getAuthMode,
+  createAuthCookie,
+  clearAuthCookie,
+  isLoginLocked,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from "./auth";
 
 console.log("[HTTP.TS] LOADED createHttpApp vRULESET");
 
@@ -44,6 +52,7 @@ export function createHttpApp(args: {
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
+  getAnalytics?: () => any;
   // From remote — used by /api/candles/:symbol route below. Optional so HEAD's
   // existing multi-strategy main file isn't forced to provide it immediately.
   getBars1?: (symbol: string) => any[];
@@ -93,6 +102,11 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   closeBrokerPosition?: (symbol: string) => Promise<void>;
   setBrokerStop?: (symbol: string, stopPrice: number, qty: number | null) => Promise<any>;
 
+  // reconciler + coverage (Fix #1 / Fix #4)
+  getGhostPositions?: () => any;
+  reconcileNow?: () => Promise<any>;
+  getDataCoverage?: () => any;
+
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
 
     // candles (1m) for chart snapshots
@@ -128,24 +142,71 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   app.use(requireAuth);
 
   // -----------------------------
-  // POST /api/login — exchange token for cookie
+  // GET /api/auth/mode — lets the login page render the right form
+  // -----------------------------
+  app.get("/api/auth/mode", (_req, res) => {
+    res.json({ ok: true, mode: getAuthMode() });
+  });
+
+  // -----------------------------
+  // POST /api/login
+  //   userpass mode: { username, password } → sets persistent agent_auth cookie
+  //   token mode (legacy AGENT_SECRET): { token } → sets agent_token cookie
+  //   open mode: always ok
   // -----------------------------
   app.post("/api/login", (req, res) => {
-    const secret = process.env.AGENT_SECRET || "";
-    if (!secret) {
-      // No secret configured — always OK in dev mode
+    const mode = getAuthMode();
+
+    if (mode === "open") return res.json({ ok: true });
+
+    const lock = isLoginLocked(req);
+    if (lock.locked) {
+      res.setHeader("Retry-After", String(lock.retryAfterSec));
+      return res
+        .status(429)
+        .json({ ok: false, error: `Too many attempts. Try again in ${lock.retryAfterSec}s.` });
+    }
+
+    if (mode === "userpass") {
+      const username = String(req.body?.username || "").trim();
+      const password = String(req.body?.password || "");
+      const expectedUser = process.env.AUTH_USERNAME || "";
+      const expectedPass = process.env.AUTH_PASSWORD || "";
+
+      if (!username || !password || username !== expectedUser || password !== expectedPass) {
+        recordLoginFailure(req);
+        return res.status(401).json({ ok: false, error: "Invalid username or password" });
+      }
+
+      recordLoginSuccess(req);
+      res.setHeader("Set-Cookie", createAuthCookie(username));
       return res.json({ ok: true });
     }
+
+    // mode === "token" — legacy single-token
+    const secret = process.env.AGENT_SECRET || "";
     const token = String(req.body?.token || "").trim();
     if (!token || token !== secret) {
-      return res.status(401).json({ ok: false, error: "invalid token" });
+      recordLoginFailure(req);
+      return res.status(401).json({ ok: false, error: "Invalid token" });
     }
-    // Set an HttpOnly cookie so subsequent page loads are auth'd
+    recordLoginSuccess(req);
     res.setHeader(
       "Set-Cookie",
-      `agent_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`
+      `agent_token=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
     );
     return res.json({ ok: true });
+  });
+
+  // -----------------------------
+  // POST /api/logout — clear auth cookie
+  // -----------------------------
+  app.post("/api/logout", (_req, res) => {
+    res.setHeader("Set-Cookie", [
+      clearAuthCookie(),
+      `agent_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`,
+    ]);
+    res.json({ ok: true });
   });
 
   // -----------------------------
@@ -220,6 +281,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
 
   app.get("/", (_req, res) => sendPage(res, "index.html"));
   app.get("/outcomes", (_req, res) => sendPage(res, "outcomes.html"));
+  app.get("/analytics", (_req, res) => sendPage(res, "analytics.html"));
   app.get("/watch", (_req, res) => sendPage(res, "watchlist.html"));
   app.get("/watchlist", (_req, res) => sendPage(res, "watchlist.html")); // backward compat
   app.get("/rules", (_req, res) => sendPage(res, "rules.html"));
@@ -228,6 +290,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/__ping_backtest", (_req, res) => res.send("ok"));
 
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
+  app.get("/analytics.html", (_req, res) => res.redirect(301, "/analytics"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
   app.get("/brokers.html", (_req, res) => res.redirect(301, "/brokers"));
@@ -461,6 +524,42 @@ app.get("/api/broker/activity", (req, res) => {
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+  // Strategy performance analytics — aggregated win rate, expectancy, R,
+  // drawdown, equity curve, and breakdowns by exit reason / direction /
+  // symbol / strategy.
+  app.get("/api/analytics", (_req, res) => {
+    if (!args.getAnalytics) return res.json({ ok: false, error: "analytics not enabled" });
+    try {
+      res.json({ ok: true, ...args.getAnalytics() });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "analytics failed" });
+    }
+  });
+
+  // Ghost positions — broker holdings with no tracked OutcomeTracker session.
+  // UI banners on Workspace + Outcomes poll this to surface zombie positions.
+  app.get("/api/ghost-positions", (_req, res) => {
+    if (!args.getGhostPositions) return res.json({ ok: true, checkedAt: 0, ghosts: [], flattened: [], errors: [] });
+    res.json({ ok: true, ...args.getGhostPositions() });
+  });
+
+  // Trigger a reconcile run on demand (e.g. after a manual broker close).
+  app.post("/api/ghost-positions/reconcile", async (_req, res) => {
+    if (!args.reconcileNow) return res.status(404).json({ ok: false, error: "reconciler not enabled" });
+    try {
+      const result = await args.reconcileNow();
+      res.json({ ok: true, result });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "reconcile failed" });
+    }
+  });
+
+  // Data coverage — per-symbol last bar timestamp + stale flag.
+  app.get("/api/data-coverage", (_req, res) => {
+    if (!args.getDataCoverage) return res.json({ ok: true, checkedAt: 0, watchlistCount: 0, staleCount: 0, staleSymbols: [], symbols: [] });
+    res.json({ ok: true, ...args.getDataCoverage() });
+  });
 
     // Candles (for Outcomes detail chart)
   // GET /api/candles?symbol=IWM&end=TIMESTAMP_MS&minutes=240

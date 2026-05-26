@@ -184,4 +184,17 @@ export type HarnessOptions = {
    * production behavior.
    */
   enforceLiveTimeGates?: boolean;
+  /**
+   * Enable the 4h trend regime filter (EMA9 vs SMA21 on 4h bars per symbol).
+   * Default false. When true the harness preloads `preload4hDays` trading
+   * days of 5m bars before each scenario so the filter has enough history.
+   */
+  trendFilter4h?: boolean;
+  /**
+   * Number of prior trading days of 5m bars to preload per symbol so the
+   * 4h filter has a warm regime by the time the scenario starts. Default 21
+   * (covers 21 4h bars worth of history × buffer). Ignored when
+   * trendFilter4h is false.
+   */
+  preload4hDays?: number;
 };

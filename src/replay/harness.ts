@@ -38,6 +38,7 @@ const DEFAULT_ENGINE_CFG = {
   retestTolerancePct: 0.003, // 0.3% — gives ~$0.30 tap window on a $100 level
   rsWindowBars5m: 3,
   emaPeriods: [] as number[], // Phase 1 keeps this off for determinism
+  trendFilter4h: false as boolean,
 };
 
 const DEFAULT_EXEC_RULES: ExecRules = {
@@ -88,7 +89,10 @@ async function runScenario(scenario: Scenario, opts: HarnessOptions): Promise<Sc
   const fills: ReplayFill[] = [];
 
   // ---- Setup: engine + per-symbol state -----------------------------------
-  const engine = new SignalEngine(DEFAULT_ENGINE_CFG);
+  const engine = new SignalEngine({
+    ...DEFAULT_ENGINE_CFG,
+    trendFilter4h: Boolean(opts.trendFilter4h),
+  });
 
   const allSymbols = Object.keys(scenario.bars);
   const symbolState = new Map<string, SymbolState>();
@@ -123,6 +127,42 @@ async function runScenario(scenario: Scenario, opts: HarnessOptions): Promise<Sc
   for (const sym of allSymbols) {
     const st = symbolState.get(sym)!;
     engine.ensureSymbol(sym, st.levels);
+  }
+
+  // Preload prior 5m bars per symbol so the 4h trend filter has a warm regime
+  // by the time this scenario starts. Without this, the first 14+ trading days
+  // of any replay run would have an UNKNOWN regime and the filter would silently
+  // pass everything through, defeating the A/B test.
+  //
+  // Loaded lazily: only fetches when trendFilter4h is enabled, and only when
+  // we have a SQLite cache to read from. Falls back to a no-op if not.
+  if (opts.trendFilter4h) {
+    const preloadDays = opts.preload4hDays ?? 21;
+    try {
+      const { preload5mHistoryFromSqlite } = await import("./preloadHistory");
+      for (const sym of allSymbols) {
+        const preloaded = await preload5mHistoryFromSqlite({
+          symbol: sym,
+          beforeTs: earliestTs,
+          tradingDays: preloadDays,
+        });
+        if (!preloaded.length) continue;
+        const st = symbolState.get(sym)!;
+        for (const b5 of preloaded) {
+          engine.pushBar5(sym, b5);
+          st.bars5.push(b5);
+        }
+      }
+    } catch (e: any) {
+      errors.push({
+        scenarioId: scenario.id,
+        phase: "data-prep",
+        ts: null,
+        symbol: null,
+        message: `4h preload failed (continuing with cold regime): ${String(e?.message || e)}`,
+        stack: typeof e?.stack === "string" ? e.stack : null,
+      });
+    }
   }
 
   const minRiskPct = opts.minRiskPct ?? DEFAULT_MIN_RISK_PCT;

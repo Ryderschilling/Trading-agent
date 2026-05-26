@@ -14,6 +14,7 @@ export type ExecRules = {
   stopR: number;              // > 0
   targetR: number;            // > 0
   moveStopToBEAtR?: number;   // > 0 (optional)
+  timeExitMinutes?: number;   // > 0 (optional) — exit at market once held this many minutes
 };
 
 type ExecState = {
@@ -42,6 +43,13 @@ type ActiveSession = {
 
   entryTs: number;
   entryRefPrice: number;
+
+  // Broker-truth entry fill (filled_avg_price). Null until we hear back from
+  // the broker. When set, this is what we use to compute realized P&L. The
+  // simulated `entryRefPrice` (alert.close) is kept around as a fallback and
+  // for diagnostics.
+  entryFill: number | null;
+  qty: number | null;
 
   status: "LIVE" | "STOPPED" | "COMPLETED";
   endTs: number;
@@ -244,6 +252,8 @@ export class OutcomeTracker {
       structureLevel: structure,
       entryTs: args.entryTs,
       entryRefPrice: entryRef,
+      entryFill: null,
+      qty: null,
 
       status: "LIVE",
       endTs: args.entryTs,
@@ -271,6 +281,71 @@ export class OutcomeTracker {
     this.sessionsById.set(args.alertId, s);
     if (!this.sessionsBySymbol.has(args.symbol)) this.sessionsBySymbol.set(args.symbol, new Set());
     this.sessionsBySymbol.get(args.symbol)!.add(args.alertId);
+  }
+
+  /**
+   * Override the session's entry price with the actual broker fill. Called
+   * after we poll the broker for filled_avg_price on the entry market order.
+   *
+   * Side effects:
+   *   - Resets the stop/target/BE prices around the real fill (so 1R is measured
+   *     from the price the broker actually paid, not from alert.close).
+   *   - Resets maxHigh/minLow so MFE/MAE are computed from the real entry.
+   *
+   * If polling fails the simulated entryRefPrice (alert.close) is left in place
+   * and the trade is still tracked — outcomes will fall back to simulation.
+   */
+  setBrokerEntry(alertId: string, fillPx: number, qty: number): void {
+    const s = this.sessionsById.get(alertId);
+    if (!s) return;
+    if (!isFiniteNum(fillPx) || fillPx <= 0) return;
+    if (s.status !== "LIVE") return;
+
+    s.entryFill = fillPx;
+    s.qty = isFiniteNum(qty) && qty > 0 ? qty : null;
+
+    // Re-anchor the simulated entry on the broker fill so the in-flight
+    // stop/target/structure-break logic agrees with what the broker did.
+    s.entryRefPrice = fillPx;
+    s.maxHigh = fillPx;
+    s.minLow = fillPx;
+
+    if (s.execRules) {
+      s.exec = computeExecState({
+        dir: s.dir,
+        entry: fillPx,
+        structureLevel: s.structureLevel,
+        execRules: s.execRules,
+      });
+    }
+  }
+
+  /**
+   * Override the exit fill with the actual broker close price. Called from
+   * index.ts after closePosition() + pollFill(). Recomputes exitReturnPct and
+   * realizedPnlUsd from broker truth. Safe to call on already-finalized
+   * sessions; in that case it returns the patched outcome the caller can
+   * re-insert into the DB.
+   */
+  setBrokerExit(alertId: string, fillPx: number): { exitFill: number; exitReturnPct: number; realizedPnlUsd: number | null } | null {
+    if (!isFiniteNum(fillPx) || fillPx <= 0) return null;
+    const s = this.sessionsById.get(alertId);
+    if (!s) return null;
+
+    s.exec.exitFill = fillPx;
+    s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, fillPx);
+
+    const entryPx = s.entryFill ?? s.entryRefPrice;
+    const realizedPnlUsd =
+      s.qty != null && isFiniteNum(s.qty) && isFiniteNum(entryPx)
+        ? Number(((s.dir === "LONG" ? fillPx - entryPx : entryPx - fillPx) * s.qty).toFixed(2))
+        : null;
+
+    return {
+      exitFill: fillPx,
+      exitReturnPct: s.returnsPct["exit"],
+      realizedPnlUsd,
+    };
   }
 
   onMinuteBar(args: { symbol: string; ts: number; high: number; low: number; close: number }): {
@@ -382,6 +457,26 @@ export class OutcomeTracker {
         }
       }
 
+      // TIME exit: close at market once the position has been held for the
+      // configured maximum. The break-&-retest thesis is time-bound — if it
+      // hasn't paid by now, exit near-flat rather than feeding a structure
+      // break or riding to EOD. This is the strategy's primary profit-taking
+      // exit. Checked outside the s.exec.enabled gate so it still runs if
+      // stop/target rules could not be built.
+      if (
+        s.execRules?.timeExitMinutes != null &&
+        s.execRules.timeExitMinutes > 0 &&
+        elapsedMin >= s.execRules.timeExitMinutes
+      ) {
+        s.status = "COMPLETED";
+        s.exec.exitReason = "TIME";
+        s.exec.exitTs = args.ts;
+        s.exec.exitFill = args.close;
+        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.close);
+        completed.push(s.alertId);
+        continue;
+      }
+
       // EOD flatten: no positions held past 2:59 PM NY. Exit fill = current bar close.
       if (isPastEodFlattenNY(args.ts)) {
         s.status = "COMPLETED";
@@ -417,6 +512,14 @@ export class OutcomeTracker {
     for (const id of Array.from(ids)) {
       const s = this.sessionsById.get(id);
       if (!s || s.status !== "LIVE") continue;
+
+      // STRUCTURE_BREAK is a legacy fallback exit. When the managed exec
+      // engine is active (stop / target / BE / TIME) it is redundant and
+      // strictly worse: it fills at a 5m-bar open that has already run past
+      // the level (0 wins / 23 trades, avg -0.8% per trade). The structure-
+      // level stop in onMinuteBar fires first, intrabar, at a far better
+      // fill. Only fall back to STRUCTURE_BREAK when exec is disabled.
+      if (s.exec.enabled) continue;
 
       // Only check bars that opened AFTER entry — never exit on the bar we entered into.
       if (args.ts <= s.entryTs) continue;
@@ -463,6 +566,15 @@ export class OutcomeTracker {
     const exitReturnPct =
       exitFill != null && isFiniteNum(exitFill) ? computeReturnPct(s.dir, s.entryRefPrice, exitFill) : null;
 
+    // Realized $ P&L from broker truth where we have it. Falls back to null
+    // if either fill or qty is missing — the UI shows that as "—" rather
+    // than fabricating a number.
+    const entryForPnl = s.entryFill ?? s.entryRefPrice;
+    const realizedPnlUsd =
+      s.qty != null && isFiniteNum(s.qty) && exitFill != null && isFiniteNum(exitFill) && isFiniteNum(entryForPnl)
+        ? Number(((s.dir === "LONG" ? exitFill - entryForPnl : entryForPnl - exitFill) * s.qty).toFixed(2))
+        : null;
+
     const out: TradeOutcome = {
       alertId: s.alertId,
       symbol: s.symbol,
@@ -477,6 +589,10 @@ export class OutcomeTracker {
       exitFill,
       exitReturnPct,
       stopMovedToBE: Boolean(s.exec.stopMovedToBE),
+
+      entryFill: s.entryFill,
+      qty: s.qty,
+      realizedPnlUsd,
 
       mfeAbs: Number(s.mfeAbs.toFixed(6)),
       maeAbs: Number(s.maeAbs.toFixed(6)),
@@ -561,5 +677,48 @@ export class OutcomeTracker {
   /** Symbol for a given session id, or null. */
   sessionSymbol(alertId: string): string | null {
     return this.sessionsById.get(alertId)?.symbol ?? null;
+  }
+
+  /**
+   * Wall-clock EOD flatten. Finalizes EVERY live session regardless of whether
+   * a fresh bar arrived for it. The bar-driven EOD branch in onMinuteBar only
+   * fires when a bar shows up — if a symbol's data feed dies mid-session that
+   * branch never runs and the position hangs open forever (2026-05-20 incident:
+   * AMZN + IWM lost their feed at 13:10 and were never flattened at 14:59).
+   *
+   * exitFill is left null — the caller closes the position at the broker and
+   * patches the real fill via finalizeOutcomeWithBrokerFill().
+   */
+  eodFlattenAll(ts: number): TradeOutcome[] {
+    const results: TradeOutcome[] = [];
+    for (const id of Array.from(this.sessionsById.keys())) {
+      const s = this.sessionsById.get(id);
+      if (!s || s.status !== "LIVE") continue;
+      s.status = "COMPLETED";
+      s.exec.exitReason = "EOD";
+      s.exec.exitTs = ts;
+      s.exec.exitFill = null;
+      const out = this.finalize(id);
+      if (out) results.push(out);
+    }
+    return results;
+  }
+
+  /**
+   * LIVE sessions whose last bar update (endTs) is older than maxAgeMs. A
+   * healthy session updates endTs every minute via onMinuteBar; a large gap
+   * means the symbol's data feed has stalled and the session is no longer
+   * being risk-managed. Detection only — the caller decides what to do.
+   */
+  staleSessions(now: number, maxAgeMs: number): Array<{ alertId: string; symbol: string; lastBarTs: number; ageMs: number }> {
+    const out: Array<{ alertId: string; symbol: string; lastBarTs: number; ageMs: number }> = [];
+    for (const s of this.sessionsById.values()) {
+      if (s.status !== "LIVE") continue;
+      const ageMs = now - s.endTs;
+      if (ageMs > maxAgeMs) {
+        out.push({ alertId: s.alertId, symbol: s.symbol, lastBarTs: s.endTs, ageMs });
+      }
+    }
+    return out;
   }
 }

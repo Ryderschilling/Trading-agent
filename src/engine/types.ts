@@ -64,6 +64,16 @@ export type TradeOutcome = {
   exitReturnPct?: number | null;
   stopMovedToBE?: boolean;
 
+  // Broker-truth fields (populated from real fills, not simulation).
+  // entryFill = filled_avg_price of the entry market order at the broker.
+  // qty       = filled shares (or filled options contracts) at the broker.
+  // realizedPnlUsd = qty * (exit - entry) signed by direction, in USD.
+  // These are set after we poll the broker for fill prices. If polling fails
+  // they stay null and the row falls back to simulated entryRefPrice / exitFill.
+  entryFill?: number | null;
+  qty?: number | null;
+  realizedPnlUsd?: number | null;
+
   // excursions
   mfeAbs: number;
   maeAbs: number;

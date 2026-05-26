@@ -129,6 +129,14 @@ function migrate(db: Database.Database) {
       stop_return_pct REAL,
       bars_to_stop    INTEGER,
 
+      -- Broker-truth fills. Populated from the live broker after each
+      -- order fills; null if we never got a fill back (poll timeout, paper edge
+      -- cases, or recovery rows). When populated, realized_pnl_usd is the
+      -- dollar P&L the broker actually realized for this trade.
+      entry_fill         REAL,
+      qty                REAL,
+      realized_pnl_usd   REAL,
+
       returns_json    TEXT
     );
 
@@ -290,6 +298,12 @@ function migrate(db: Database.Database) {
   if (!hasColumn(db, "outcomes", "exit_return_pct")) db.exec(`ALTER TABLE outcomes ADD COLUMN exit_return_pct REAL;`);
   if (!hasColumn(db, "outcomes", "stop_moved_to_be"))
     db.exec(`ALTER TABLE outcomes ADD COLUMN stop_moved_to_be INTEGER NOT NULL DEFAULT 0;`);
+
+  // Broker-truth columns. Added 2026-05-18 to record actual broker fills
+  // alongside the simulated entry/exit prices the OutcomeTracker produces.
+  if (!hasColumn(db, "outcomes", "entry_fill"))       db.exec(`ALTER TABLE outcomes ADD COLUMN entry_fill REAL;`);
+  if (!hasColumn(db, "outcomes", "qty"))              db.exec(`ALTER TABLE outcomes ADD COLUMN qty REAL;`);
+  if (!hasColumn(db, "outcomes", "realized_pnl_usd")) db.exec(`ALTER TABLE outcomes ADD COLUMN realized_pnl_usd REAL;`);
 
   // Backtest runs: migrate legacy installs to the richer runtime schema.
   if (!hasColumn(db, "backtest_runs", "started_ts")) {

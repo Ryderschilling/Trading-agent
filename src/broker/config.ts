@@ -22,6 +22,9 @@ export const DEFAULT_EXECUTION_POLICY: BrokerExecutionPolicy = {
   maxOrdersPerSymbolPerDay: 1,
   avoidExistingPosition: true,
   avoidOpenOrders: true,
+  autoFlattenOrphans: false,
+  maxEntriesPerMinute: 3,
+  maxSameDirEntriesPer5Min: 4,
 };
 
 function finitePositive(value: any): number | null {
@@ -62,6 +65,9 @@ export function normalizeExecutionPolicy(input: any): BrokerExecutionPolicy {
     maxOrdersPerSymbolPerDay: finiteInteger(src.maxOrdersPerSymbolPerDay) ?? DEFAULT_EXECUTION_POLICY.maxOrdersPerSymbolPerDay,
     avoidExistingPosition: src.avoidExistingPosition == null ? true : Boolean(src.avoidExistingPosition),
     avoidOpenOrders: src.avoidOpenOrders == null ? true : Boolean(src.avoidOpenOrders),
+    autoFlattenOrphans: Boolean(src.autoFlattenOrphans),
+    maxEntriesPerMinute: finiteInteger(src.maxEntriesPerMinute) ?? DEFAULT_EXECUTION_POLICY.maxEntriesPerMinute,
+    maxSameDirEntriesPer5Min: finiteInteger(src.maxSameDirEntriesPer5Min) ?? DEFAULT_EXECUTION_POLICY.maxSameDirEntriesPer5Min,
   };
 }
 
