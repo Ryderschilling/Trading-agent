@@ -1,0 +1,29 @@
+# Railway deployment config for the Trading Agent.
+# Push this repo to Railway and it auto-builds from Dockerfile.
+#
+# Setup steps:
+#   1. Go to railway.app → New Project → Deploy from GitHub repo
+#   2. Select this repo
+#   3. Railway auto-detects Dockerfile — no extra config needed
+#   4. Add environment variables (Settings → Variables):
+#        ALPACA_KEY=<your key>
+#        ALPACA_SECRET=<your secret>
+#        ALPACA_BASE_URL=https://paper-api.alpaca.markets
+#        ALPACA_FEED=iex
+#        EXECUTION_ENABLED=true
+#        PORT=3000
+#        NODE_ENV=production
+#   5. Add a Volume (Settings → Volumes):
+#        Mount path: /app/data
+#        (This persists the SQLite database across restarts)
+#   6. Deploy
+
+[build]
+builder = "dockerfile"
+
+[deploy]
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[[services]]
+internalPort = 3000

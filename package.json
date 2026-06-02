@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "backfill": "ts-node scripts/backfill-premarket.ts",
-    "replay": "ts-node src/replay/index.ts"
+    "replay": "ts-node src/replay/index.ts",
+    "start:mac": "sh scripts/start-mac.sh",
+    "start:mac-dev": "sh scripts/start-mac.sh --dev"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2",

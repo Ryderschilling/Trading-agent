@@ -1,0 +1,21 @@
+# Local Docker testing with persistent data volume.
+# Usage:
+#   docker compose up --build
+#
+# The `data` volume persists the SQLite database across container restarts.
+# Equivalent to the Railway Volume mount at /app/data.
+
+version: "3.9"
+services:
+  trading-agent:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - trading-data:/app/data
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  trading-data:
