@@ -2,12 +2,14 @@
 export type ExecDir = "LONG" | "SHORT";
 
 export type ExecRules = {
-  // Example: stop = 1R, target = 2R
+  // Example: stop = 1R, target = 1.5R
   stopR: number;       // e.g. 1
-  targetR: number;     // e.g. 2
+  targetR: number;     // e.g. 1.5
 
   // Optional management
-  moveStopToBEAtR?: number; // e.g. 1 means once +1R reached, stop becomes breakeven
+  moveStopToBEAtR?: number;  // e.g. 1 means once +1R reached, stop becomes breakeven
+  trailActivatePct?: number; // % MFE to activate trailing stop (e.g. 0.5 = 0.5%)
+  trailDistancePct?: number; // % below peak to trail stop (e.g. 0.3 = 0.3%)
 };
 
 export type ExecState = {
@@ -22,6 +24,9 @@ export type ExecState = {
   targetPrice: number;
 
   beActivated: boolean;
+  trailActive: boolean;
+  maxHigh: number;  // running peak high (for trailing stop)
+  minLow: number;   // running trough low (for trailing stop)
 };
 
 export type ExecFill = {
@@ -75,7 +80,10 @@ export function initExec(
     oneRAbs,
     stopPrice,
     targetPrice,
-    beActivated: false
+    beActivated: false,
+    trailActive: false,
+    maxHigh: entryPrice,
+    minLow: entryPrice
   };
 }
 
@@ -91,6 +99,10 @@ export function onMinuteBarExec(
 ): ExecFill | null {
   if (!state.open) return null;
 
+  // Update running peak/trough for trailing stop
+  if (high > state.maxHigh) state.maxHigh = high;
+  if (low < state.minLow) state.minLow = low;
+
   // 1) Breakeven activation (if configured)
   if (rules.moveStopToBEAtR != null && rules.moveStopToBEAtR > 0 && !state.beActivated) {
     const beTrigger =
@@ -102,6 +114,32 @@ export function onMinuteBarExec(
     if (touched) {
       state.beActivated = true;
       state.stopPrice = state.entryPrice; // move stop to breakeven
+    }
+  }
+
+  // 1b) Trailing stop: activate once MFE crosses trailActivatePct, then
+  // trail stop behind the running peak by trailDistancePct.
+  if (
+    rules.trailActivatePct != null && rules.trailActivatePct > 0 &&
+    rules.trailDistancePct != null && rules.trailDistancePct > 0
+  ) {
+    const mfePct = dir === "LONG"
+      ? (state.maxHigh - state.entryPrice) / state.entryPrice * 100
+      : (state.entryPrice - state.minLow) / state.entryPrice * 100;
+
+    if (!state.trailActive && mfePct >= rules.trailActivatePct) {
+      state.trailActive = true;
+    }
+
+    if (state.trailActive) {
+      const trailDist = rules.trailDistancePct / 100;
+      if (dir === "LONG") {
+        const newStop = state.maxHigh * (1 - trailDist);
+        if (newStop > state.stopPrice) state.stopPrice = newStop;
+      } else {
+        const newStop = state.minLow * (1 + trailDist);
+        if (newStop < state.stopPrice) state.stopPrice = newStop;
+      }
     }
   }
 

@@ -15,6 +15,10 @@ export type ExecRules = {
   targetR: number;            // > 0
   moveStopToBEAtR?: number;   // > 0 (optional)
   timeExitMinutes?: number;   // > 0 (optional) — exit at market once held this many minutes
+  mfeGateMinutes?: number;    // > 0 (optional) — check window: if MFE < mfeGatePct% by this time, exit early
+  mfeGatePct?: number;        // > 0 (optional) — minimum required MFE % before mfeGateMinutes elapses
+  trailActivatePct?: number;  // > 0 (optional) — % MFE to activate trailing stop (e.g. 0.5 = 0.5%)
+  trailDistancePct?: number;  // > 0 (optional) — % below peak to trail stop (e.g. 0.3 = 0.3%)
 };
 
 type ExecState = {
@@ -29,6 +33,7 @@ type ExecState = {
 
   // mutates
   stopMovedToBE: boolean;
+  trailActive: boolean;     // true once MFE crosses trailActivatePct
   exitReason: "STOP" | "TARGET" | "TIME" | "STOP_CLOSE" | "STRUCTURE_BREAK" | "EOD" | "MANUAL_CLOSE" | "SKIPPED" | null;
   exitTs: number | null;
   exitFill: number | null;
@@ -102,6 +107,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -121,6 +127,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -136,6 +143,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -151,6 +159,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -166,6 +175,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -182,6 +192,7 @@ function computeExecState(args: {
       targetPx: entry,
       beTriggerPx: null,
       stopMovedToBE: false,
+      trailActive: false,
       exitReason: null,
       exitTs: null,
       exitFill: null
@@ -206,6 +217,7 @@ function computeExecState(args: {
     targetPx,
     beTriggerPx,
     stopMovedToBE: false,
+    trailActive: false,
     exitReason: null,
     exitTs: null,
     exitFill: null
@@ -411,6 +423,34 @@ export class OutcomeTracker {
           }
         }
 
+        // Trailing stop: once MFE exceeds trailActivatePct, trail the stop
+        // behind the running peak by trailDistancePct. Moves stop in the
+        // favorable direction only — never widens. Overrides BE stop once
+        // the trail is ahead of breakeven (trail is strictly tighter).
+        if (
+          s.execRules?.trailActivatePct != null &&
+          s.execRules.trailActivatePct > 0 &&
+          s.execRules?.trailDistancePct != null &&
+          s.execRules.trailDistancePct > 0
+        ) {
+          const mfePct = s.entryRefPrice > 0 ? (s.mfeAbs / s.entryRefPrice) * 100 : 0;
+
+          if (!s.exec.trailActive && mfePct >= s.execRules.trailActivatePct) {
+            s.exec.trailActive = true;
+          }
+
+          if (s.exec.trailActive) {
+            const trailDist = s.execRules.trailDistancePct / 100;
+            if (s.dir === "LONG") {
+              const newStop = s.maxHigh * (1 - trailDist);
+              if (newStop > s.exec.stopPx) s.exec.stopPx = newStop;
+            } else {
+              const newStop = s.minLow * (1 + trailDist);
+              if (newStop < s.exec.stopPx) s.exec.stopPx = newStop;
+            }
+          }
+        }
+
         let hitStop = false;
         let hitTarget = false;
 
@@ -452,6 +492,30 @@ export class OutcomeTracker {
 
           s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, s.exec.targetPx);
 
+          completed.push(s.alertId);
+          continue;
+        }
+      }
+
+      // MFE gate: exit early if the trade hasn't shown minimum favorable movement
+      // within the gate window. Catches trades that go sideways-or-against from the
+      // start (e.g. MU chronic near-zero MFE pattern). Fires before TIME so we cut
+      // losers faster rather than holding full hold duration for nothing.
+      // Configured via mfeGateMinutes + mfeGatePct on ExecRules (wired from env vars).
+      if (
+        s.execRules?.mfeGateMinutes != null &&
+        s.execRules.mfeGateMinutes > 0 &&
+        s.execRules?.mfeGatePct != null &&
+        s.execRules.mfeGatePct > 0 &&
+        elapsedMin >= s.execRules.mfeGateMinutes
+      ) {
+        const curMfePct = s.entryRefPrice > 0 ? (s.mfeAbs / s.entryRefPrice) * 100 : 0;
+        if (curMfePct < s.execRules.mfeGatePct) {
+          s.status = "COMPLETED";
+          s.exec.exitReason = "TIME"; // treated as early TIME exit in reporting
+          s.exec.exitTs = args.ts;
+          s.exec.exitFill = args.close;
+          s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, args.close);
           completed.push(s.alertId);
           continue;
         }

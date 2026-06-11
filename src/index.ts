@@ -651,12 +651,32 @@ function finalizeOutcomeWithBrokerFill(out: TradeOutcome): void {
         return;
       }
 
-      // Pull broker-truth qty if we never captured it on entry.
-      const qty = (out as any).qty ?? fill.qty ?? null;
+      // Pull broker-truth qty. Priority: captured-on-entry → exit-order filled_qty
+      // → notional/price fallback (handles the race where the exit fires before
+      // the async entry poll completes and setBrokerEntry never runs).
       const entryForPnl = (out as any).entryFill ?? out.entryRefPrice;
+      let qty: number | null = (out as any).qty ?? fill.qty ?? null;
+      if (qty == null && Number.isFinite(entryForPnl) && (entryForPnl as number) > 0) {
+        try {
+          const orderRow: any = db
+            .prepare(
+              'SELECT notional FROM broker_orders WHERE alert_id = ? AND status = "SUBMITTED" LIMIT 1'
+            )
+            .get(out.alertId);
+          const notional = orderRow?.notional != null ? Number(orderRow.notional) : null;
+          if (notional != null && Number.isFinite(notional) && notional > 0) {
+            qty = Number((notional / (entryForPnl as number)).toFixed(6));
+            console.log(
+              `[outcomes] qty fallback via notional: ${out.symbol} notional=${notional} entry=${entryForPnl} → qty=${qty}`
+            );
+          }
+        } catch {
+          // DB miss is non-fatal — PnL stays null rather than fabricating a number
+        }
+      }
       const realizedPnlUsd =
         qty != null && Number.isFinite(qty) && Number.isFinite(entryForPnl)
-          ? Number(((out.dir === "LONG" ? fill.price - entryForPnl : entryForPnl - fill.price) * qty).toFixed(2))
+          ? Number(((out.dir === "LONG" ? fill.price - (entryForPnl as number) : (entryForPnl as number) - fill.price) * qty).toFixed(2))
           : null;
       const exitReturnPct = Number.isFinite(entryForPnl) && entryForPnl > 0
         ? Number((((out.dir === "LONG" ? fill.price - entryForPnl : entryForPnl - fill.price) / entryForPnl) * 100).toFixed(4))
@@ -887,6 +907,15 @@ let latestSignals: SignalsSnapshot = {
   forming: []
 };
 
+// Session direction lock (Option A — 2026-06-02).
+// Once the first trade is SUBMITTED in a given direction, that direction is
+// locked for the rest of the session. Prevents the VWAP-flip whipsaw where
+// a short wave fires at 9:41, market bounces, and a long wave fires at 9:51.
+// Resets automatically each day via dayKey comparison.
+// NOTE: does not survive a mid-session server restart — restart clears the
+// in-memory lock. If this becomes an issue, initialize from DB on startup.
+let sessionDirectionLock: { dir: MarketDirection; dayKey: string } | null = null;
+
 function computeIndexSide(symbol: "SPY" | "QQQ") {
   const price = lastPriceMap.get(symbol) ?? null;
   const vwap = getVwap(symbol);
@@ -929,6 +958,14 @@ function biasToMarketDir(bias: "BULLISH" | "BEARISH" | "NEUTRAL"): MarketDirecti
 }
 
 function getEffectiveMarketDir(): MarketDirection {
+  // If a trade was already submitted today, honor the locked direction for
+  // the rest of the session — don't let a VWAP flip open a second wave in
+  // the opposite direction.
+  const currentDay = nyDayKey(Date.now());
+  if (sessionDirectionLock && sessionDirectionLock.dayKey === currentDay) {
+    return sessionDirectionLock.dir;
+  }
+
   const spy = computeIndexSide("SPY");
   const qqq = computeIndexSide("QQQ");
 
@@ -1016,7 +1053,39 @@ function isEntryAlert(a: Alert) {
 // Execution rules extraction (cfg.risk OR cfg.post)
 // -----------------------------
 function buildExecRulesFromCfg(cfg: StrategyDefinition) {
-  return buildOutcomeExecRules(cfg);
+  const rules = buildOutcomeExecRules(cfg);
+  if (!rules) return rules;
+
+  // MFE gate: exit early if MFE hasn't reached mfeGatePct% within mfeGateMinutes.
+  // Configured via env vars so it can be enabled/tuned without a schema/UI change.
+  // Recommended starting values: MFE_GATE_MINUTES=2, MFE_GATE_MIN_PCT=0.15
+  const rawGateMin = process.env.MFE_GATE_MINUTES;
+  const rawGatePct = process.env.MFE_GATE_MIN_PCT;
+  if (rawGateMin != null && rawGateMin !== "") {
+    const v = Number(rawGateMin);
+    if (Number.isFinite(v) && v > 0) rules.mfeGateMinutes = v;
+  }
+  if (rawGatePct != null && rawGatePct !== "") {
+    const v = Number(rawGatePct);
+    if (Number.isFinite(v) && v > 0) rules.mfeGatePct = v;
+  }
+
+  // Trailing stop: once MFE crosses TRAIL_ACTIVATE_PCT, trail the stop
+  // TRAIL_DISTANCE_PCT below the running peak. Locks in profit on runners
+  // instead of waiting for the TIME exit to fire at wherever price is.
+  // Recommended starting values: TRAIL_ACTIVATE_PCT=0.5, TRAIL_DISTANCE_PCT=0.3
+  const rawTrailActivate = process.env.TRAIL_ACTIVATE_PCT;
+  const rawTrailDistance = process.env.TRAIL_DISTANCE_PCT;
+  if (rawTrailActivate != null && rawTrailActivate !== "") {
+    const v = Number(rawTrailActivate);
+    if (Number.isFinite(v) && v > 0) rules.trailActivatePct = v;
+  }
+  if (rawTrailDistance != null && rawTrailDistance !== "") {
+    const v = Number(rawTrailDistance);
+    if (Number.isFinite(v) && v > 0) rules.trailDistancePct = v;
+  }
+
+  return rules;
 }
 
 // -----------------------------
@@ -1575,6 +1644,17 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
         };
         dbInsertOutcome(skippedOutcome);
         return;
+      }
+
+      // SUBMITTED: lock session direction to prevent opposite-direction entries
+      // later in the same session (VWAP-flip whipsaw guard — Option A, 2026-06-02).
+      if (record?.status === "SUBMITTED") {
+        const lockedDir: MarketDirection = alert.dir === "CALL" ? "BULLISH" : "BEARISH";
+        const dayKey = nyDayKey(alert.ts);
+        if (!sessionDirectionLock || sessionDirectionLock.dayKey !== dayKey) {
+          sessionDirectionLock = { dir: lockedDir, dayKey };
+          console.log(`[direction] session locked to ${lockedDir} for ${dayKey} after first SUBMITTED trade (${alert.symbol})`);
+        }
       }
 
       // SUBMITTED: poll the broker for the real entry fill so the OutcomeTracker
