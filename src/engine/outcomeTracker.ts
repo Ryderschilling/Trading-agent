@@ -5,13 +5,16 @@ import { TradeDirection, TradeOutcome } from "./types";
 /**
  * Broker-like execution rules (derived from strategy config).
  * Interpretation:
- * - We compute 1R as the absolute distance from entryRefPrice to structureLevel.
+ * - We compute 1R as the absolute distance from entryRefPrice to structureLevel,
+ *   OR as entry * stopPct/100 when stopPct is set (percent-based stop mode).
  * - stopR=1 => stopPrice == entry +/- 1R (not structure).
  * - targetR=2 => targetPrice == entry +/- 2R.
  * - moveStopToBEAtR=1 => once price reaches +1R, stop moves to entry (breakeven).
+ * - stopPct => flat % stop from entry (e.g. 2 = 2%). When set, 1R = entry * stopPct/100.
  */
 export type ExecRules = {
-  stopR: number;              // > 0
+  stopR: number;              // > 0 (set to 1 for percent mode)
+  stopPct?: number;           // > 0 (optional) — flat % stop from entry; overrides structure-based 1R
   targetR: number;            // > 0
   moveStopToBEAtR?: number;   // > 0 (optional)
   timeExitMinutes?: number;   // > 0 (optional) — exit at market once held this many minutes
@@ -117,6 +120,8 @@ function computeExecState(args: {
   const stopR = Number(rules.stopR);
   const targetR = Number(rules.targetR);
   const moveBE = rules.moveStopToBEAtR == null ? null : Number(rules.moveStopToBEAtR);
+  const stopPct = rules.stopPct != null ? Number(rules.stopPct) : null;
+  const percentMode = stopPct != null && stopPct > 0;
 
   if (!isFiniteNum(entry) || entry <= 0) {
     return {
@@ -134,7 +139,7 @@ function computeExecState(args: {
     };
   }
 
-  if (!isFiniteNum(structure)) {
+  if (!percentMode && !isFiniteNum(structure)) {
     return {
       enabled: false,
       rAbs: 0,
@@ -150,7 +155,7 @@ function computeExecState(args: {
     };
   }
 
-  if (!isFiniteNum(stopR) || stopR <= 0) {
+  if (!percentMode && (!isFiniteNum(stopR) || stopR <= 0)) {
     return {
       enabled: false,
       rAbs: 0,
@@ -182,7 +187,11 @@ function computeExecState(args: {
     };
   }
 
-  const rAbs = Math.abs(entry - structure);
+  // 1R: percent-based uses entry * stopPct/100; structure-based uses |entry - structure|
+  const rAbs = percentMode
+    ? entry * (stopPct! / 100)
+    : Math.abs(entry - structure);
+
   if (!isFiniteNum(rAbs) || rAbs <= 0) {
     return {
       enabled: false,
@@ -201,7 +210,9 @@ function computeExecState(args: {
 
   const dir = args.dir;
 
-  const stopPx = dir === "LONG" ? entry - stopR * rAbs : entry + stopR * rAbs;
+  // For percent mode stopR is implicitly 1 (rAbs already IS the full stop distance).
+  const effectiveStopR = percentMode ? 1 : stopR;
+  const stopPx = dir === "LONG" ? entry - effectiveStopR * rAbs : entry + effectiveStopR * rAbs;
   const targetPx = dir === "LONG" ? entry + targetR * rAbs : entry - targetR * rAbs;
 
   const beTriggerPx =
@@ -233,6 +244,8 @@ function computeReturnPct(dir: TradeDirection, entry: number, px: number): numbe
 export class OutcomeTracker {
   private sessionsById = new Map<string, ActiveSession>();
   private sessionsBySymbol = new Map<string, Set<string>>();
+  /** Latest close price per symbol — updated on every onMinuteBar call. Used by checkCorrelatedDrawdown. */
+  private latestClose = new Map<string, number>();
 
   constructor(private cfg: { checkpointsMin?: number[] }) {}
 
@@ -364,6 +377,8 @@ export class OutcomeTracker {
     completed: string[];
     beMoved: Array<{ alertId: string; symbol: string; newStopPx: number }>;
   } {
+    this.latestClose.set(args.symbol, args.close);
+
     const ids = this.sessionsBySymbol.get(args.symbol);
     if (!ids || !ids.size) return { completed: [], beMoved: [] };
 
@@ -738,6 +753,29 @@ export class OutcomeTracker {
       .map((s) => s.alertId);
   }
 
+  /**
+   * Returns all LIVE sessions with current unrealized return % for the
+   * direction-flip check in index.ts. Uses latestClose (updated on every
+   * onMinuteBar call) so no extra price lookup is needed.
+   */
+  getActiveSessionsForFlipCheck(): Array<{
+    alertId: string;
+    symbol: string;
+    dir: TradeDirection;
+    currentReturnPct: number | null;
+  }> {
+    const result: Array<{ alertId: string; symbol: string; dir: TradeDirection; currentReturnPct: number | null }> = [];
+    for (const s of this.sessionsById.values()) {
+      if (s.status !== "LIVE") continue;
+      const close = this.latestClose.get(s.symbol) ?? null;
+      const currentReturnPct = close != null
+        ? computeReturnPct(s.dir, s.entryRefPrice, close)
+        : null;
+      result.push({ alertId: s.alertId, symbol: s.symbol, dir: s.dir, currentReturnPct });
+    }
+    return result;
+  }
+
   /** Symbol for a given session id, or null. */
   sessionSymbol(alertId: string): string | null {
     return this.sessionsById.get(alertId)?.symbol ?? null;
@@ -784,5 +822,76 @@ export class OutcomeTracker {
       }
     }
     return out;
+  }
+
+  /**
+   * Correlated drawdown detection. If `minLoserCount` or more LIVE sessions are
+   * simultaneously down ≥ `loserThresholdPct`% from entry, the whole-market is
+   * moving against the book. Tighten stops on losers to `tightStopPct`% below
+   * current price. Winners are left completely untouched — only losers get hit.
+   *
+   * Stops only move in the favorable direction (tighter) — never widened.
+   * Returns the list of tightened stops so the caller can push updates to broker.
+   *
+   * Typical config: loserThresholdPct=0.5, minLoserCount=3, tightStopPct=0.75
+   */
+  checkCorrelatedDrawdown(opts: {
+    loserThresholdPct?: number;
+    minLoserCount?: number;
+    tightStopPct?: number;
+  } = {}): Array<{ alertId: string; symbol: string; newStopPx: number }> {
+    const loserThresholdPct = opts.loserThresholdPct ?? 0.5;
+    const minLoserCount     = opts.minLoserCount     ?? 3;
+    const tightStopPct      = opts.tightStopPct      ?? 0.75;
+
+    const liveSessions = Array.from(this.sessionsById.values()).filter(
+      (s) => s.status === "LIVE" && s.exec.enabled && s.entryFill != null
+    );
+
+    if (liveSessions.length < minLoserCount) return [];
+
+    // Compute unrealized PnL % per session using broker fill + latest bar close
+    const withPnl = liveSessions.flatMap((s) => {
+      const currentPrice = this.latestClose.get(s.symbol);
+      if (!currentPrice || !s.entryFill) return [];
+      const pct =
+        s.dir === "LONG"
+          ? ((currentPrice - s.entryFill) / s.entryFill) * 100
+          : ((s.entryFill - currentPrice) / s.entryFill) * 100;
+      return [{ s, currentPrice, pct }];
+    });
+
+    const losers = withPnl.filter((x) => x.pct < -loserThresholdPct);
+
+    if (losers.length < minLoserCount) return [];
+
+    // Correlated drawdown confirmed — tighten stops on losers only
+    const tightened: Array<{ alertId: string; symbol: string; newStopPx: number }> = [];
+
+    for (const { s, currentPrice } of losers) {
+      const newStop =
+        s.dir === "LONG"
+          ? currentPrice * (1 - tightStopPct / 100)
+          : currentPrice * (1 + tightStopPct / 100);
+
+      // Only tighten — never widen
+      const wouldTighten =
+        s.dir === "LONG" ? newStop > s.exec.stopPx : newStop < s.exec.stopPx;
+
+      if (wouldTighten) {
+        s.exec.stopPx = newStop;
+        tightened.push({ alertId: s.alertId, symbol: s.symbol, newStopPx: newStop });
+      }
+    }
+
+    if (tightened.length > 0) {
+      const loserSymbols = losers.map((x) => x.s.symbol).join(", ");
+      console.log(
+        `[corr-drawdown] ${losers.length} losers ≥ ${loserThresholdPct}% down (${loserSymbols}) ` +
+        `— tightened stops on ${tightened.length} positions to ${tightStopPct}% below current price`
+      );
+    }
+
+    return tightened;
   }
 }

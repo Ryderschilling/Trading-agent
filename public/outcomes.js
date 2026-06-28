@@ -801,15 +801,15 @@ async function openModalForRow(r) {
       barsDisplay.push(...aggregated);
     }
 
-    // Named structural levels: PDH (green), PDL (red), PMH/PML (purple)
+    // Named structural levels: PDH (green), PDL (red), PMH/PML (pink)
     const GREEN  = "rgba(74, 222, 128, 0.95)";
     const RED    = "rgba(248, 113, 113, 0.95)";
-    const PURPLE = "rgba(170, 100, 255, 0.95)";
+    const PINK   = "rgba(255, 82, 172, 0.95)";
     const namedLevels = [
       { key: "pdh", label: "PDH", color: GREEN  },
       { key: "pdl", label: "PDL", color: RED    },
-      { key: "pmh", label: "PMH", color: PURPLE },
-      { key: "pml", label: "PML", color: PURPLE },
+      { key: "pmh", label: "PMH", color: PINK   },
+      { key: "pml", label: "PML", color: PINK   },
     ];
 
     const chartLevels = [];
@@ -836,7 +836,7 @@ async function openModalForRow(r) {
       const fallbackColor =
         lvlKey === "PDH" ? GREEN  :
         lvlKey === "PDL" ? RED    :
-        lvlKey === "PMH" || lvlKey === "PML" ? PURPLE :
+        lvlKey === "PMH" || lvlKey === "PML" ? PINK :
         "rgba(200, 200, 200, 0.7)";
       chartLevels.push({
         price: Number(r.structureLevel),

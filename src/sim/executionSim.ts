@@ -3,7 +3,8 @@ export type ExecDir = "LONG" | "SHORT";
 
 export type ExecRules = {
   // Example: stop = 1R, target = 1.5R
-  stopR: number;       // e.g. 1
+  stopR: number;       // e.g. 1 (set to 1 for percent mode)
+  stopPct?: number;    // flat % stop from entry (e.g. 2 = 2%); overrides structure-based 1R
   targetR: number;     // e.g. 1.5
 
   // Optional management
@@ -52,21 +53,30 @@ export function initExec(
   structureLevel: number,
   rules: ExecRules
 ): ExecState {
-  if (!(rules.stopR > 0)) throw new Error("stopR must be > 0");
   if (!(rules.targetR > 0)) throw new Error("targetR must be > 0");
-
   if (!Number.isFinite(entryPrice) || entryPrice <= 0) throw new Error("bad entryPrice");
-  if (!Number.isFinite(structureLevel)) throw new Error("bad structureLevel");
 
-  const oneRAbs = Math.abs(entryPrice - structureLevel);
-  if (!Number.isFinite(oneRAbs) || oneRAbs <= 0) {
-    throw new Error("structureLevel equals entryPrice (1R would be 0)");
+  const percentMode = rules.stopPct != null && rules.stopPct > 0;
+
+  // 1R: percent-based uses entry * stopPct/100; structure-based uses |entry - structure|
+  let oneRAbs: number;
+  if (percentMode) {
+    oneRAbs = entryPrice * (rules.stopPct! / 100);
+  } else {
+    if (!(rules.stopR > 0)) throw new Error("stopR must be > 0");
+    if (!Number.isFinite(structureLevel)) throw new Error("bad structureLevel");
+    oneRAbs = Math.abs(entryPrice - structureLevel);
+    if (!Number.isFinite(oneRAbs) || oneRAbs <= 0) {
+      throw new Error("structureLevel equals entryPrice (1R would be 0)");
+    }
   }
+
+  const effectiveStopR = percentMode ? 1 : rules.stopR;
 
   const stopPrice =
     dir === "LONG"
-      ? entryPrice - (rules.stopR * oneRAbs)
-      : entryPrice + (rules.stopR * oneRAbs);
+      ? entryPrice - (effectiveStopR * oneRAbs)
+      : entryPrice + (effectiveStopR * oneRAbs);
 
   const targetPrice =
     dir === "LONG"

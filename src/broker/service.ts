@@ -678,6 +678,26 @@ export class BrokerExecutionService {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // CORRELATED-PAIR GATE (SPY ↔ QQQ dedup — 2026-06-25)
+    //
+    // SPY and QQQ are ~99% correlated. Allowing both in the same wave is
+    // double exposure on identical risk. If one of the pair already has a
+    // submitted order today, skip the other.
+    // ──────────────────────────────────────────────────────────────────────
+    const CORR_PAIRS: Record<string, string> = { SPY: "QQQ", QQQ: "SPY" };
+    const corrSymbol = CORR_PAIRS[alert.symbol];
+    if (corrSymbol) {
+      const corrOrders = countBrokerOrdersForSymbolDay(this.db, dayKey, corrSymbol);
+      if (corrOrders > 0) {
+        return persist({
+          ...baseActivity,
+          status: "SKIPPED",
+          reason: `correlated pair blocked: ${corrSymbol} already submitted today`,
+        });
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // ANTI-CLUSTER GATE (Fix #5, wired 2026-05-19)
     //
     // 2026-05-19 fired 4 nearly-identical bearish PML-weak shorts in the same

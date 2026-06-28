@@ -645,7 +645,7 @@ function finalizeOutcomeWithBrokerFill(out: TradeOutcome): void {
         console.warn(`[broker] closePosition returned no orderId for ${out.symbol}`);
         return;
       }
-      const fill = await brokerExecution.pollOrderFill(closeResult.orderId, 6000);
+      const fill = await brokerExecution.pollOrderFill(closeResult.orderId, 15000);
       if (fill?.price == null) {
         console.warn(`[broker] exit fill poll timed out for ${out.symbol} — keeping simulated values`);
         return;
@@ -916,6 +916,24 @@ let latestSignals: SignalsSnapshot = {
 // in-memory lock. If this becomes an issue, initialize from DB on startup.
 let sessionDirectionLock: { dir: MarketDirection; dayKey: string } | null = null;
 
+// Direction flip state (2026-06-26).
+// One allowed direction flip per session. Fires when ALL active locked-direction
+// positions are (a) in the red AND (b) on the wrong side of VWAP. Closes those
+// positions at market and flips the session direction lock so opposite-direction
+// alerts can now execute. No ping-pong: flipUsed blocks a second flip for the day.
+let sessionFlipState: { dayKey: string; flipUsed: boolean } | null = null;
+let directionFlipInProgress = false; // async re-entry guard
+let lastFlipCheckTs = 0;             // dedupe: only run once per bar timestamp
+
+// SPY session-open move gate (2026-06-25).
+// If SPY has already moved >=1.5% from the regular-session open by the time
+// an entry fires, the market is in chop/recovery and new entries are blocked.
+// The ref price is the open of SPY's first regular-session 1m bar each day.
+// Resets automatically on day rollover via dayKey comparison.
+const SPY_MOVE_BLOCK_PCT = 0.015; // 1.5%
+let spySessionRef: { dayKey: string; openPrice: number } | null = null;
+let spyLastClose: number | null = null;
+
 function computeIndexSide(symbol: "SPY" | "QQQ") {
   const price = lastPriceMap.get(symbol) ?? null;
   const vwap = getVwap(symbol);
@@ -1087,6 +1105,20 @@ function buildExecRulesFromCfg(cfg: StrategyDefinition) {
 
   return rules;
 }
+
+// -----------------------------
+// Correlated drawdown config
+// Set CORR_DRAWDOWN=1 to enable. Optional tuning vars:
+//   CORR_LOSER_THRESHOLD_PCT  — % down from entry to count as a loser (default 0.5)
+//   CORR_MIN_LOSER_COUNT      — how many losers trigger the tighten (default 3)
+//   CORR_TIGHT_STOP_PCT       — stop distance below current price when triggered (default 0.75)
+// -----------------------------
+const CORR_DRAWDOWN_ENABLED    = process.env.CORR_DRAWDOWN === "1";
+const CORR_LOSER_THRESHOLD_PCT = Number(process.env.CORR_LOSER_THRESHOLD_PCT  ?? "0.5");
+const CORR_MIN_LOSER_COUNT     = Number(process.env.CORR_MIN_LOSER_COUNT      ?? "3");
+const CORR_TIGHT_STOP_PCT      = Number(process.env.CORR_TIGHT_STOP_PCT       ?? "0.75");
+/** Throttle: correlated drawdown runs once per unique bar timestamp, not once per symbol. */
+let lastCorrDrawdownTs = 0;
 
 // -----------------------------
 // DB rows (Outcomes page) — BUILT FROM DB, NOT MEMORY
@@ -1605,6 +1637,19 @@ function startOutcomeTrackingIfTrade(r: StrategyRunner, alert: Alert, ts: number
 function triggerBrokerExecutionIfEligible(alert: Alert): void {
   if (!isTradeSignal(alert)) return;
 
+  // SPY move gate: if SPY has already moved >=1.5% from session open, the
+  // initial momentum is spent and new entries are likely chasing chop.
+  if (spySessionRef && spyLastClose != null) {
+    const movePct = Math.abs(spyLastClose - spySessionRef.openPrice) / spySessionRef.openPrice;
+    if (movePct >= SPY_MOVE_BLOCK_PCT) {
+      console.log(
+        `[spy-gate] BLOCKED ${alert.symbol} — SPY moved ${(movePct * 100).toFixed(2)}% from open ` +
+        `(ref=${spySessionRef.openPrice}, last=${spyLastClose}, threshold=${(SPY_MOVE_BLOCK_PCT * 100).toFixed(1)}%)`
+      );
+      return;
+    }
+  }
+
   void brokerExecution.executeConfirmedAlert(alert)
     .then(async (record) => {
       // Outcomes only track ORDERS THAT REACHED THE BROKER AS SUBMITTED.
@@ -1663,7 +1708,15 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
       // row falls back to simulation — we never block on this path.
       if (record?.status === "SUBMITTED" && record.brokerOrderId) {
         try {
-          const fill = await brokerExecution.pollOrderFill(record.brokerOrderId, 6000);
+          // Poll with retry: attempt up to 3 times with 15s each. The pre-market
+          // open burst (8:30-8:32 ET) can delay paper fill confirmations beyond 6s.
+          let fill: { price: number; qty: number | null } | null = null;
+          for (let attempt = 1; attempt <= 3 && fill == null; attempt++) {
+            fill = await brokerExecution.pollOrderFill(record.brokerOrderId, 15000);
+            if (fill == null && attempt < 3) {
+              console.warn(`[outcomes] entry fill poll attempt ${attempt} timed out for ${alert.symbol} — retrying`);
+            }
+          }
           if (fill?.price != null) {
             // Best effort qty: prefer broker's filled_qty, else compute from
             // notional, else fall back to record.qty.
@@ -1676,7 +1729,7 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
             }
             console.log(`[outcomes] entry fill: ${alert.symbol} px=${fill.price} qty=${qty}`);
           } else {
-            console.warn(`[outcomes] entry fill poll timed out for ${alert.symbol} — using alert.close`);
+            console.warn(`[outcomes] entry fill poll exhausted all retries for ${alert.symbol} — using alert.close`);
           }
         } catch (e: any) {
           console.warn(`[outcomes] entry fill error for ${alert.symbol}: ${e?.message ?? e}`);
@@ -1757,6 +1810,121 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
 }
 
 // -----------------------------
+// Direction flip (2026-06-26)
+// One-time per session. Closes all locked-direction positions and flips the
+// session direction lock when ALL of them are red AND on wrong side of VWAP.
+// -----------------------------
+async function checkDirectionFlip(ts: number): Promise<void> {
+  if (directionFlipInProgress) return;
+
+  const currentDay = nyDayKey(ts);
+
+  // Reset on new calendar day
+  if (!sessionFlipState || sessionFlipState.dayKey !== currentDay) {
+    sessionFlipState = { dayKey: currentDay, flipUsed: false };
+  }
+
+  // Only run when a direction is locked and the flip hasn't been consumed
+  if (!sessionDirectionLock || sessionDirectionLock.dayKey !== currentDay) return;
+  if (sessionFlipState.flipUsed) return;
+
+  // Hard cutoff: no new entries or flips after 11:30 AM ET
+  if (isPastEntryCutoffNY(ts)) return;
+
+  const lockedDir = sessionDirectionLock.dir;
+
+  // Gather all LIVE sessions across all runners
+  const allSessions: Array<{
+    alertId: string; symbol: string; dir: TradeDirection; currentReturnPct: number | null;
+  }> = [];
+  for (const r of runners.values()) {
+    allSessions.push(...r.outcomeTracker.getActiveSessionsForFlipCheck());
+  }
+  if (allSessions.length === 0) return;
+
+  // Scope to sessions that match the locked direction
+  const lockedSessions = allSessions.filter(s =>
+    (lockedDir === "BULLISH" && s.dir === "LONG") ||
+    (lockedDir === "BEARISH" && s.dir === "SHORT")
+  );
+  if (lockedSessions.length === 0) return;
+
+  // Condition 1: every locked-direction position must be meaningfully in the red.
+  // -0.3% threshold filters out spread noise and brief opening dips on trend days.
+  const allRed = lockedSessions.every(s => s.currentReturnPct !== null && s.currentReturnPct < -0.3);
+  if (!allRed) return;
+
+  // Condition 2: every locked-direction symbol must be on the wrong side of VWAP
+  // SHORT losing because market went up → price > VWAP
+  // LONG  losing because market went down → price < VWAP
+  const allWrongVwap = lockedSessions.every(s => {
+    const vwap  = getVwap(s.symbol);
+    const price = lastPriceMap.get(s.symbol) ?? null;
+    if (vwap == null || price == null) return false;
+    return s.dir === "SHORT" ? price > vwap : price < vwap;
+  });
+  if (!allWrongVwap) return;
+
+  // Both conditions satisfied — execute the flip
+  const newDir: MarketDirection = lockedDir === "BULLISH" ? "BEARISH" : "BULLISH";
+  console.log(
+    `[direction-flip] triggered: ${lockedSessions.length} ${lockedDir} position(s) all red + wrong side of VWAP. ` +
+    `Closing and flipping lock → ${newDir}`
+  );
+
+  directionFlipInProgress = true;
+  sessionFlipState.flipUsed = true; // consume the flip before awaiting anything
+
+  try {
+    const symbolsToClose = [...new Set(lockedSessions.map(s => s.symbol))];
+
+    for (const symbol of symbolsToClose) {
+      // 1. Ask broker to close the position
+      const closeResult = await brokerExecution.closePosition(symbol).catch((e) => {
+        console.warn(`[direction-flip] broker close failed for ${symbol}: ${e?.message ?? e}`);
+        return null;
+      });
+
+      // 2. Resolve exit price (broker fill → candle fallback)
+      let exitPx: number | undefined;
+      if (closeResult?.orderId && (closeResult as any)?.adapter?.pollFill) {
+        const fill = await (closeResult as any).adapter.pollFill(closeResult.orderId, 6000).catch(() => null);
+        if (fill != null) exitPx = fill;
+      }
+      if (exitPx == null) {
+        const lastCandles = getCandles1m(symbol, ts - 5 * 60_000, ts, 5);
+        if (lastCandles.length > 0) exitPx = lastCandles[lastCandles.length - 1].c;
+      }
+
+      // 3. Finalize outcome records
+      for (const r of runners.values()) {
+        const finalized = r.outcomeTracker.manualClose(symbol, exitPx, ts);
+        for (const out of finalized) {
+          const idx = outcomes.findIndex(o => o.alertId === out.alertId);
+          if (idx >= 0) outcomes[idx] = out; else outcomes.push(out);
+          dbInsertOutcome(out);
+          realtime?.broadcastOutcome(out);
+          console.log(
+            `[direction-flip] finalized ${out.symbol} exitPx=${exitPx ?? "unknown"} ` +
+            `pct=${out.exitReturnPct?.toFixed(2) ?? "?"}`
+          );
+        }
+      }
+    }
+
+    // 4. Flip the lock — new direction entries can now fire on the next signal
+    sessionDirectionLock = { dir: newDir, dayKey: currentDay };
+    console.log(
+      `[direction-flip] session direction now ${newDir} for ${currentDay}. ` +
+      `Flip consumed — direction locked for remainder of session.`
+    );
+
+  } finally {
+    directionFlipInProgress = false;
+  }
+}
+
+// -----------------------------
 // Ingest minute bar (LIVE + BACKFILL)
 // -----------------------------
 function ingestMinuteBar(
@@ -1777,6 +1945,16 @@ function ingestMinuteBar(
   onBarUpdateLevels(getLevels(symbol), ts, h, l);
   persistCandle1m(symbol, ts, o, h, l, c, v);
   recordCoverageBar(symbol, ts);
+
+  // Track SPY session open price and current close for the move gate.
+  if (symbol === "SPY" && isRegularSessionNY(ts)) {
+    const dk = nyDayKey(ts);
+    if (!spySessionRef || spySessionRef.dayKey !== dk) {
+      spySessionRef = { dayKey: dk, openPrice: o };
+      console.log(`[spy-gate] session ref set: SPY open=${o} for ${dk}`);
+    }
+    spyLastClose = c;
+  }
 
   const allowSignals = !warmup && isRegularMarketHours(ts);
   // Entries only fire during the first hour of the session (9:30–10:30 AM ET)
@@ -1823,6 +2001,24 @@ function ingestMinuteBar(
           console.log("[broker] BE stop update error", e?.message || e);
         });
       }
+
+      // Correlated drawdown check — runs once per unique bar timestamp across all symbols.
+      // If 3+ open positions are simultaneously down ≥ 0.5%, tighten stops on losers to
+      // 0.75% below current price. Winners are untouched.
+      if (CORR_DRAWDOWN_ENABLED && ts !== lastCorrDrawdownTs) {
+        lastCorrDrawdownTs = ts;
+        const corrTightened = r.outcomeTracker.checkCorrelatedDrawdown({
+          loserThresholdPct: CORR_LOSER_THRESHOLD_PCT,
+          minLoserCount:     CORR_MIN_LOSER_COUNT,
+          tightStopPct:      CORR_TIGHT_STOP_PCT,
+        });
+        for (const { symbol: corrSym, newStopPx } of corrTightened) {
+          void brokerExecution.setStopOrder(corrSym, newStopPx, null).catch((e) => {
+            console.log("[corr-drawdown] stop update error", e?.message || e);
+          });
+        }
+      }
+
       for (const id of doneFromMinute) {
         const out = r.outcomeTracker.finalize(id);
         if (!out) continue;
@@ -1845,6 +2041,14 @@ function ingestMinuteBar(
           realtime?.broadcastOutcome(out);
         }
       }
+    }
+
+    // Direction flip check — deduplicated to once per bar timestamp.
+    // Runs after all exits are processed so manualClose doesn't race with
+    // a stop that already fired on the same bar.
+    if (!warmup && ts !== lastFlipCheckTs) {
+      lastFlipCheckTs = ts;
+      void checkDirectionFlip(ts);
     }
   }
 

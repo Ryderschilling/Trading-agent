@@ -813,6 +813,10 @@ async function openTradeModal(pos) {
 function renderLiveTrades(positions) {
   if (!liveTradesListEl || !liveTradesEmptyEl) return;
 
+  const liveTradesTableEl = document.getElementById("liveTradesTable");
+  const liveTradesSummaryEl = document.getElementById("liveTradesSummary");
+  const liveTradesTotalPnlEl = document.getElementById("liveTradesTotalPnl");
+
   liveTradesListEl.innerHTML = "";
 
   const items = (Array.isArray(positions) ? positions : [])
@@ -820,10 +824,25 @@ function renderLiveTrades(positions) {
 
   if (!items.length) {
     liveTradesEmptyEl.style.display = "block";
+    if (liveTradesTableEl) liveTradesTableEl.style.display = "none";
+    if (liveTradesSummaryEl) liveTradesSummaryEl.textContent = "";
+    if (liveTradesTotalPnlEl) liveTradesTotalPnlEl.textContent = "";
     return;
   }
 
   liveTradesEmptyEl.style.display = "none";
+  if (liveTradesTableEl) liveTradesTableEl.style.display = "block";
+
+  // Summary + total P&L
+  const totalPnl = items.reduce((sum, p) => sum + (Number(p?.unrealizedPl) || 0), 0);
+  if (liveTradesSummaryEl) {
+    liveTradesSummaryEl.textContent = `${items.length} open position${items.length === 1 ? "" : "s"}`;
+  }
+  if (liveTradesTotalPnlEl) {
+    const totalStr = (totalPnl >= 0 ? "+" : "") + "$" + Math.abs(totalPnl).toFixed(2);
+    liveTradesTotalPnlEl.textContent = totalStr;
+    liveTradesTotalPnlEl.style.color = totalPnl >= 0 ? "var(--pos,#42ff00)" : "var(--neg,#ff5353)";
+  }
 
   for (const p of items) {
     const sym = String(p.symbol || "");
@@ -831,28 +850,51 @@ function renderLiveTrades(positions) {
     const pnl = p.unrealizedPl != null ? Number(p.unrealizedPl) : null;
     const pnlPct = p.unrealizedPlPct != null ? Number(p.unrealizedPlPct) * 100 : null;
     const side = String(p.side || "long").toUpperCase();
+    const entry = p.avgEntryPrice != null ? Number(p.avgEntryPrice) : null;
+    const mv = p.marketValue != null ? Number(p.marketValue) : null;
 
-    const pnlStr = pnl != null && Number.isFinite(pnl) ? (pnl >= 0 ? "+" : "") + "$" + pnl.toFixed(2) : "—";
-    const pnlPctStr = pnlPct != null && Number.isFinite(pnlPct) ? " (" + (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(2) + "%)" : "";
-    const pnlClass = pnl != null && pnl >= 0 ? "pos" : "neg";
-    const qtyDisplay = qty != null ? (qty % 1 === 0 ? qty : qty.toFixed(2)) : "—";
+    const pnlStr = pnl != null && Number.isFinite(pnl)
+      ? (pnl >= 0 ? "+" : "") + "$" + Math.abs(pnl).toFixed(2)
+      : "—";
+    const pnlPctStr = pnlPct != null && Number.isFinite(pnlPct)
+      ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(2) + "%"
+      : "—";
+    const pnlColor = pnl != null && pnl >= 0 ? "var(--pos,#42ff00)" : "var(--neg,#ff5353)";
+    const qtyDisplay = qty != null ? (qty % 1 === 0 ? String(qty) : qty.toFixed(2)) : "—";
+    const entryDisplay = entry != null ? "$" + entry.toFixed(2) : "—";
+    const mvDisplay = mv != null ? "$" + mv.toFixed(2) : "—";
+    const sideColor = side === "SHORT" ? "var(--neg,#ff5353)" : "var(--pos,#42ff00)";
 
-    const div = document.createElement("div");
-    div.className = "item";
-    div.style.cursor = "pointer";
+    const tr = document.createElement("tr");
+    tr.style.cursor = "pointer";
+    tr.style.borderBottom = "1px solid rgba(128,128,128,0.1)";
+    tr.style.transition = "background 0.1s";
+    tr.addEventListener("mouseenter", () => { tr.style.background = "rgba(255,255,255,0.04)"; });
+    tr.addEventListener("mouseleave", () => { tr.style.background = ""; });
 
-    div.innerHTML = `
-      <div>
-        <div style="font-weight:600;">${escapeHtml(sym)}</div>
-        <div class="small" style="margin-top:2px;">${escapeHtml(side)} × ${escapeHtml(String(qtyDisplay))}</div>
-      </div>
-      <div class="${pnlClass}" style="font-weight:600; text-align:right;">
-        ${escapeHtml(pnlStr)}<span class="small">${escapeHtml(pnlPctStr)}</span>
-      </div>
+    tr.innerHTML = `
+      <td style="padding:14px 14px; font-weight:700; font-size:15px; white-space:nowrap;">${escapeHtml(sym)}</td>
+      <td style="padding:14px 14px; white-space:nowrap;">
+        <span style="display:inline-block; padding:3px 8px; border-radius:5px; font-size:11px; font-weight:700; letter-spacing:0.5px;
+          background:${side === "SHORT" ? "rgba(255,83,83,0.15)" : "rgba(66,255,0,0.12)"};
+          color:${sideColor};">
+          ${escapeHtml(side)}
+        </span>
+      </td>
+      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(qtyDisplay)}</td>
+      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; opacity:0.8;">${escapeHtml(entryDisplay)}</td>
+      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; opacity:0.8;">${escapeHtml(mvDisplay)}</td>
+      <td style="padding:14px 14px; text-align:right; font-weight:700; font-size:15px; color:${pnlColor}; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(pnlStr)}</td>
+      <td style="padding:14px 14px; text-align:right; font-weight:600; font-size:13px; color:${pnlColor}; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(pnlPctStr)}</td>
+      <td style="padding:14px 14px; text-align:right;">
+        <button style="padding:5px 12px; font-size:12px; font-weight:600; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:inherit; cursor:pointer; white-space:nowrap;">
+          Manage
+        </button>
+      </td>
     `;
 
-    div.addEventListener("click", () => openTradeModal(p));
-    liveTradesListEl.appendChild(div);
+    tr.addEventListener("click", () => openTradeModal(p));
+    liveTradesListEl.appendChild(tr);
   }
 }
 

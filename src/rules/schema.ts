@@ -17,7 +17,7 @@ export type MaCrossEntryReference =
   | "cross_zone_pullback";
 export type SessionMode = "regular" | "premarket" | "both";
 export type RiskMode = "percent_account" | "fixed_dollars";
-export type StopMode = "structure_close" | "ma_fail_close" | "r_multiple";
+export type StopMode = "structure_close" | "ma_fail_close" | "r_multiple" | "percent";
 
 export type BreakRetestSetup = {
   levels: BreakRetestLevel[];
@@ -57,7 +57,8 @@ export type StrategyRisk = {
   riskMode: RiskMode;
   riskValue: number;
   stopMode: StopMode;
-  stopValueR: number | null;
+  stopValueR: number | null;    // used when stopMode === "r_multiple"
+  stopValuePct: number | null;  // used when stopMode === "percent" (e.g. 2 = 2%)
   profitTargetR: number | null;
   moveToBreakevenAtR: number | null;
   timeExitBars: number | null;
@@ -149,7 +150,7 @@ function normalizeRiskMode(value: unknown, fallback: RiskMode): RiskMode {
 }
 
 function normalizeStopMode(value: unknown, fallback: StopMode): StopMode {
-  if (value === "structure_close" || value === "ma_fail_close" || value === "r_multiple") return value;
+  if (value === "structure_close" || value === "ma_fail_close" || value === "r_multiple" || value === "percent") return value;
   return fallback;
 }
 
@@ -265,6 +266,7 @@ export function defaultStrategyDefinition(setupType: StrategySetupType = "break_
       riskValue: 1,
       stopMode: setupType === "ma_cross" ? "ma_fail_close" : "structure_close",
       stopValueR: 1,
+      stopValuePct: null,
       profitTargetR: 2,
       moveToBreakevenAtR: 1,
       timeExitBars: 20,
@@ -349,6 +351,7 @@ function normalizeCurrentShape(input: unknown, opts?: { name?: string | null }):
       riskValue: finitePositive(riskSrc.riskValue) ?? base.risk.riskValue,
       stopMode: normalizeStopMode(riskSrc.stopMode, base.risk.stopMode),
       stopValueR: finitePositive(riskSrc.stopValueR),
+      stopValuePct: finitePositive(riskSrc.stopValuePct),
       profitTargetR: finitePositive(riskSrc.profitTargetR),
       moveToBreakevenAtR: finitePositive(riskSrc.moveToBreakevenAtR),
       timeExitBars: finiteInteger(riskSrc.timeExitBars, 1),
@@ -437,6 +440,7 @@ function migrateLegacyFlat(input: unknown, opts?: { name?: string | null }): Str
       riskValue: 1,
       stopMode: finitePositive(post.stopR) != null ? "r_multiple" : setupType === "ma_cross" ? "ma_fail_close" : "structure_close",
       stopValueR: finitePositive(post.stopR) ?? 1,
+      stopValuePct: null,
       profitTargetR: finitePositive(post.targetR) ?? 2,
       moveToBreakevenAtR: normalizeBool(post.moveBeEnabled, false) ? finitePositive(post.moveBeAtR) ?? 1 : null,
       timeExitBars: finiteInteger(post.maxHoldBars, 1),
@@ -546,6 +550,7 @@ function migrateLegacyNested(input: unknown, opts?: { name?: string | null }): S
           ? "ma_fail_close"
           : "structure_close",
       stopValueR: finitePositive(stopLoss.value) ?? 1,
+      stopValuePct: null,
       profitTargetR: finitePositive(profitTarget.value) ?? 2,
       moveToBreakevenAtR: normalizeBool(trailingStop.moveToBreakeven, false) ? finitePositive(trailingStop.moveToBreakevenAt) ?? 1 : null,
       timeExitBars: finiteInteger(timeExit.afterBars, 1),
@@ -636,23 +641,25 @@ export function buildOutcomeExecRules(strategy: StrategyDefinition): ExecRules |
   // targetPx and the exec engine must stay disabled.
   if (risk.profitTargetR == null || !(risk.profitTargetR > 0)) return undefined;
 
-  // Stop distance in R, where 1R == |entry - structureLevel|.
-  //  - r_multiple:      stop sits stopValueR away from entry.
-  //  - structure_close: stop sits AT the structure level, which is exactly 1R.
-  //  - ma_fail_close:   same — the MA/structure level is the 1R reference.
-  // This function previously bailed out for every non-r_multiple stop mode,
-  // which silently disabled STOP, TARGET and breakeven for the live strategy
-  // (it runs structure_close) and left STRUCTURE_BREAK + EOD as the only
-  // exits. That was the regression. Now every stop mode yields exec rules.
+  // Stop distance:
+  //  - percent:         flat % from entry (stopPct = stopValuePct, stopR = 1)
+  //  - r_multiple:      stop sits stopValueR away from entry (structure-based 1R)
+  //  - structure_close: stop sits AT the structure level (exactly 1R)
+  //  - ma_fail_close:   same as structure_close
   let stopR: number;
-  if (risk.stopMode === "r_multiple") {
+  let stopPct: number | undefined;
+  if (risk.stopMode === "percent") {
+    if (risk.stopValuePct == null || !(risk.stopValuePct > 0)) return undefined;
+    stopR = 1;
+    stopPct = risk.stopValuePct;
+  } else if (risk.stopMode === "r_multiple") {
     if (risk.stopValueR == null || !(risk.stopValueR > 0)) return undefined;
     stopR = risk.stopValueR;
   } else {
     stopR = 1;
   }
 
-  const out: ExecRules = { stopR, targetR: risk.profitTargetR };
+  const out: ExecRules = { stopR, ...(stopPct != null ? { stopPct } : {}), targetR: risk.profitTargetR };
 
   if (risk.moveToBreakevenAtR != null && risk.moveToBreakevenAtR > 0) {
     out.moveStopToBEAtR = risk.moveToBreakevenAtR;
