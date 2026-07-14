@@ -976,22 +976,15 @@ function biasToMarketDir(bias: "BULLISH" | "BEARISH" | "NEUTRAL"): MarketDirecti
 }
 
 function getEffectiveMarketDir(): MarketDirection {
-  // If a trade was already submitted today, honor the locked direction for
-  // the rest of the session — don't let a VWAP flip open a second wave in
-  // the opposite direction.
-  const currentDay = nyDayKey(Date.now());
-  if (sessionDirectionLock && sessionDirectionLock.dayKey === currentDay) {
-    return sessionDirectionLock.dir;
-  }
-
+  // Direction is determined solely by SPY and QQQ VWAP alignment.
+  // NOTE: the session direction lock early-return was removed 2026-06-29.
+  // Reversal-gate logic in triggerBrokerExecutionIfEligible now owns this:
+  //   - same-direction entries after Wave 1 are blocked (no continuation chasing)
+  //   - opposite-direction entries allowed only with symbol VWAP cross confirmation
+  // Signal engine must see the real market direction so reversal signals can fire.
   const spy = computeIndexSide("SPY");
   const qqq = computeIndexSide("QQQ");
 
-  // Direction is determined solely by SPY and QQQ VWAP alignment.
-  // Previously this also required 60%+ watchlist breadth, which was far too
-  // strict — it returned NEUTRAL during most normal market conditions and
-  // blocked all signal evaluation. The strategy-level "requireSpyQqqAlignment"
-  // filter maps directly to this check.
   if (spy.side === "ABOVE" && qqq.side === "ABOVE") return "BULLISH";
   if (spy.side === "BELOW" && qqq.side === "BELOW") return "BEARISH";
   return "NEUTRAL";
@@ -1088,12 +1081,14 @@ function buildExecRulesFromCfg(cfg: StrategyDefinition) {
     if (Number.isFinite(v) && v > 0) rules.mfeGatePct = v;
   }
 
-  // Trailing stop: once MFE crosses TRAIL_ACTIVATE_PCT, trail the stop
-  // TRAIL_DISTANCE_PCT below the running peak. Locks in profit on runners
-  // instead of waiting for the TIME exit to fire at wherever price is.
-  // Recommended starting values: TRAIL_ACTIVATE_PCT=0.5, TRAIL_DISTANCE_PCT=0.3
+  // Trailing stop — two-phase:
+  //   Phase 1: once MFE crosses TRAIL_ACTIVATE_PCT, trail TRAIL_DISTANCE_PCT below peak.
+  //   Phase 2: once MFE crosses TRAIL_TIGHTEN_PCT, tighten to TRAIL_TIGHTEN_DISTANCE_PCT below peak.
+  // Recommended: TRAIL_ACTIVATE_PCT=0.7, TRAIL_DISTANCE_PCT=0.6, TRAIL_TIGHTEN_PCT=1.5, TRAIL_TIGHTEN_DISTANCE_PCT=0.3
   const rawTrailActivate = process.env.TRAIL_ACTIVATE_PCT;
   const rawTrailDistance = process.env.TRAIL_DISTANCE_PCT;
+  const rawTrailTighten = process.env.TRAIL_TIGHTEN_PCT;
+  const rawTrailTightenDist = process.env.TRAIL_TIGHTEN_DISTANCE_PCT;
   if (rawTrailActivate != null && rawTrailActivate !== "") {
     const v = Number(rawTrailActivate);
     if (Number.isFinite(v) && v > 0) rules.trailActivatePct = v;
@@ -1101,6 +1096,14 @@ function buildExecRulesFromCfg(cfg: StrategyDefinition) {
   if (rawTrailDistance != null && rawTrailDistance !== "") {
     const v = Number(rawTrailDistance);
     if (Number.isFinite(v) && v > 0) rules.trailDistancePct = v;
+  }
+  if (rawTrailTighten != null && rawTrailTighten !== "") {
+    const v = Number(rawTrailTighten);
+    if (Number.isFinite(v) && v > 0) rules.trailTightenPct = v;
+  }
+  if (rawTrailTightenDist != null && rawTrailTightenDist !== "") {
+    const v = Number(rawTrailTightenDist);
+    if (Number.isFinite(v) && v > 0) rules.trailTightenDistancePct = v;
   }
 
   return rules;
@@ -1647,6 +1650,55 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
         `(ref=${spySessionRef.openPrice}, last=${spyLastClose}, threshold=${(SPY_MOVE_BLOCK_PCT * 100).toFixed(1)}%)`
       );
       return;
+    }
+  }
+
+  // Reversal gate (2026-06-29).
+  // After Wave 1 trades, Wave 2 entries are ONLY allowed if:
+  //   (a) direction is OPPOSITE to Wave 1 — reversal, not continuation
+  //   (b) symbol's price has crossed VWAP, confirming the reversal structurally
+  //
+  // Same-direction entries are blocked: they chase extended moves at the top/bottom.
+  // Opposite-direction entries without a VWAP cross are also blocked: could be an
+  // early fade attempt before price has actually broken structure.
+  {
+    const currentDay = nyDayKey(alert.ts);
+    if (sessionDirectionLock && sessionDirectionLock.dayKey === currentDay) {
+      const alertDir: MarketDirection = alert.dir === "CALL" ? "BULLISH" : "BEARISH";
+
+      if (alertDir === sessionDirectionLock.dir) {
+        // Continuation entry: same direction as Wave 1 — block it.
+        console.log(
+          `[reversal-gate] SKIP ${alert.symbol} — same direction as Wave 1 (${alertDir}), continuation entries blocked`
+        );
+        return;
+      }
+
+      // Opposite direction: require symbol VWAP cross confirmation.
+      const symVwap = getVwap(alert.symbol);
+      const price = lastPriceMap.get(alert.symbol) ?? null;
+
+      if (symVwap == null || price == null) {
+        console.log(
+          `[reversal-gate] SKIP ${alert.symbol} — reversal direction (${alertDir}) but no VWAP data to confirm`
+        );
+        return;
+      }
+
+      const vwapConfirmed = alertDir === "BULLISH" ? price > symVwap : price < symVwap;
+
+      if (!vwapConfirmed) {
+        console.log(
+          `[reversal-gate] SKIP ${alert.symbol} — reversal direction (${alertDir}) but price has not crossed VWAP ` +
+          `(price=${price.toFixed(2)}, vwap=${symVwap.toFixed(2)})`
+        );
+        return;
+      }
+
+      console.log(
+        `[reversal-gate] ALLOW ${alert.symbol} — confirmed reversal (${alertDir}), ` +
+        `price=${price.toFixed(2)} vs VWAP=${symVwap.toFixed(2)}`
+      );
     }
   }
 

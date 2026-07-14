@@ -20,8 +20,10 @@ export type ExecRules = {
   timeExitMinutes?: number;   // > 0 (optional) — exit at market once held this many minutes
   mfeGateMinutes?: number;    // > 0 (optional) — check window: if MFE < mfeGatePct% by this time, exit early
   mfeGatePct?: number;        // > 0 (optional) — minimum required MFE % before mfeGateMinutes elapses
-  trailActivatePct?: number;  // > 0 (optional) — % MFE to activate trailing stop (e.g. 0.5 = 0.5%)
-  trailDistancePct?: number;  // > 0 (optional) — % below peak to trail stop (e.g. 0.3 = 0.3%)
+  trailActivatePct?: number;       // > 0 (optional) — % MFE to activate trailing stop (e.g. 0.7 = 0.7%)
+  trailDistancePct?: number;       // > 0 (optional) — % below peak to trail stop (e.g. 0.6 = 0.6%)
+  trailTightenPct?: number;        // > 0 (optional) — % MFE at which trail distance tightens (e.g. 1.5 = 1.5%)
+  trailTightenDistancePct?: number; // > 0 (optional) — tighter trail distance once trailTightenPct hit (e.g. 0.3 = 0.3%)
 };
 
 type ExecState = {
@@ -455,7 +457,19 @@ export class OutcomeTracker {
           }
 
           if (s.exec.trailActive) {
-            const trailDist = s.execRules.trailDistancePct / 100;
+            // Two-phase trail: once MFE exceeds trailTightenPct, switch to the
+            // tighter distance (trailTightenDistancePct). This locks in more
+            // profit on runners without cutting them too early at the start.
+            let trailDist = s.execRules.trailDistancePct / 100;
+            if (
+              s.execRules.trailTightenPct != null &&
+              s.execRules.trailTightenPct > 0 &&
+              s.execRules.trailTightenDistancePct != null &&
+              s.execRules.trailTightenDistancePct > 0 &&
+              mfePct >= s.execRules.trailTightenPct
+            ) {
+              trailDist = s.execRules.trailTightenDistancePct / 100;
+            }
             if (s.dir === "LONG") {
               const newStop = s.maxHigh * (1 - trailDist);
               if (newStop > s.exec.stopPx) s.exec.stopPx = newStop;
