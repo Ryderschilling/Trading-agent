@@ -4,6 +4,7 @@ import { Alert } from "../engine/types";
 import { nyDayKey } from "../market/time";
 import {
   countBrokerOrdersForStrategyDay,
+  countBrokerOrdersForStrategySymbolDay,
   countBrokerOrdersForSymbolDay,
   findLatestSuccessfulBrokerCheckTs,
   findSubmittedBrokerOrderBySetup,
@@ -289,7 +290,13 @@ function makeActivity(args: Partial<BrokerOrderRecord> & Pick<BrokerOrderRecord,
 // Rolling window of recent SUBMITTED entries — used by the anti-cluster gate
 // inside executeConfirmedAlert. Lives in-process; cleared on restart, which is
 // fine because clusters only matter intraday.
-type RecentSubmission = { ts: number; symbol: string; direction: "LONG" | "SHORT" };
+type RecentSubmission = {
+  ts: number;
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  // null when the cluster gate is running account-wide (single-strategy mode)
+  strategyVersion?: number | null;
+};
 const recentSubmissions: RecentSubmission[] = [];
 const ONE_MINUTE_MS = 60_000;
 const FIVE_MINUTES_MS = 5 * ONE_MINUTE_MS;
@@ -300,12 +307,20 @@ function pruneRecentSubmissions(now: number): void {
   }
 }
 
-function countRecentSubmissions(now: number, withinMs: number, direction?: "LONG" | "SHORT"): number {
+function countRecentSubmissions(
+  now: number,
+  withinMs: number,
+  direction?: "LONG" | "SHORT",
+  strategyVersion?: number | null
+): number {
   let n = 0;
   for (let i = recentSubmissions.length - 1; i >= 0; i--) {
     const r = recentSubmissions[i];
     if (now - r.ts > withinMs) break;
     if (direction && r.direction !== direction) continue;
+    // When a strategy scope is supplied, only that strategy's own entries count
+    // toward its cluster limit.
+    if (strategyVersion != null && r.strategyVersion !== strategyVersion) continue;
     n++;
   }
   return n;
@@ -350,6 +365,57 @@ export class BrokerExecutionService {
     const result = await adapter.closePosition(symbol);
     if (!result?.orderId) return null;
     return { orderId: result.orderId, adapter };
+  }
+
+  /**
+   * Close exactly `qty` shares of a position instead of flattening the symbol.
+   *
+   * Added 2026-07-28. closePosition() asks the broker to flatten the whole
+   * symbol, which is correct with one strategy and wrong with two: when the
+   * retest strategy and the chase strategy both hold NVDA, whichever one exits
+   * first was closing the other one's shares too. Every exit now closes only
+   * the qty that belongs to the session that fired.
+   *
+   * Falls back to a full close when qty is unknown, which is the old behaviour.
+   */
+  async closePositionQty(
+    symbol: string,
+    dir: "LONG" | "SHORT",
+    qty: number | null
+  ): Promise<{ orderId: string; adapter: any } | null> {
+    if (qty == null || !Number.isFinite(qty) || qty <= 0) {
+      return this.closePosition(symbol);
+    }
+
+    const cfg = normalizeBrokerConfig(loadBrokerConfig(this.db));
+    if (!cfg.brokerKey) throw new Error("no broker configured");
+    if (cfg.mode === "disabled") throw new Error("broker mode disabled");
+    const adapter = buildAdapter(cfg);
+
+    // Offsetting market order. A LONG is closed by selling, a SHORT by buying.
+    const side: "buy" | "sell" = dir === "LONG" ? "sell" : "buy";
+    const rounded = Number(qty.toFixed(6));
+
+    try {
+      const response = await adapter.submitMarketOrder({
+        symbol,
+        side,
+        clientOrderId: `ta-exit-${Date.now().toString(36)}-${Math.floor(rounded * 1000)}`,
+        qty: rounded,
+        notional: null,
+        extendedHours: false,
+      });
+      if (!response?.brokerOrderId) return null;
+      return { orderId: response.brokerOrderId, adapter };
+    } catch (error: any) {
+      // A partial close can fail if the broker holds fewer shares than we think
+      // (manual intervention, an earlier full close). Fall back to flattening so
+      // we never strand an open position.
+      console.warn(
+        `[broker] qty close failed for ${symbol} (${rounded}): ${error?.message ?? error} - falling back to full close`
+      );
+      return this.closePosition(symbol);
+    }
   }
 
   async setStopOrder(symbol: string, stopPrice: number, qty: number | null): Promise<any> {
@@ -718,8 +784,12 @@ export class BrokerExecutionService {
     // single-threaded, so no other executeConfirmedAlert call can interleave
     // between countRecentSubmissions() and recentSubmissions.push(). That makes
     // the gate race-free even when N entries fire in the same tick.
+    const clusterScope = cfg.execution.perStrategyGuards === true && strategyVersion != null
+      ? Number(strategyVersion)
+      : null;
+
     if (cfg.execution.maxEntriesPerMinute != null) {
-      const recentTotal = countRecentSubmissions(now, ONE_MINUTE_MS);
+      const recentTotal = countRecentSubmissions(now, ONE_MINUTE_MS, undefined, clusterScope);
       if (recentTotal >= cfg.execution.maxEntriesPerMinute) {
         return persist({
           ...baseActivity,
@@ -730,7 +800,7 @@ export class BrokerExecutionService {
     }
 
     if (cfg.execution.maxSameDirEntriesPer5Min != null) {
-      const recentSameDir = countRecentSubmissions(now, FIVE_MINUTES_MS, direction);
+      const recentSameDir = countRecentSubmissions(now, FIVE_MINUTES_MS, direction, clusterScope);
       if (recentSameDir >= cfg.execution.maxSameDirEntriesPer5Min) {
         return persist({
           ...baseActivity,
@@ -742,10 +812,21 @@ export class BrokerExecutionService {
 
     // Gate passed — reserve the slot NOW, before any await. persist() releases
     // it if the order doesn't end up SUBMITTED.
-    clusterReservation = { ts: now, symbol: alert.symbol, direction };
+    clusterReservation = { ts: now, symbol: alert.symbol, direction, strategyVersion: clusterScope };
     recentSubmissions.push(clusterReservation);
 
-    const ordersForSymbol = countBrokerOrdersForSymbolDay(this.db, dayKey, alert.symbol);
+    // PER-STRATEGY GUARDS (2026-07-28)
+    //
+    // These caps were written when one ruleset was active. Running two rulesets
+    // side by side, they became a race: whichever strategy fired first consumed
+    // the shared allowance and starved the other, which would have made the A/B
+    // comparison meaningless. When perStrategyGuards is on, the symbol/day and
+    // cluster counters are scoped to the strategy that raised the alert.
+    const perStrategy = cfg.execution.perStrategyGuards === true && strategyVersion != null;
+
+    const ordersForSymbol = perStrategy
+      ? countBrokerOrdersForStrategySymbolDay(this.db, dayKey, alert.symbol, strategyVersion as number)
+      : countBrokerOrdersForSymbolDay(this.db, dayKey, alert.symbol);
     if (cfg.execution.maxOrdersPerSymbolPerDay != null && ordersForSymbol >= cfg.execution.maxOrdersPerSymbolPerDay) {
       return persist({ ...baseActivity, status: "SKIPPED", reason: "max orders per symbol reached" });
     }
@@ -784,11 +865,19 @@ export class BrokerExecutionService {
         });
       }
 
-      if (cfg.execution.avoidExistingPosition && status.positions.some((row) => row.symbol === alert.symbol)) {
+      // With perStrategyGuards on, the account position is a blend of both
+      // strategies, so "is there a position on this symbol" no longer answers
+      // "does THIS strategy already hold it". index.ts passes the per-strategy
+      // answer in alert.meta.strategyHoldsSymbol; we honour that instead.
+      const strategyHolds = perStrategy
+        ? (alert as any)?.meta?.strategyHoldsSymbol === true
+        : status.positions.some((row) => row.symbol === alert.symbol);
+
+      if (cfg.execution.avoidExistingPosition && strategyHolds) {
         return persist({ ...baseActivity, status: "SKIPPED", reason: "existing position on symbol" });
       }
 
-      if (cfg.execution.avoidOpenOrders && status.orders.some((row) => row.symbol === alert.symbol)) {
+      if (!perStrategy && cfg.execution.avoidOpenOrders && status.orders.some((row) => row.symbol === alert.symbol)) {
         return persist({ ...baseActivity, status: "SKIPPED", reason: "existing open order on symbol" });
       }
     } catch (error: any) {

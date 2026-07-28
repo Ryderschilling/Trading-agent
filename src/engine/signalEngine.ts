@@ -25,6 +25,23 @@ export type EngineConfig = {
    * Default: false (off). Production toggles via env TREND_4H_FILTER=1.
    */
   trendFilter4h?: boolean;
+
+  /**
+   * "retest" (default) requires price to come back and touch the broken level
+   * within retestTolerancePct before the tap entry fires. "immediate" fires on
+   * the first 1m bar after the break, wherever price is.
+   *
+   * Before 2026-07-28 the engine only ever behaved as "immediate", because
+   * getStrategyRetestTolerancePct() returned a percent where a fraction was
+   * expected and the tolerance came out at 20% of price.
+   */
+  entryMode?: "retest" | "immediate";
+
+  /**
+   * Abandon a BROKEN setup if the retest has not arrived within this many
+   * strategy-timeframe bars. Null = wait until the caller's entry cutoff.
+   */
+  maxRetestWaitBars?: number | null;
 };
 
 export type SymbolContext = {
@@ -161,7 +178,10 @@ export class SignalEngine {
     if (ctx.lastRS !== rsNeeded) return null;
 
     const candidates: LevelType[] = dir === "CALL" ? ["PMH", "PDH"] : ["PML", "PDL"];
-    const nearBreakPct = Math.max(this.cfg.retestTolerancePct * 4, 0.0035);
+    // 0.35% of price, floored. Previously Math.max(retestTolerancePct * 4, ...)
+    // which, with the old 0.2 tolerance, made every idle symbol a "prebreak"
+    // candidate at 80% of price.
+    const nearBreakPct = Math.max(Math.min(this.cfg.retestTolerancePct * 4, 0.01), 0.0035);
 
     let best: { levelType: LevelType; levelPrice: number; distPct: number } | null = null;
     for (const levelType of candidates) {
@@ -310,6 +330,17 @@ export class SignalEngine {
         return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
 
+      // Retest window. maxRetestWaitBars finally wires up the long-dormant
+      // setup.maxRetestBars field: a break that never gets retested is abandoned
+      // instead of sitting armed until the entry cutoff. Bar-time based, never
+      // Date.now(), so replays stay deterministic.
+      if (this.cfg.maxRetestWaitBars != null && this.cfg.maxRetestWaitBars > 0) {
+        const barsWaited = Math.round((last.t - s.breakBarTime) / (this.cfg.timeframeMin * 60_000));
+        if (barsWaited > this.cfg.maxRetestWaitBars) {
+          return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
+        }
+      }
+
       if (s.dir === "CALL" && last.c < s.levelPrice) {
         return this.emitAndCooldown(symbol, marketDir, rs, "—", "—", null, last.c, "SETUP INVALID — STAND DOWN", nowTs ?? last.t);
       }
@@ -420,8 +451,12 @@ export class SignalEngine {
 
     const tol = ctx.tapState.tol;
 
-    // touched if the 1m candle range overlaps the level +/- tol
-    const touched = low <= s.levelPrice + tol && high >= s.levelPrice - tol;
+    // touched if the 1m candle range overlaps the level +/- tol.
+    // In "immediate" mode we do not require a retest at all: the first 1m bar
+    // after the break is the entry. Kept explicit so the breakout-continuation
+    // variant can be A/B tested against the real retest rule.
+    const immediate = this.cfg.entryMode === "immediate";
+    const touched = immediate || (low <= s.levelPrice + tol && high >= s.levelPrice - tol);
 
     const disengageDist = tol * 2;
 

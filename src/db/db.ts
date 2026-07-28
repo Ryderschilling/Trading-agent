@@ -304,6 +304,13 @@ function migrate(db: Database.Database) {
   if (!hasColumn(db, "outcomes", "entry_fill"))       db.exec(`ALTER TABLE outcomes ADD COLUMN entry_fill REAL;`);
   if (!hasColumn(db, "outcomes", "qty"))              db.exec(`ALTER TABLE outcomes ADD COLUMN qty REAL;`);
   if (!hasColumn(db, "outcomes", "realized_pnl_usd")) db.exec(`ALTER TABLE outcomes ADD COLUMN realized_pnl_usd REAL;`);
+  // Which ruleset produced this trade. Added 2026-07-28 so two strategies can
+  // run side by side and be scored separately. Older rows stay null; the
+  // Compare page falls back to alerts.meta_json.rulesetVersion for those.
+  if (!hasColumn(db, "outcomes", "ruleset_version")) {
+    db.exec(`ALTER TABLE outcomes ADD COLUMN ruleset_version INTEGER;`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_ruleset ON outcomes(ruleset_version);`);
+  }
 
   // Backtest runs: migrate legacy installs to the richer runtime schema.
   if (!hasColumn(db, "backtest_runs", "started_ts")) {

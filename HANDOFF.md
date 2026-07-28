@@ -163,3 +163,101 @@ v9 has a few weeks of data.
 3. Swing timeframe support (60m/240m/daily)
 4. Strategy performance analytics dashboard — **DONE**
 5. (renumbered) — see CLAUDE.md for full file map / domain concepts
+
+---
+
+## 9. 2026-07-28 — the retest tolerance defect, and the A/B build
+
+### The defect
+
+`getStrategyRetestTolerancePct()` in `src/rules/schema.ts` returned `0.2` meaning
+"0.2 percent". `SignalEngine` consumes it as a raw fraction:
+
+```ts
+const tol = Math.abs(lp) * this.cfg.retestTolerancePct;
+```
+
+That made the retest band **20% of price**, so the `touched` test in
+`onMinuteBar()` was always true and the tap entry fired on the first 1m bar
+after the break, wherever price happened to be.
+
+Evidence across the 301 closed trades from 2026-04-15 to 2026-07-27:
+
+- the level sits inside the entry candle in **12 of 301 trades (4%)**
+- median entry is **0.76% away** from the level, while the median 1m candle is
+  only 0.155% tall
+- every recorded FORMING to ENTRY pair in `alerts` is exactly **1 minute** apart
+
+The system was trading break-and-chase. The strategy in STRATEGY.md had never
+run. Note the replay harness always used a sane fraction (0.003), which is why
+replay and production disagreed for months.
+
+### What was measured
+
+Per-trade percent, summed, 4 bps of round-trip slippage on every exit:
+
+| entry | exits | n | total | Apr-May | Jun-Jul | max DD |
+|---|---|---|---|---|---|---|
+| chase (bug) | current (1% stop, two-phase trail) | 301 | -13.79% | -16.66 | +2.87 | -18.65% |
+| chase (bug) | 0.4% stop / 2.0% target / no trail | 301 | +13.79% | -10.31 | +24.10 | -20.63% |
+| retest | current | 119 | -9.93% | -3.43 | -6.50 | -12.12% |
+| retest | 0.4% stop / 2.0% target / no trail | 119 | +13.65% | +3.48 | +10.16 | -3.69% |
+
+Neither change works alone. The trail was cutting winners monotonically across
+the whole parameter sweep; the 1% stop is far too wide once the entry sits at
+the level. Only the pair is positive in both halves.
+
+Ideas tested and rejected: filtering chased entries (worse at every threshold),
+skipping the first 30 minutes (much worse — the good trades are at the open),
+longs-only / symbol / weekday selection (no mechanism, does not repeat across
+halves).
+
+### What changed in the code
+
+- `schema.ts` — tolerance returns a fraction; new `setup.entryMode`
+  ("retest" | "immediate") and `setup.retestTolerancePct` (percent); new
+  optional per-strategy exit overrides on `risk` (trail + MFE gate) that take
+  precedence over the `TRAIL_*` / `MFE_GATE_*` env vars
+- `signalEngine.ts` — honours `entryMode`; wires up the long-dormant
+  `maxRetestBars` as a retest expiry window; `nearBreakPct` no longer scales off
+  the broken tolerance
+- `outcomeTracker.ts` — `hasLiveSessionForSymbol()`, `sessionQty()`
+- `broker/service.ts` — `closePositionQty()` closes only the qty a session owns
+  instead of flattening the symbol; `perStrategyGuards` scopes the symbol/day,
+  existing-position and anti-cluster caps to the strategy that raised the alert
+- `index.ts` — per-strategy session direction lock and direction flip (they were
+  global, so the first strategy to trade locked out the second); outcomes now
+  carry `ruleset_version`
+- `db.ts` — `outcomes.ruleset_version` migration + index
+- `replay` — `--entry-mode=retest|immediate` for head-to-head replays
+- `public/compare.html` + `/api/compare` — A/B scoreboard
+
+### To run the A/B
+
+```bash
+npm run build
+npx ts-node scripts/setup-ab-test.ts           # dry run, prints the plan
+npx ts-node scripts/setup-ab-test.ts --apply   # backs up the DB, then writes
+./scripts/start-mac.sh                          # restart so both runners load
+```
+
+That activates two rulesets: **v10 A-Retest** (retest entry, 0.40% stop, 2.0%
+target) and **v11 B-Chase** (immediate entry, 1.0% stop, 2.5% target). Exits are
+otherwise identical, so the entry rule is the only real variable. It also widens
+the watchlist to 20 symbols and lifts the account caps, which were binding hard:
+"max daily notional" was the third most common skip reason at $25k with $5k
+positions.
+
+Watch `/compare`. Roughly 40 closed trades per arm before the difference means
+anything, so four to six weeks.
+
+### Known limits of this test
+
+- Both arms share one Alpaca paper account, so the dollar P&L is a blend.
+  `exit_return_pct` is per-alert and computed from bar prices, so the percent
+  column is the score that separates them. Separate paper accounts would be
+  cleaner and are the obvious next step if the result is close.
+- June carries a lot of the retest arm's backtested edge. April is slightly
+  negative. This strategy makes money on trending days.
+- The retest arm wins 37.8% of its trades and its median trade is a full stop.
+  That shape is correct but uncomfortable.

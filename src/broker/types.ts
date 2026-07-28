@@ -19,6 +19,13 @@ export type BrokerExecutionPolicy = {
   takeProfitPct: number | null;
   maxDailyNotional: number | null;
   maxOpenPositions: number | null;
+  /**
+   * Scope the symbol/day, existing-position and anti-cluster caps to the
+   * strategy that raised the alert instead of the whole account. Required when
+   * more than one ruleset is active or the first strategy to fire starves the
+   * others. Default false = pre-2026-07-28 account-wide behaviour.
+   */
+  perStrategyGuards?: boolean;
   maxOrdersPerSymbolPerDay: number | null;
   avoidExistingPosition: boolean;
   avoidOpenOrders: boolean;

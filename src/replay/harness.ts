@@ -35,7 +35,10 @@ const FIVE_MIN_MS = 5 * 60_000;
 
 const DEFAULT_ENGINE_CFG = {
   timeframeMin: 5,
-  retestTolerancePct: 0.003, // 0.3% — gives ~$0.30 tap window on a $100 level
+  // 0.2% band, matching the corrected getStrategyRetestTolerancePct(). Note the
+  // harness always used a sane fraction here while the live engine was running
+  // at 20% of price, which is why replay and production disagreed for months.
+  retestTolerancePct: 0.002,
   rsWindowBars5m: 3,
   emaPeriods: [] as number[], // Phase 1 keeps this off for determinism
   trendFilter4h: false as boolean,
@@ -92,6 +95,8 @@ async function runScenario(scenario: Scenario, opts: HarnessOptions): Promise<Sc
   const engine = new SignalEngine({
     ...DEFAULT_ENGINE_CFG,
     trendFilter4h: Boolean(opts.trendFilter4h),
+    entryMode: opts.entryMode === "immediate" ? "immediate" : "retest",
+    ...(opts.retestTolerancePct != null ? { retestTolerancePct: opts.retestTolerancePct } : {}),
   });
 
   const allSymbols = Object.keys(scenario.bars);

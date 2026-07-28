@@ -29,6 +29,19 @@ export type BreakRetestSetup = {
   retestConfirmation: RetestConfirmation;
   maxRetestBars: number;
   entryTrigger: BreakRetestEntryTrigger;
+
+  /**
+   * "retest" (default) waits for price to return to the broken level.
+   * "immediate" enters on the first bar after the break. Optional so every
+   * legacy ruleset keeps parsing; absent means "retest".
+   */
+  entryMode?: "retest" | "immediate";
+
+  /**
+   * Retest band in PERCENT of the level price (0.2 = 0.2%). Optional; when
+   * absent the value is derived from breakConfirmation.
+   */
+  retestTolerancePct?: number | null;
 };
 
 export type MaCrossSetup = {
@@ -63,6 +76,22 @@ export type StrategyRisk = {
   moveToBreakevenAtR: number | null;
   timeExitBars: number | null;
   maxOpenPositions: number;
+
+  /**
+   * Per-strategy exit overrides (added 2026-07-28 for the retest-vs-chase A/B).
+   * All optional and all in PERCENT. When absent the engine falls back to the
+   * TRAIL_* / MFE_GATE_* env vars, which is the pre-existing behaviour, so
+   * every saved ruleset keeps working untouched.
+   *
+   * Set trailActivatePct to 0 to explicitly disable the trailing stop for this
+   * strategy even when the env vars are set.
+   */
+  trailActivatePct?: number | null;
+  trailDistancePct?: number | null;
+  trailTightenPct?: number | null;
+  trailTightenDistancePct?: number | null;
+  mfeGateMinutes?: number | null;
+  mfeGatePct?: number | null;
 };
 
 export type StrategyBrokerControls = {
@@ -299,6 +328,8 @@ function normalizeBreakRetestSetup(value: unknown, fallback?: BreakRetestSetup):
     retestConfirmation: normalizeRetestConfirmation(src.retestConfirmation, base.retestConfirmation),
     maxRetestBars: finiteInteger(src.maxRetestBars, 1) ?? base.maxRetestBars,
     entryTrigger: normalizeBreakRetestEntryTrigger(src.entryTrigger, base.entryTrigger),
+    entryMode: src.entryMode === "immediate" ? "immediate" : (base.entryMode ?? "retest"),
+    retestTolerancePct: finitePositive(src.retestTolerancePct) ?? base.retestTolerancePct ?? null,
   };
 }
 
@@ -356,6 +387,14 @@ function normalizeCurrentShape(input: unknown, opts?: { name?: string | null }):
       moveToBreakevenAtR: finitePositive(riskSrc.moveToBreakevenAtR),
       timeExitBars: finiteInteger(riskSrc.timeExitBars, 1),
       maxOpenPositions: finiteInteger(riskSrc.maxOpenPositions, 1) ?? base.risk.maxOpenPositions,
+      // Optional per-strategy exit overrides. nonNegative so 0 survives and can
+      // mean "explicitly off" (finitePositive would drop it back to the env var).
+      trailActivatePct: finiteNonNegative(riskSrc.trailActivatePct),
+      trailDistancePct: finiteNonNegative(riskSrc.trailDistancePct),
+      trailTightenPct: finiteNonNegative(riskSrc.trailTightenPct),
+      trailTightenDistancePct: finiteNonNegative(riskSrc.trailTightenDistancePct),
+      mfeGateMinutes: finiteNonNegative(riskSrc.mfeGateMinutes),
+      mfeGatePct: finiteNonNegative(riskSrc.mfeGatePct),
     },
     brokerCaps: {
       maxTradesPerDay: finiteInteger(brokerCapsSrc.maxTradesPerDay, 0),
@@ -590,11 +629,58 @@ export function getStrategyStructureLookbackBars(strategy: StrategyDefinition): 
   return 180;
 }
 
+/**
+ * Retest tolerance as a FRACTION of the level price (0.002 = 0.2%).
+ *
+ * BUG FIX 2026-07-28: this used to return 0.2 / 0.15 / 0.1, which reads as
+ * "0.2 percent" but SignalEngine consumes it as a raw fraction:
+ *   tol = Math.abs(levelPrice) * cfg.retestTolerancePct
+ * That made the band 20% of price, so the `touched` test in onMinuteBar was
+ * always true and the tap fired on the first 1m bar after the break instead of
+ * on a real retest. Across 301 live trades the level sat inside the entry candle
+ * only 4% of the time; the median entry was 0.76% away from the level it was
+ * supposedly retesting. The system was trading break-and-chase.
+ *
+ * A strategy may now set setup.retestTolerancePct explicitly in PERCENT
+ * (e.g. 0.2 meaning 0.2%); it is converted to a fraction here.
+ */
 export function getStrategyRetestTolerancePct(strategy: StrategyDefinition): number {
-  if (strategy.setupType === "ma_cross") return 0.1;
+  if (strategy.setupType === "ma_cross") return 0.001;
   const setup = strategy.setup as BreakRetestSetup;
-  if (setup.breakConfirmation === "wick_and_close") return 0.2;
-  return 0.15;
+
+  const explicit = Number(setup.retestTolerancePct);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit / 100;
+
+  if (setup.breakConfirmation === "wick_and_close") return 0.002;
+  return 0.0015;
+}
+
+/**
+ * How the entry fires once a level has broken.
+ *   "retest"    - wait for price to come back and touch the level. Default,
+ *                 and the strategy as written in STRATEGY.md.
+ *   "immediate" - enter on the first bar after the break, wherever price is.
+ *                 This is what the tolerance bug produced by accident. It is a
+ *                 legitimate breakout-continuation rule, so it is kept as an
+ *                 explicit opt-in for A/B testing rather than deleted.
+ */
+export function getStrategyEntryMode(strategy: StrategyDefinition): "retest" | "immediate" {
+  if (strategy.setupType !== "break_retest") return "retest";
+  const setup = strategy.setup as BreakRetestSetup;
+  return setup.entryMode === "immediate" ? "immediate" : "retest";
+}
+
+/**
+ * How many strategy-timeframe bars a BROKEN setup may wait for its retest
+ * before it is abandoned. Null means wait until the entry cutoff.
+ * Reads the long-dormant setup.maxRetestBars field.
+ */
+export function getStrategyMaxRetestWaitBars(strategy: StrategyDefinition): number | null {
+  if (strategy.setupType !== "break_retest") return null;
+  const setup = strategy.setup as BreakRetestSetup;
+  const v = Number(setup.maxRetestBars);
+  if (Number.isFinite(v) && v > 0) return Math.floor(v);
+  return null;
 }
 
 export function getStrategyEmaPeriods(strategy: StrategyDefinition): number[] {
@@ -670,6 +756,17 @@ export function buildOutcomeExecRules(strategy: StrategyDefinition): ExecRules |
   if (risk.timeExitBars != null && risk.timeExitBars > 0) {
     out.timeExitMinutes = risk.timeExitBars * getStrategyTimeframeMin(strategy);
   }
+
+  // Per-strategy exit overrides. Only applied when the field is present, so a
+  // ruleset that says nothing still inherits the TRAIL_* / MFE_GATE_* env vars
+  // in buildExecRulesFromCfg(). A value of 0 means "explicitly off" and is
+  // recorded as 0 so the env fallback is skipped.
+  if (risk.trailActivatePct != null) out.trailActivatePct = risk.trailActivatePct;
+  if (risk.trailDistancePct != null) out.trailDistancePct = risk.trailDistancePct;
+  if (risk.trailTightenPct != null) out.trailTightenPct = risk.trailTightenPct;
+  if (risk.trailTightenDistancePct != null) out.trailTightenDistancePct = risk.trailTightenDistancePct;
+  if (risk.mfeGateMinutes != null) out.mfeGateMinutes = risk.mfeGateMinutes;
+  if (risk.mfeGatePct != null) out.mfeGatePct = risk.mfeGatePct;
 
   return out;
 }

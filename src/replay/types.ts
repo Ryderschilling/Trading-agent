@@ -154,6 +154,15 @@ export type ReplayReport = {
 };
 
 export type HarnessOptions = {
+  /**
+   * Entry rule under test. "retest" waits for price to return to the broken
+   * level; "immediate" enters on the first bar after the break. Default
+   * "retest". Added 2026-07-28 so the two live rulesets can be replayed
+   * head-to-head on the same scenarios.
+   */
+  entryMode?: "retest" | "immediate";
+  /** Retest band as a FRACTION of level price. Default 0.002 (0.2%). */
+  retestTolerancePct?: number;
   /** Only run scenarios whose id matches this string (substring match). */
   scenarioFilter?: string;
   /** When true and OPENAI_API_KEY is set, call AiOperatorService for a post-run review. */

@@ -52,6 +52,8 @@ export function createHttpApp(args: {
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
+  /** A/B comparison: closed trades grouped by ruleset version. */
+  getStrategyCompare?: () => any;
   getAnalytics?: () => any;
   // From remote — used by /api/candles/:symbol route below. Optional so HEAD's
   // existing multi-strategy main file isn't forced to provide it immediately.
@@ -282,6 +284,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/", (_req, res) => sendPage(res, "index.html"));
   app.get("/outcomes", (_req, res) => sendPage(res, "outcomes.html"));
   app.get("/analytics", (_req, res) => sendPage(res, "analytics.html"));
+  app.get("/compare", (_req, res) => sendPage(res, "compare.html"));
   app.get("/watch", (_req, res) => sendPage(res, "watchlist.html"));
   app.get("/watchlist", (_req, res) => sendPage(res, "watchlist.html")); // backward compat
   app.get("/rules", (_req, res) => sendPage(res, "rules.html"));
@@ -291,6 +294,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
 
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
   app.get("/analytics.html", (_req, res) => res.redirect(301, "/analytics"));
+  app.get("/compare.html", (_req, res) => res.redirect(301, "/compare"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
   app.get("/brokers.html", (_req, res) => res.redirect(301, "/brokers"));
@@ -524,6 +528,16 @@ app.get("/api/broker/activity", (req, res) => {
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+  // A/B comparison across active rulesets. Powers /compare.html.
+  app.get("/api/compare", (_req, res) => {
+    if (!args.getStrategyCompare) return res.json({ ok: false, error: "compare not enabled" });
+    try {
+      res.json({ ok: true, ...args.getStrategyCompare() });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "compare failed" });
+    }
+  });
 
   // Strategy performance analytics — aggregated win rate, expectancy, R,
   // drawdown, equity curve, and breakdowns by exit reason / direction /

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compare • Trading Agent</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/logo.PNG" />
+    <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="/ui.js" defer></script>
+
+    <style>
+      .arms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 16px; }
+      .arm { border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(255,255,255,.04); padding: 14px 16px; position: relative; overflow: hidden; }
+      .arm.lead { border-color: rgba(74,222,128,.45); }
+      .arm.lead::after { content: "LEADING"; position: absolute; top: 12px; right: 14px; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: #4ade80; }
+      .arm h3 { margin: 0 0 2px; font-size: 17px; font-weight: 800; }
+      .arm .mode { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+      .arm .desc { color: var(--muted); font-size: 12px; margin: 8px 0 12px; line-height: 1.5; }
+      .headline { font-size: 30px; font-weight: 800; letter-spacing: -.02em; margin: 6px 0 2px; }
+      .headline .unit { font-size: 14px; opacity: .55; font-weight: 700; }
+      .subline { color: var(--muted); font-size: 12px; }
+      .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 10px; margin-top: 14px; }
+      .kpi { border-top: 1px solid rgba(255,255,255,.08); padding-top: 7px; }
+      .kpi .k { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+      .kpi .v { font-size: 15px; font-weight: 700; margin-top: 2px; }
+      .pos { color: #4ade80; } .neg { color: #ff6b6b; } .mut { color: var(--muted); }
+      .eqwrap { margin-top: 12px; }
+      svg.eq { width: 100%; height: 74px; display: block; }
+      table.cmp { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.cmp th { text-align: right; padding: 8px 10px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,.10); }
+      table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+      table.cmp td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.05); text-align: right; font-variant-numeric: tabular-nums; }
+      table.cmp tr.spacer td { border: none; height: 6px; padding: 0; }
+      .verdict { border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; font-size: 13.5px; line-height: 1.6; border: 1px solid rgba(255,255,255,.10); background: rgba(255,255,255,.03); }
+      .verdict b { font-weight: 800; }
+      .pill { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); color: var(--muted); margin-left: 6px; }
+      .muted-note { color: var(--muted); font-size: 11.5px; line-height: 1.55; margin-top: 10px; }
+    </style>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <img src="/logo.PNG" class="brand-logo" alt="Logo" />
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/analytics">Analytics</a>
+          <a class="tab active" href="/compare">Compare</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab" href="/brokers">Brokers</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Strategy A/B</div>
+              <div class="card-sub" id="sub">loading…</div>
+            </div>
+          </div>
+
+          <div id="verdict" class="verdict" style="display:none"></div>
+          <div class="arms" id="arms"></div>
+
+          <table class="cmp" id="tbl"></table>
+
+          <div class="muted-note">
+            Every number is per-trade percent, summed, with 4 bps of round-trip slippage charged on
+            every exit. Both arms share one broker account, so the dollar column is a blend and the
+            percent column is the score that actually separates them. A run needs roughly 40 closed
+            trades per arm before the difference means anything.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const fmt = (v, d = 2) => (v == null || Number.isNaN(v) ? "—" : Number(v).toFixed(d));
+      const sgn = (v, d = 2) => (v == null ? "—" : (v >= 0 ? "+" : "") + Number(v).toFixed(d));
+      const cls = (v) => (v == null ? "mut" : v > 0 ? "pos" : v < 0 ? "neg" : "mut");
+
+      function spark(equity, color) {
+        if (!equity || equity.length < 2) return '<div class="subline">no closed trades yet</div>';
+        const lo = Math.min(0, ...equity), hi = Math.max(0, ...equity);
+        const pad = (hi - lo) * 0.12 || 1;
+        const L = lo - pad, H = hi + pad, W = 300, Ht = 74;
+        const X = (i) => (W * i) / Math.max(1, equity.length - 1);
+        const Y = (v) => 6 + (Ht - 12) * ((H - v) / (H - L));
+        const pts = equity.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
+        const zero = Y(0).toFixed(1);
+        return (
+          '<svg class="eq" viewBox="0 0 ' + W + " " + Ht + '" preserveAspectRatio="none">' +
+          '<line x1="0" y1="' + zero + '" x2="' + W + '" y2="' + zero + '" stroke="rgba(255,255,255,.16)" stroke-dasharray="3,3"/>' +
+          '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="2" vector-effect="non-scaling-stroke"/>' +
+          "</svg>"
+        );
+      }
+
+      function armCard(s, lead) {
+        const st = s.stats || { n: 0 };
+        const color = (st.totalPct ?? 0) >= 0 ? "#4ade80" : "#ff6b6b";
+        const kpi = (k, v, c) => '<div class="kpi"><div class="k">' + k + '</div><div class="v ' + (c || "") + '">' + v + "</div></div>";
+        return (
+          '<div class="arm' + (lead ? " lead" : "") + '">' +
+          "<h3>" + s.name + (s.active ? "" : '<span class="pill">inactive</span>') + "</h3>" +
+          '<div class="mode">' + (s.entryMode === "immediate" ? "chase entry" : "retest entry") +
+          " · stop " + (s.stopPct != null ? s.stopPct + "%" : "—") +
+          " · target " + (s.targetR != null && s.stopPct != null ? (s.targetR * s.stopPct).toFixed(2) + "%" : "—") + "</div>" +
+          (s.description ? '<div class="desc">' + s.description + "</div>" : "") +
+          '<div class="headline ' + cls(st.totalPct) + '">' + sgn(st.totalPct) + '<span class="unit">%</span></div>' +
+          '<div class="subline">' + (st.n || 0) + " closed trades · " + sgn(st.avgPct, 3) + "% average</div>" +
+          '<div class="eqwrap">' + spark(st.equity, color) + "</div>" +
+          '<div class="kpis">' +
+          kpi("Win rate", st.n ? fmt(st.winRate, 1) + "%" : "—") +
+          kpi("Profit factor", st.profitFactor ?? "—", st.profitFactor > 1 ? "pos" : st.profitFactor ? "neg" : "") +
+          kpi("Max DD", st.n ? fmt(st.maxDrawdownPct) + "%" : "—", "neg") +
+          kpi("Median", st.n ? sgn(st.medianPct, 3) + "%" : "—", cls(st.medianPct)) +
+          kpi("Minus top 3", st.n ? sgn(st.totalExTop3) + "%" : "—", cls(st.totalExTop3)) +
+          kpi("At $5k", st.n ? "$" + sgn(st.usdAt5k, 0) : "—", cls(st.usdAt5k)) +
+          "</div></div>"
+        );
+      }
+
+      function rowsFor(arms, combined) {
+        const R = [
+          ["Closed trades", (s) => s.n || 0, 0, false],
+          ["Total %", (s) => s.totalPct, 2, true],
+          ["Average per trade %", (s) => s.avgPct, 4, true],
+          ["Median trade %", (s) => s.medianPct, 3, true],
+          ["Win rate %", (s) => s.winRate, 1, false],
+          ["Profit factor", (s) => s.profitFactor, 3, false],
+          ["Max drawdown %", (s) => s.maxDrawdownPct, 2, true],
+          ["Best trade %", (s) => s.best, 2, true],
+          ["Worst trade %", (s) => s.worst, 2, true],
+          ["Total minus top 3 %", (s) => s.totalExTop3, 2, true],
+          ["Paper $ at 5k/position", (s) => s.usdAt5k, 0, true],
+          ["Broker realized $", (s) => s.realizedUsd, 2, true],
+        ];
+        let h = "<tr><th>Metric</th>";
+        for (const a of arms) h += "<th>" + a.name + "</th>";
+        h += "<th>Both arms</th></tr>";
+        for (const [label, get, d, colour] of R) {
+          h += "<tr><td>" + label + "</td>";
+          for (const a of arms) {
+            const v = get(a.stats || {});
+            h += '<td class="' + (colour ? cls(v) : "") + '">' + (colour ? sgn(v, d) : v == null ? "—" : fmt(v, d)) + "</td>";
+          }
+          const cv = get(combined || {});
+          h += '<td class="' + (colour ? cls(cv) : "") + '">' + (colour ? sgn(cv, d) : cv == null ? "—" : fmt(cv, d)) + "</td>";
+          h += "</tr>";
+        }
+        return h;
+      }
+
+      function verdictText(arms) {
+        const scored = arms.filter((a) => (a.stats?.n || 0) > 0);
+        if (scored.length < 2) return "Waiting for both arms to close trades.";
+        const [a, b] = [...scored].sort((x, y) => (y.stats.totalPct ?? 0) - (x.stats.totalPct ?? 0));
+        const minN = Math.min(...scored.map((x) => x.stats.n));
+        const gap = (a.stats.totalPct ?? 0) - (b.stats.totalPct ?? 0);
+        if (minN < 40) {
+          return (
+            "<b>Too early to call.</b> " + a.name + " leads by " + fmt(gap) + " points, but the smaller arm has only " +
+            minN + " closed trades. Nothing here is meaningful under about 40 per arm — expect four to six weeks."
+          );
+        }
+        if (Math.abs(gap) < 3) {
+          return "<b>Too close to separate.</b> The arms are within " + fmt(Math.abs(gap)) + " points of each other over " + minN + "+ trades each. Keep running.";
+        }
+        return (
+          "<b>" + a.name + " is ahead</b> by " + fmt(gap) + " points over " + minN + "+ trades per arm. " +
+          "Before acting on it, check that its drawdown and its total-minus-top-3 also beat the other arm — a lead built on three trades is not a lead."
+        );
+      }
+
+      async function load() {
+        try {
+          const r = await fetch("/api/compare");
+          const j = await r.json();
+          if (!j.ok) throw new Error(j.error || "compare unavailable");
+          const arms = (j.strategies || []).filter((s) => s.active || (s.stats?.n || 0) > 0);
+          const active = arms.filter((s) => s.active);
+          const best = Math.max(...active.map((s) => s.stats?.totalPct ?? -Infinity));
+          document.getElementById("arms").innerHTML = arms
+            .map((s) => armCard(s, s.active && active.length > 1 && (s.stats?.totalPct ?? -Infinity) === best && (s.stats?.n || 0) > 0))
+            .join("");
+          document.getElementById("tbl").innerHTML = rowsFor(arms, j.combined);
+          const v = document.getElementById("verdict");
+          v.style.display = "block";
+          v.innerHTML = verdictText(active.length ? active : arms);
+          const total = arms.reduce((acc, s) => acc + (s.stats?.n || 0), 0);
+          document.getElementById("sub").textContent =
+            total + " scored trades across " + arms.length + " rulesets · " + j.slippagePct + "% slippage charged per exit" +
+            (j.unassigned ? " · " + j.unassigned + " unassigned" : "");
+        } catch (e) {
+          document.getElementById("sub").textContent = "compare failed: " + (e.message || e);
+        }
+      }
+
+      load();
+      setInterval(load, 30000);
+    </script>
+  </body>
+</html>

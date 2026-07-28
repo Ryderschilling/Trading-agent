@@ -51,6 +51,7 @@ type CliArgs = {
   verbose: boolean;
   quiet: boolean;
   trendFilter: boolean;    // --trend-filter=on|off — gates entries by 4h regime
+  entryMode: "retest" | "immediate"; // --entry-mode=retest|immediate
   reportDir: string;
 };
 
@@ -66,6 +67,7 @@ function parseArgs(argv: string[]): CliArgs {
   let verbose = false;
   let quiet = false;
   let trendFilter = false;
+  let entryMode: "retest" | "immediate" = "retest";
   let reportDir = path.join(process.cwd(), "data", "replay-reports");
 
   for (const arg of argv) {
@@ -91,10 +93,12 @@ function parseArgs(argv: string[]): CliArgs {
     else if (arg === "--quiet" || arg === "-q") quiet = true;
     else if (arg === "--trend-filter" || arg === "--trend-filter=on" || arg === "--trend-filter=1") trendFilter = true;
     else if (arg === "--trend-filter=off" || arg === "--trend-filter=0") trendFilter = false;
+    else if (arg === "--entry-mode=immediate" || arg === "--immediate") entryMode = "immediate";
+    else if (arg === "--entry-mode=retest") entryMode = "retest";
     else if (arg.startsWith("--out=")) reportDir = arg.slice("--out=".length);
   }
 
-  return { scenario, scenarioFile, scenarioDir, date, dateRange, symbols, compareTo, agent, verbose, quiet, trendFilter, reportDir };
+  return { scenario, scenarioFile, scenarioDir, date, dateRange, symbols, compareTo, agent, verbose, quiet, trendFilter, entryMode, reportDir };
 }
 
 /** Expand "2026-05-01..2026-05-15" to weekday dates inclusive. */
@@ -261,6 +265,7 @@ async function main() {
     enableAgentReview: args.agent,
     verbose: args.verbose,
     trendFilter4h: args.trendFilter,
+    entryMode: args.entryMode,
   };
 
   if (!args.quiet) {

@@ -48,6 +48,8 @@ import {
   normalizeStrategyDefinition,
   strategyAllowsDirection,
   StrategyDefinition,
+  getStrategyEntryMode,
+  getStrategyMaxRetestWaitBars,
 } from "./rules/schema";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -320,6 +322,11 @@ function buildRunner(rs: { version: number; name: string; config: StrategyDefini
       timeframeMin,
       retestTolerancePct,
       rsWindowBars5m,
+      // Per-strategy entry rule. "retest" waits for price to return to the
+      // level; "immediate" enters on the first bar after the break. Lets the
+      // retest and chase rulesets run side by side on one process.
+      entryMode: getStrategyEntryMode(rs.config),
+      maxRetestWaitBars: getStrategyMaxRetestWaitBars(rs.config),
       emaPeriods: getStrategyEmaPeriods(rs.config),
       // 4h trend regime filter. Env-gated so we can A/B test without code edits.
       // Default OFF until the replay A/B comparison shows it's net positive.
@@ -583,8 +590,8 @@ function dbInsertOutcome(o: TradeOutcome) {
       mfe_abs, mae_abs, mfe_pct, mae_pct, time_to_mfe_sec,
       stopped_out, stop_ts, stop_close, stop_return_pct, bars_to_stop,
       entry_fill, qty, realized_pnl_usd,
-      returns_json
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      returns_json, ruleset_version
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(
     o.alertId,
     o.symbol,
@@ -616,8 +623,33 @@ function dbInsertOutcome(o: TradeOutcome) {
     (o as any).qty ?? null,
     (o as any).realizedPnlUsd ?? null,
 
-    JSON.stringify(o.returnsPct || {})
+    JSON.stringify(o.returnsPct || {}),
+    resolveRulesetVersionForAlert(o.alertId)
   );
+}
+
+/**
+ * Which ruleset produced a given alert. Read from the alert row rather than
+ * threaded through OutcomeTracker so the tracker stays strategy-agnostic.
+ * Falls back to the broker order row, then null.
+ */
+function resolveRulesetVersionForAlert(alertId: string): number | null {
+  try {
+    const row: any = db.prepare(`SELECT meta_json FROM alerts WHERE id=? LIMIT 1`).get(alertId);
+    if (row?.meta_json) {
+      const meta = JSON.parse(String(row.meta_json));
+      const v = Number(meta?.rulesetVersion);
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+  } catch {}
+  try {
+    const row: any = db
+      .prepare(`SELECT strategy_version FROM broker_orders WHERE alert_id=? AND strategy_version IS NOT NULL LIMIT 1`)
+      .get(alertId);
+    const v = Number(row?.strategy_version);
+    if (Number.isFinite(v) && v > 0) return v;
+  } catch {}
+  return null;
 }
 
 /**
@@ -640,7 +672,14 @@ function finalizeOutcomeWithBrokerFill(out: TradeOutcome): void {
 
   void (async () => {
     try {
-      const closeResult = await brokerExecution.closePosition(out.symbol);
+      // Close only this strategy's shares. With two rulesets active, flattening
+      // the symbol would close the other strategy's position too.
+      const closeDir: "LONG" | "SHORT" = out.dir === "LONG" ? "LONG" : "SHORT";
+      const closeResult = await brokerExecution.closePositionQty(
+        out.symbol,
+        closeDir,
+        (out as any).qty ?? null
+      );
       if (!closeResult?.orderId) {
         console.warn(`[broker] closePosition returned no orderId for ${out.symbol}`);
         return;
@@ -914,15 +953,30 @@ let latestSignals: SignalsSnapshot = {
 // Resets automatically each day via dayKey comparison.
 // NOTE: does not survive a mid-session server restart — restart clears the
 // in-memory lock. If this becomes an issue, initialize from DB on startup.
-let sessionDirectionLock: { dir: MarketDirection; dayKey: string } | null = null;
+// PER-STRATEGY (2026-07-28). Was a single global lock, which meant the first
+// strategy to submit a trade locked the direction for every other strategy on
+// the process. With the retest and chase rulesets running side by side that
+// made the second one untestable. Keyed by ruleset version; version 0 is the
+// bucket for alerts that arrive without one.
+const sessionDirectionLocks = new Map<number, { dir: MarketDirection; dayKey: string }>();
+
+function getDirectionLock(strategyVersion: number): { dir: MarketDirection; dayKey: string } | null {
+  return sessionDirectionLocks.get(strategyVersion) ?? null;
+}
+
+function strategyVersionOfAlert(alert: Alert): number {
+  const v = (alert as any)?.meta?.rulesetVersion;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 // Direction flip state (2026-06-26).
 // One allowed direction flip per session. Fires when ALL active locked-direction
 // positions are (a) in the red AND (b) on the wrong side of VWAP. Closes those
 // positions at market and flips the session direction lock so opposite-direction
 // alerts can now execute. No ping-pong: flipUsed blocks a second flip for the day.
-let sessionFlipState: { dayKey: string; flipUsed: boolean } | null = null;
-let directionFlipInProgress = false; // async re-entry guard
+const sessionFlipStates = new Map<number, { dayKey: string; flipUsed: boolean }>();
+const directionFlipInProgress = new Set<number>(); // async re-entry guard, per strategy
 let lastFlipCheckTs = 0;             // dedupe: only run once per bar timestamp
 
 // SPY session-open move gate (2026-06-25).
@@ -1070,13 +1124,16 @@ function buildExecRulesFromCfg(cfg: StrategyDefinition) {
   // MFE gate: exit early if MFE hasn't reached mfeGatePct% within mfeGateMinutes.
   // Configured via env vars so it can be enabled/tuned without a schema/UI change.
   // Recommended starting values: MFE_GATE_MINUTES=2, MFE_GATE_MIN_PCT=0.15
+  // The ruleset wins. Env vars are only a fallback for strategies that say
+  // nothing, otherwise a global TRAIL_ACTIVATE_PCT would silently re-enable the
+  // trailing stop on a ruleset that explicitly turned it off with 0.
   const rawGateMin = process.env.MFE_GATE_MINUTES;
   const rawGatePct = process.env.MFE_GATE_MIN_PCT;
-  if (rawGateMin != null && rawGateMin !== "") {
+  if (rules.mfeGateMinutes == null && rawGateMin != null && rawGateMin !== "") {
     const v = Number(rawGateMin);
     if (Number.isFinite(v) && v > 0) rules.mfeGateMinutes = v;
   }
-  if (rawGatePct != null && rawGatePct !== "") {
+  if (rules.mfeGatePct == null && rawGatePct != null && rawGatePct !== "") {
     const v = Number(rawGatePct);
     if (Number.isFinite(v) && v > 0) rules.mfeGatePct = v;
   }
@@ -1089,19 +1146,19 @@ function buildExecRulesFromCfg(cfg: StrategyDefinition) {
   const rawTrailDistance = process.env.TRAIL_DISTANCE_PCT;
   const rawTrailTighten = process.env.TRAIL_TIGHTEN_PCT;
   const rawTrailTightenDist = process.env.TRAIL_TIGHTEN_DISTANCE_PCT;
-  if (rawTrailActivate != null && rawTrailActivate !== "") {
+  if (rules.trailActivatePct == null && rawTrailActivate != null && rawTrailActivate !== "") {
     const v = Number(rawTrailActivate);
     if (Number.isFinite(v) && v > 0) rules.trailActivatePct = v;
   }
-  if (rawTrailDistance != null && rawTrailDistance !== "") {
+  if (rules.trailDistancePct == null && rawTrailDistance != null && rawTrailDistance !== "") {
     const v = Number(rawTrailDistance);
     if (Number.isFinite(v) && v > 0) rules.trailDistancePct = v;
   }
-  if (rawTrailTighten != null && rawTrailTighten !== "") {
+  if (rules.trailTightenPct == null && rawTrailTighten != null && rawTrailTighten !== "") {
     const v = Number(rawTrailTighten);
     if (Number.isFinite(v) && v > 0) rules.trailTightenPct = v;
   }
-  if (rawTrailTightenDist != null && rawTrailTightenDist !== "") {
+  if (rules.trailTightenDistancePct == null && rawTrailTightenDist != null && rawTrailTightenDist !== "") {
     const v = Number(rawTrailTightenDist);
     if (Number.isFinite(v) && v > 0) rules.trailTightenDistancePct = v;
   }
@@ -1126,6 +1183,141 @@ let lastCorrDrawdownTs = 0;
 // -----------------------------
 // DB rows (Outcomes page) — BUILT FROM DB, NOT MEMORY
 // -----------------------------
+/**
+ * A/B comparison across the active rulesets.
+ *
+ * Scores each strategy on exit_return_pct, which is computed per alert from bar
+ * prices, so it stays clean even though the two strategies share one broker
+ * account and the dollar P&L is a blend. Slippage is charged uniformly so the
+ * numbers line up with the forensic review.
+ */
+function getStrategyCompare() {
+  const SLIPPAGE_PCT = 0.04; // 4 bps round trip, same as the July 2026 review
+
+  const rulesets = db
+    .prepare(`SELECT version, name, active, config_json FROM rulesets ORDER BY version DESC`)
+    .all() as any[];
+
+  const rows = db
+    .prepare(
+      `SELECT o.alert_id, o.symbol, o.dir, o.entry_ts, o.end_ts, o.exit_reason,
+              o.exit_return_pct, o.realized_pnl_usd, o.mfe_pct, o.mae_pct,
+              COALESCE(o.ruleset_version,
+                CAST(json_extract(a.meta_json, '$.rulesetVersion') AS INTEGER)) AS rv
+         FROM outcomes o
+         LEFT JOIN alerts a ON a.id = o.alert_id
+        WHERE o.exit_return_pct IS NOT NULL
+          AND o.status NOT IN ('SKIPPED','FORMING','INVALID')
+          AND o.exit_reason != 'SKIPPED'
+        ORDER BY o.entry_ts ASC`
+    )
+    .all() as any[];
+
+  const byVersion = new Map<number, any[]>();
+  for (const r of rows) {
+    const v = Number(r.rv || 0);
+    if (!byVersion.has(v)) byVersion.set(v, []);
+    byVersion.get(v)!.push(r);
+  }
+
+  function score(list: any[]) {
+    const pcts = list.map((r) => Number(r.exit_return_pct) - SLIPPAGE_PCT);
+    const n = pcts.length;
+    if (!n) return { n: 0 };
+    const wins = pcts.filter((x) => x > 0);
+    const losses = pcts.filter((x) => x <= 0);
+    const gross = wins.reduce((a, b) => a + b, 0);
+    const grossLoss = -losses.reduce((a, b) => a + b, 0);
+    const total = pcts.reduce((a, b) => a + b, 0);
+    const sorted = [...pcts].sort((a, b) => a - b);
+    let cum = 0, peak = 0, dd = 0;
+    const equity: number[] = [];
+    for (const x of pcts) {
+      cum += x;
+      equity.push(Number(cum.toFixed(3)));
+      peak = Math.max(peak, cum);
+      dd = Math.min(dd, cum - peak);
+    }
+    const byDay = new Map<string, number>();
+    const byReason = new Map<string, { n: number; sum: number }>();
+    for (const r of list) {
+      const day = nyDayKey(Number(r.entry_ts));
+      byDay.set(day, (byDay.get(day) ?? 0) + (Number(r.exit_return_pct) - SLIPPAGE_PCT));
+      const key = String(r.exit_reason || "?");
+      const cur = byReason.get(key) ?? { n: 0, sum: 0 };
+      cur.n += 1;
+      cur.sum += Number(r.exit_return_pct) - SLIPPAGE_PCT;
+      byReason.set(key, cur);
+    }
+    const topSorted = [...pcts].sort((a, b) => b - a);
+    return {
+      n,
+      totalPct: Number(total.toFixed(3)),
+      avgPct: Number((total / n).toFixed(4)),
+      medianPct: Number(sorted[Math.floor(n / 2)].toFixed(4)),
+      winRate: Number(((wins.length / n) * 100).toFixed(1)),
+      profitFactor: grossLoss > 0 ? Number((gross / grossLoss).toFixed(3)) : null,
+      maxDrawdownPct: Number(dd.toFixed(3)),
+      best: Number(Math.max(...pcts).toFixed(3)),
+      worst: Number(Math.min(...pcts).toFixed(3)),
+      totalExTop3: Number((total - topSorted.slice(0, 3).reduce((a, b) => a + b, 0)).toFixed(3)),
+      usdAt5k: Number(((total / 100) * 5000).toFixed(0)),
+      realizedUsd: Number(
+        list.reduce((a, r) => a + (Number(r.realized_pnl_usd) || 0), 0).toFixed(2)
+      ),
+      equity,
+      days: [...byDay.entries()].sort().map(([d, v]) => ({ day: d, pct: Number(v.toFixed(3)) })),
+      exitReasons: [...byReason.entries()]
+        .map(([reason, v]) => ({ reason, n: v.n, sumPct: Number(v.sum.toFixed(3)) }))
+        .sort((a, b) => b.n - a.n),
+      firstTradeTs: list[0]?.entry_ts ?? null,
+      lastTradeTs: list[list.length - 1]?.entry_ts ?? null,
+    };
+  }
+
+  const strategies = rulesets.map((rs) => {
+    let cfg: any = {};
+    try { cfg = JSON.parse(String(rs.config_json || "{}")); } catch {}
+    const list = byVersion.get(Number(rs.version)) ?? [];
+    return {
+      version: Number(rs.version),
+      name: String(rs.name || `v${rs.version}`),
+      active: Boolean(rs.active),
+      entryMode: cfg?.setup?.entryMode ?? "retest",
+      stopPct: cfg?.risk?.stopValuePct ?? null,
+      targetR: cfg?.risk?.profitTargetR ?? null,
+      description: cfg?.description ?? null,
+      stats: score(list),
+      trades: list.map((r) => ({
+        alertId: r.alert_id,
+        symbol: r.symbol,
+        dir: r.dir,
+        entryTs: r.entry_ts,
+        endTs: r.end_ts,
+        exitReason: r.exit_reason,
+        pct: Number(r.exit_return_pct),
+        netPct: Number((Number(r.exit_return_pct) - SLIPPAGE_PCT).toFixed(4)),
+        mfePct: r.mfe_pct,
+        maePct: r.mae_pct,
+        realizedUsd: r.realized_pnl_usd,
+      })),
+    };
+  });
+
+  // Combined book: every active strategy's trades merged, i.e. what running
+  // both arms together actually produces.
+  const activeVersions = new Set(strategies.filter((s) => s.active).map((s) => s.version));
+  const combinedList = rows.filter((r) => activeVersions.has(Number(r.rv || 0)));
+
+  return {
+    slippagePct: SLIPPAGE_PCT,
+    generatedAt: Date.now(),
+    strategies,
+    combined: score(combinedList),
+    unassigned: (byVersion.get(0) ?? []).length,
+  };
+}
+
 function getDbRows() {
   const rows = db
     .prepare(
@@ -1663,10 +1855,12 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
   // early fade attempt before price has actually broken structure.
   {
     const currentDay = nyDayKey(alert.ts);
-    if (sessionDirectionLock && sessionDirectionLock.dayKey === currentDay) {
+    const sv = strategyVersionOfAlert(alert);
+    const lock = getDirectionLock(sv);
+    if (lock && lock.dayKey === currentDay) {
       const alertDir: MarketDirection = alert.dir === "CALL" ? "BULLISH" : "BEARISH";
 
-      if (alertDir === sessionDirectionLock.dir) {
+      if (alertDir === lock.dir) {
         // Continuation entry: same direction as Wave 1 — block it.
         console.log(
           `[reversal-gate] SKIP ${alert.symbol} — same direction as Wave 1 (${alertDir}), continuation entries blocked`
@@ -1748,9 +1942,11 @@ function triggerBrokerExecutionIfEligible(alert: Alert): void {
       if (record?.status === "SUBMITTED") {
         const lockedDir: MarketDirection = alert.dir === "CALL" ? "BULLISH" : "BEARISH";
         const dayKey = nyDayKey(alert.ts);
-        if (!sessionDirectionLock || sessionDirectionLock.dayKey !== dayKey) {
-          sessionDirectionLock = { dir: lockedDir, dayKey };
-          console.log(`[direction] session locked to ${lockedDir} for ${dayKey} after first SUBMITTED trade (${alert.symbol})`);
+        const sv = strategyVersionOfAlert(alert);
+        const existing = getDirectionLock(sv);
+        if (!existing || existing.dayKey !== dayKey) {
+          sessionDirectionLocks.set(sv, { dir: lockedDir, dayKey });
+          console.log(`[direction] v${sv} locked to ${lockedDir} for ${dayKey} after first SUBMITTED trade (${alert.symbol})`);
         }
       }
 
@@ -1848,6 +2044,10 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
       pml: lv.pml ?? null,
       pdh: lv.pdh ?? null,
       pdl: lv.pdl ?? null,
+      // Answer "does THIS strategy already hold the symbol" before we open the
+      // new session, so the broker's avoidExistingPosition guard can be scoped
+      // per strategy instead of reading the blended account position.
+      strategyHoldsSymbol: r.outcomeTracker.hasLiveSessionForSymbol(symbol),
     };
 
     startOutcomeTrackingIfTrade(r, alert, ts);
@@ -1867,31 +2067,41 @@ function evaluateIfNeededForRunner(r: StrategyRunner, symbol: string, ts: number
 // session direction lock when ALL of them are red AND on wrong side of VWAP.
 // -----------------------------
 async function checkDirectionFlip(ts: number): Promise<void> {
-  if (directionFlipInProgress) return;
+  // One pass per active strategy. Each ruleset owns its own lock, its own flip
+  // allowance and its own positions, so a losing wave on the chase strategy no
+  // longer flips the retest strategy out of its trades.
+  for (const runner of Array.from(runners.values())) {
+    await checkDirectionFlipForStrategy(runner, ts);
+  }
+}
+
+async function checkDirectionFlipForStrategy(runner: StrategyRunner, ts: number): Promise<void> {
+  const sv = runner.version;
+  if (directionFlipInProgress.has(sv)) return;
 
   const currentDay = nyDayKey(ts);
 
   // Reset on new calendar day
+  let sessionFlipState = sessionFlipStates.get(sv) ?? null;
   if (!sessionFlipState || sessionFlipState.dayKey !== currentDay) {
     sessionFlipState = { dayKey: currentDay, flipUsed: false };
+    sessionFlipStates.set(sv, sessionFlipState);
   }
 
   // Only run when a direction is locked and the flip hasn't been consumed
-  if (!sessionDirectionLock || sessionDirectionLock.dayKey !== currentDay) return;
+  const lock = getDirectionLock(sv);
+  if (!lock || lock.dayKey !== currentDay) return;
   if (sessionFlipState.flipUsed) return;
 
   // Hard cutoff: no new entries or flips after 11:30 AM ET
   if (isPastEntryCutoffNY(ts)) return;
 
-  const lockedDir = sessionDirectionLock.dir;
+  const lockedDir = lock.dir;
 
   // Gather all LIVE sessions across all runners
   const allSessions: Array<{
     alertId: string; symbol: string; dir: TradeDirection; currentReturnPct: number | null;
-  }> = [];
-  for (const r of runners.values()) {
-    allSessions.push(...r.outcomeTracker.getActiveSessionsForFlipCheck());
-  }
+  }> = runner.outcomeTracker.getActiveSessionsForFlipCheck();
   if (allSessions.length === 0) return;
 
   // Scope to sessions that match the locked direction
@@ -1924,15 +2134,22 @@ async function checkDirectionFlip(ts: number): Promise<void> {
     `Closing and flipping lock → ${newDir}`
   );
 
-  directionFlipInProgress = true;
+  directionFlipInProgress.add(sv);
   sessionFlipState.flipUsed = true; // consume the flip before awaiting anything
 
   try {
     const symbolsToClose = [...new Set(lockedSessions.map(s => s.symbol))];
 
     for (const symbol of symbolsToClose) {
-      // 1. Ask broker to close the position
-      const closeResult = await brokerExecution.closePosition(symbol).catch((e) => {
+      // 1. Close only the qty this strategy owns. Flattening the symbol would
+      //    take the other strategy's shares with it.
+      const ownQty = lockedSessions
+        .filter((x) => x.symbol === symbol)
+        .reduce((acc, x) => acc + (runner.outcomeTracker.sessionQty(x.alertId) ?? 0), 0);
+      const ownDir: "LONG" | "SHORT" = lockedDir === "BULLISH" ? "LONG" : "SHORT";
+      const closeResult = await brokerExecution
+        .closePositionQty(symbol, ownDir, ownQty > 0 ? ownQty : null)
+        .catch((e) => {
         console.warn(`[direction-flip] broker close failed for ${symbol}: ${e?.message ?? e}`);
         return null;
       });
@@ -1948,9 +2165,9 @@ async function checkDirectionFlip(ts: number): Promise<void> {
         if (lastCandles.length > 0) exitPx = lastCandles[lastCandles.length - 1].c;
       }
 
-      // 3. Finalize outcome records
-      for (const r of runners.values()) {
-        const finalized = r.outcomeTracker.manualClose(symbol, exitPx, ts);
+      // 3. Finalize outcome records for this strategy only
+      {
+        const finalized = runner.outcomeTracker.manualClose(symbol, exitPx, ts);
         for (const out of finalized) {
           const idx = outcomes.findIndex(o => o.alertId === out.alertId);
           if (idx >= 0) outcomes[idx] = out; else outcomes.push(out);
@@ -1965,14 +2182,14 @@ async function checkDirectionFlip(ts: number): Promise<void> {
     }
 
     // 4. Flip the lock — new direction entries can now fire on the next signal
-    sessionDirectionLock = { dir: newDir, dayKey: currentDay };
+    sessionDirectionLocks.set(sv, { dir: newDir, dayKey: currentDay });
     console.log(
-      `[direction-flip] session direction now ${newDir} for ${currentDay}. ` +
+      `[direction-flip] v${sv} direction now ${newDir} for ${currentDay}. ` +
       `Flip consumed — direction locked for remainder of session.`
     );
 
   } finally {
-    directionFlipInProgress = false;
+    directionFlipInProgress.delete(sv);
   }
 }
 
@@ -2034,6 +2251,7 @@ function ingestMinuteBar(
             pml: lv.pml ?? null,
             pdh: lv.pdh ?? null,
             pdl: lv.pdl ?? null,
+            strategyHoldsSymbol: r.outcomeTracker.hasLiveSessionForSymbol(symbol),
           };
           startOutcomeTrackingIfTrade(r, tap, ts);
 
@@ -2828,6 +3046,7 @@ const app = createHttpApp({
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
+  getStrategyCompare,
   getAnalytics,
   getCandles1m,
 

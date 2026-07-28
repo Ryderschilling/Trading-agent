@@ -791,6 +791,29 @@ export class OutcomeTracker {
   }
 
   /** Symbol for a given session id, or null. */
+  /**
+   * Does this tracker (i.e. this strategy) currently hold a LIVE position on
+   * the symbol? Added 2026-07-28: with two rulesets active the broker's account
+   * position is a blend, so "is there a position on NVDA" no longer answers
+   * "does THIS strategy already hold NVDA".
+   */
+  hasLiveSessionForSymbol(symbol: string): boolean {
+    const ids = this.sessionsBySymbol.get(symbol);
+    if (!ids || !ids.size) return false;
+    for (const id of ids) {
+      const s = this.sessionsById.get(id);
+      if (s && s.status === "LIVE") return true;
+    }
+    return false;
+  }
+
+  /** Broker-truth qty for a session, when we captured a fill. */
+  sessionQty(alertId: string): number | null {
+    const s = this.sessionsById.get(alertId);
+    if (!s) return null;
+    return s.qty != null && Number.isFinite(s.qty) ? s.qty : null;
+  }
+
   sessionSymbol(alertId: string): string | null {
     return this.sessionsById.get(alertId)?.symbol ?? null;
   }
