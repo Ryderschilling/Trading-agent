@@ -234,12 +234,21 @@ halves).
 
 ### To run the A/B
 
+Order matters. The agent has to be stopped first: a live process keeps its
+watchlist, runners and broker policy in memory, so rewriting the database
+underneath it changes nothing until it restarts.
+
 ```bash
+./scripts/start-mac.sh --stop                  # stop the running agent
 npm run build
 npx ts-node scripts/setup-ab-test.ts           # dry run, prints the plan
 npx ts-node scripts/setup-ab-test.ts --apply   # backs up the DB, then writes
-./scripts/start-mac.sh                          # restart so both runners load
+./scripts/start-mac.sh                          # start (stops anything stale first)
 ```
+
+The setup script refuses to run while the agent is listening, creates
+`outcomes.ruleset_version` itself if the migration has not run yet, and is a
+no-op on a second run.
 
 That activates two rulesets: **v10 A-Retest** (retest entry, 0.40% stop, 2.0%
 target) and **v11 B-Chase** (immediate entry, 1.0% stop, 2.5% target). Exits are
@@ -250,6 +259,14 @@ positions.
 
 Watch `/compare`. Roughly 40 closed trades per arm before the difference means
 anything, so four to six weeks.
+
+### Watchlist note
+
+The `watchlist` table held only 6 symbols (AAPL AMZN GOOGL META MSFT NVDA) while
+the running process was trading SPY, QQQ, IWM and PLTR from a stale in-memory
+copy. On the next restart the system would have silently dropped to those 6,
+including losing SPY and QQQ, which are the market-direction barometer. The
+setup script rewrites the table to the full 20.
 
 ### Known limits of this test
 

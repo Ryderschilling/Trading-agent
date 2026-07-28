@@ -21,6 +21,7 @@
  * Nothing here is destructive without --apply.
  */
 import fs from "fs";
+import net from "net";
 import path from "path";
 import Database from "better-sqlite3";
 
@@ -145,8 +146,50 @@ const EXECUTION = {
   perStrategyGuards: true,
 };
 
-function main() {
+/**
+ * The agent has to be stopped before this runs. A live process holds its
+ * watchlist, its runners and its broker policy in memory, so it would keep
+ * trading the old config against a rewritten database until it restarts.
+ */
+function portInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: "127.0.0.1" });
+    socket.setTimeout(700);
+    socket.on("connect", () => { socket.destroy(); resolve(true); });
+    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+    socket.on("error", () => resolve(false));
+  });
+}
+
+/**
+ * outcomes.ruleset_version is created by the migrations in src/db/db.ts, which
+ * only run when the app boots. This script can legitimately run before the new
+ * build has ever started, so it creates the column itself. Same statement, and
+ * both are guarded, so whichever runs first wins and the other is a no-op.
+ */
+function ensureRulesetVersionColumn(db: Database.Database): void {
+  const cols = db.prepare(`PRAGMA table_info(outcomes)`).all() as any[];
+  if (cols.some((c) => String(c.name) === "ruleset_version")) return;
+  db.exec(`ALTER TABLE outcomes ADD COLUMN ruleset_version INTEGER;`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_outcomes_ruleset ON outcomes(ruleset_version);`);
+  console.log("added outcomes.ruleset_version");
+}
+
+async function main() {
   if (!fs.existsSync(DB_PATH)) throw new Error(`database not found at ${DB_PATH}`);
+
+  const port = Number(process.env.PORT || 3000);
+  if (await portInUse(port)) {
+    console.error("");
+    console.error(`  The agent is still running on port ${port}.`);
+    console.error("  Stop it first, or it will keep trading the old config from memory:");
+    console.error("");
+    console.error(`    kill $(lsof -ti tcp:${port})`);
+    console.error("    pkill -f caffeinate");
+    console.error("");
+    console.error("  Then re-run this script.");
+    process.exit(1);
+  }
 
   console.log(`database   ${DB_PATH}`);
   console.log(`mode       ${APPLY ? "APPLY (writing)" : "DRY RUN (nothing will be written)"}`);
@@ -157,6 +200,17 @@ function main() {
 
   const active = db.prepare(`SELECT version, name FROM rulesets WHERE active=1`).all() as any[];
   console.log(`currently active rulesets: ${active.map((r) => `v${r.version} ${r.name}`).join(", ") || "none"}`);
+
+  const already = db
+    .prepare(`SELECT version, name FROM rulesets WHERE name LIKE 'A — Retest%' OR name LIKE 'B — Chase%'`)
+    .all() as any[];
+  if (already.length) {
+    console.log("");
+    console.log(`the A/B rulesets already exist: ${already.map((r) => `v${r.version} ${r.name}`).join(", ")}`);
+    console.log("nothing to do. delete or rename them first if you want a fresh pair.");
+    db.close();
+    return;
+  }
 
   const maxVersion = Number(
     (db.prepare(`SELECT COALESCE(MAX(version),0) AS v FROM rulesets`).get() as any).v
@@ -176,8 +230,13 @@ function main() {
 
   const stamp = new Date().toISOString().slice(0, 10);
   const backup = DB_PATH.replace(/\.sqlite$/, `.backup-ab-${stamp}.sqlite`);
+  if (fs.existsSync(backup)) fs.unlinkSync(backup);
   db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
   console.log(`backup written to ${backup}`);
+
+  // Must happen before the transaction: ALTER TABLE inside the same transaction
+  // as the backfill is what blew up the first run.
+  ensureRulesetVersionColumn(db);
 
   const now = Date.now();
   const tx = db.transaction(() => {
@@ -225,6 +284,7 @@ function main() {
     `);
     const res = backfill.run();
     console.log(`backfilled ruleset_version on ${res.changes} historical outcome rows`);
+    console.log(`activated v${vRetest} and v${vChase}; watchlist set to ${WATCHLIST.length} symbols`);
   });
 
   tx();
@@ -237,4 +297,7 @@ function main() {
   console.log("  3. watch the Compare page: /compare.html");
 }
 
-main();
+main().catch((e) => {
+  console.error(e?.message || e);
+  process.exit(1);
+});

@@ -6,6 +6,7 @@
 #   chmod +x scripts/start-mac.sh
 #   ./scripts/start-mac.sh           # production (dist/index.js)
 #   ./scripts/start-mac.sh --dev     # dev (ts-node src/index.ts)
+#   ./scripts/start-mac.sh --stop    # just stop whatever is running
 #
 # caffeinate flags:
 #   -i = prevent idle sleep
@@ -15,8 +16,49 @@
 set -e
 
 DEV=false
-if [[ "$1" == "--dev" ]]; then
-  DEV=true
+STOP_ONLY=false
+for arg in "$@"; do
+  case "$arg" in
+    --dev)  DEV=true ;;
+    --stop) STOP_ONLY=true ;;
+  esac
+done
+
+PORT="${PORT:-3000}"
+
+# Stop whatever is already holding the port. Without this a restart dies on
+# EADDRINUSE and the OLD process keeps running with the OLD config still in
+# memory, which looks like "the restart worked" but changes nothing.
+stop_existing() {
+  local pids
+  pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+  if [[ -n "$pids" ]]; then
+    echo "[start] stopping existing agent on port $PORT (pid: $pids)"
+    kill $pids 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 1
+      pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+      [[ -z "$pids" ]] && break
+    done
+    pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+    if [[ -n "$pids" ]]; then
+      echo "[start] it did not exit, sending SIGKILL"
+      kill -9 $pids 2>/dev/null || true
+      sleep 1
+    fi
+    # release the sleep assertion left behind by the old wrapper
+    pkill -f "caffeinate -i -s node dist/index.js" 2>/dev/null || true
+    pkill -f "caffeinate -i -s ts-node src/index.ts" 2>/dev/null || true
+    echo "[start] stopped"
+  else
+    echo "[start] nothing running on port $PORT"
+  fi
+}
+
+stop_existing
+
+if $STOP_ONLY; then
+  exit 0
 fi
 
 # Check if caffeinate is available (macOS only)
