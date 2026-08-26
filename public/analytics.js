@@ -408,12 +408,73 @@
   }
 
   // -----------------------------
+  // Strategy filter buttons
+  // -----------------------------
+  // "all" or a ruleset version number as a string. Filtering keys on the
+  // version, never the name — two versions can share a display name.
+  let activeStrategy = "all";
+
+  function stratButtonLabel(s) {
+    let name = String(s.label || "");
+    if (!name) return s.version != null ? "v" + s.version : "Unknown";
+    if (name.length > 24) name = name.slice(0, 23) + "…";
+    return name;
+  }
+
+  function renderStrategyToggles(strategies) {
+    const wrap = el("stratToggles");
+    if (!wrap) return;
+
+    const list = Array.isArray(strategies) ? strategies : [];
+    const totalTrades = list.reduce(function (s, x) { return s + (x.trades || 0); }, 0);
+
+    // If the active strategy vanished from the data, fall back to All.
+    if (
+      activeStrategy !== "all" &&
+      !list.some(function (s) { return String(s.version) === activeStrategy; })
+    ) {
+      activeStrategy = "all";
+    }
+
+    wrap.innerHTML = "";
+
+    function makeBtn(value, text, count, title) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "strat-toggle" + (activeStrategy === value ? " active" : "");
+      b.textContent = text;
+      if (count != null) {
+        const c = document.createElement("span");
+        c.className = "count";
+        c.textContent = String(count);
+        b.appendChild(c);
+      }
+      if (title) b.title = title;
+      b.addEventListener("click", function () {
+        if (activeStrategy === value) return;
+        activeStrategy = value;
+        load();
+      });
+      return b;
+    }
+
+    wrap.appendChild(makeBtn("all", "All strategies", totalTrades, "Every strategy combined"));
+    for (const s of list) {
+      // A strategy with no version can't be filtered server-side; those trades
+      // only ever appear in the All view.
+      if (s.version == null) continue;
+      wrap.appendChild(makeBtn(String(s.version), stratButtonLabel(s), s.trades, String(s.label || "")));
+    }
+  }
+
+  // -----------------------------
   // Load + render
   // -----------------------------
   let lastData = null;
 
   function render(data) {
     lastData = data;
+    renderStrategyToggles(data.strategies);
     renderHead(data);
     drawEquity(data.equityCurve || []);
     renderTable("exitReasonWrap", "Exit Reason", data.byExitReason, true);
@@ -425,9 +486,13 @@
     if (hint && data.firstTradeTs && data.lastTradeTs) {
       const f = new Date(data.firstTradeTs).toLocaleDateString();
       const l = new Date(data.lastTradeTs).toLocaleDateString();
+      const stratNote =
+        data.strategyFilter != null
+          ? " Filtered to one strategy — click All strategies to combine."
+          : " All strategies combined.";
       hint.textContent =
         "Closed trades " + f + " → " + l +
-        ". Scored on exit return %. Realized $ shown where broker fills exist.";
+        ". Scored on exit return %. Realized $ shown where broker fills exist." + stratNote;
     }
   }
 
@@ -435,7 +500,9 @@
     const btn = el("refreshBtn");
     if (btn) btn.disabled = true;
 
-    fetch("/api/analytics")
+    const qs = activeStrategy !== "all" ? "?strategy=" + encodeURIComponent(activeStrategy) : "";
+
+    fetch("/api/analytics" + qs)
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || j.ok === false) {

@@ -1,0 +1,737 @@
+<title>Making The Agent Fundable</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --ground:#EFF2F1; --surface:#FBFCFC; --surface-2:#F5F8F7;
+  --ink:#121A19; --ink-2:#3B4746; --muted:#66736F; --rule:#DBE2E0; --rule-2:#C6D0CD;
+  --accent:#0E5F55; --accent-soft:#DCEBE8;
+  --gain:#2a78d6; --loss:#e34948; --armB:#2a78d6; --armA:#eda100; --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --grid:#E4EAE8;
+  --shadow:0 1px 2px rgba(18,26,25,.05),0 8px 24px -12px rgba(18,26,25,.14);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --ground:#0C1110; --surface:#141B1A; --surface-2:#1A2321;
+    --ink:#E9EEEC; --ink-2:#C2CECB; --muted:#8A9895; --rule:#24302E; --rule-2:#33403D;
+    --accent:#46B5A2; --accent-soft:#132A27;
+    --gain:#3987e5; --loss:#e66767; --armB:#3987e5; --armA:#c98500; --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --grid:#1F2A28;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --ground:#0C1110; --surface:#141B1A; --surface-2:#1A2321;
+  --ink:#E9EEEC; --ink-2:#C2CECB; --muted:#8A9895; --rule:#24302E; --rule-2:#33403D;
+  --accent:#46B5A2; --accent-soft:#132A27;
+  --gain:#3987e5; --loss:#e66767; --armB:#3987e5; --armA:#c98500; --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --grid:#1F2A28;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:16px; line-height:1.62; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px 96px}
+h1,h2,h3{font-family:"Fraunces",Georgia,"Times New Roman",serif;font-variation-settings:"SOFT" 0,"WONK" 0;text-wrap:balance;margin:0}
+h1{font-size:clamp(2.5rem,6vw,4.1rem);line-height:1.02;font-weight:600;letter-spacing:-.02em}
+h2{font-size:clamp(1.55rem,3vw,2.1rem);line-height:1.12;font-weight:600;letter-spacing:-.015em}
+h3{font-size:1.12rem;line-height:1.3;font-weight:600;letter-spacing:-.005em}
+p{margin:0 0 1em}
+a{color:var(--accent)}
+.mono{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.num{font-family:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600}
+.lede{font-size:1.14rem;line-height:1.6;color:var(--ink-2);max-width:64ch}
+.small{font-size:.85rem;color:var(--muted);line-height:1.55}
+.pos{color:var(--gain)} .neg{color:var(--loss)}
+
+/* ---------- masthead ---------- */
+header.masthead{padding:56px 0 40px;border-bottom:1px solid var(--rule)}
+.kicker{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:22px}
+.kicker .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block}
+h1 .thin{font-weight:400;font-style:italic;color:var(--ink-2)}
+.masthead .lede{margin-top:22px}
+
+/* ---------- tape (headline stats) ---------- */
+.tape{display:grid;grid-template-columns:repeat(auto-fit,minmax(166px,1fr));gap:0;background:var(--surface);border-top:1px solid var(--rule);border-left:1px solid var(--rule);border-radius:3px;overflow:hidden;margin:34px 0 0}
+.tape .cell{background:var(--surface);padding:16px 18px 15px;border-right:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.tape .lab{font-family:"IBM Plex Mono",monospace;font-size:.63rem;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+.tape .val{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;font-size:1.42rem;font-weight:600;line-height:1.1;letter-spacing:-.01em}
+.tape .sub{font-size:.74rem;color:var(--muted);margin-top:5px;line-height:1.35}
+
+/* ---------- sections ---------- */
+section{padding-top:58px}
+.sechead{display:flex;flex-direction:column;gap:9px;margin-bottom:26px;padding-bottom:16px;border-bottom:1px solid var(--rule)}
+.sechead p{margin:0;max-width:70ch;color:var(--ink-2)}
+
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:22px 24px 20px;box-shadow:var(--shadow)}
+.card + .card{margin-top:18px}
+.cardhead{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:4px}
+.cardsub{font-size:.85rem;color:var(--muted);margin:2px 0 16px;max-width:78ch;line-height:1.5}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:880px){.grid2,.grid3{grid-template-columns:1fr}}
+
+/* ---------- charts ---------- */
+.chartbox{position:relative;width:100%;overflow-x:auto}
+.chartbox svg{display:block;max-width:100%;height:auto}
+.legend{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:0 0 12px;font-size:.8rem;color:var(--ink-2)}
+.legend .k{display:inline-flex;gap:7px;align-items:center}
+.legend .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.tip{position:fixed;pointer-events:none;z-index:60;background:var(--ink);color:var(--ground);padding:8px 11px;border-radius:4px;font-size:.76rem;line-height:1.5;font-family:"IBM Plex Mono",monospace;box-shadow:0 6px 20px rgba(0,0,0,.28);opacity:0;transition:opacity .09s;max-width:270px}
+.tip.on{opacity:1}
+.tip b{color:#fff}
+:root[data-theme="dark"] .tip b, :root:not([data-theme="light"]) .tip b{color:var(--ground)}
+
+/* ---------- tables ---------- */
+.tblwrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.845rem}
+th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--rule);white-space:nowrap}
+th{font-family:"IBM Plex Mono",monospace;font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface-2);z-index:2;cursor:pointer;user-select:none}
+th:first-child,td:first-child{text-align:left}
+th.l,td.l{text-align:left}
+tbody tr:hover{background:var(--surface-2)}
+td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.scroller{max-height:560px;overflow-y:auto}
+
+.chip{display:inline-block;padding:1px 8px;border-radius:999px;font-family:"IBM Plex Mono",monospace;font-size:.68rem;font-weight:600;border:1px solid var(--rule-2);color:var(--ink-2)}
+.chip.b{border-color:var(--armB);color:var(--armB)}
+.chip.a{border-color:var(--armA);color:var(--armA)}
+
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+select,input[type=search]{font-family:"IBM Plex Mono",monospace;font-size:.8rem;padding:7px 10px;border:1px solid var(--rule-2);border-radius:3px;background:var(--surface);color:var(--ink)}
+input[type=search]{min-width:170px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- findings ---------- */
+ol.fixes{list-style:none;counter-reset:fx;padding:0;margin:0;display:flex;flex-direction:column;gap:16px}
+ol.fixes li{counter-increment:fx;background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:20px 24px 18px;position:relative}
+ol.fixes li::before{content:counter(fx);position:absolute;left:-3px;top:-1px;width:0;height:0}
+.fixnum{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.14em;color:var(--accent);font-weight:600;text-transform:uppercase}
+.fixhead{display:flex;justify-content:space-between;gap:16px;align-items:baseline;flex-wrap:wrap;margin:6px 0 8px}
+.fixgain{font-family:"IBM Plex Mono",monospace;font-size:.95rem;font-weight:600;color:var(--gain);white-space:nowrap}
+.fixbody{color:var(--ink-2);font-size:.94rem;margin:0}
+.fixbody + .fixbody{margin-top:8px}
+pre.cmd{background:var(--surface-2);border:1px solid var(--rule);border-radius:3px;padding:11px 13px;overflow-x:auto;font-family:"IBM Plex Mono",monospace;font-size:.78rem;margin:12px 0 0;color:var(--ink)}
+.callout{background:var(--accent-soft);border:1px solid var(--rule);border-radius:4px;padding:16px 20px;margin:18px 0 0;font-size:.92rem;color:var(--ink-2)}
+.callout strong{color:var(--ink)}
+ul.tight{margin:0;padding-left:1.15em}
+ul.tight li{margin-bottom:6px;color:var(--ink-2)}
+
+.heat{border-collapse:separate;border-spacing:3px;font-size:.8rem}
+.heat td,.heat th{padding:7px 10px;text-align:center;border:0;white-space:nowrap;border-radius:3px}
+.heat th{background:transparent;position:static;color:var(--muted);font-family:"IBM Plex Mono",monospace;font-size:.64rem;letter-spacing:.08em;text-transform:uppercase}
+.heat td{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;font-weight:600}
+.heat td.rowlab{background:transparent;color:var(--muted);font-weight:400;text-align:right}
+.verdict{display:grid;grid-template-columns:auto 1fr;gap:0 16px;align-items:start;margin:0 0 12px}
+.verdict .tag{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;padding:3px 9px;border-radius:3px;font-weight:600;white-space:nowrap}
+.tag.do{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent)}
+.tag.dont{background:transparent;color:var(--loss);border:1px solid var(--loss)}
+.tag.maybe{background:transparent;color:var(--muted);border:1px solid var(--rule-2)}
+.step{display:grid;grid-template-columns:88px 1fr;gap:0 20px;padding:16px 0;border-top:1px solid var(--rule)}
+.step:first-child{border-top:0}
+.step .wk{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;padding-top:3px}
+.step h3{margin-bottom:5px}
+.step p{margin:0;color:var(--ink-2);font-size:.93rem}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:.88rem;margin:0}
+.kv dt{font-family:"IBM Plex Mono",monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+.kv dd{margin:0;color:var(--ink-2)}
+footer{margin-top:70px;padding-top:24px;border-top:1px solid var(--rule);font-size:.8rem;color:var(--muted)}
+</style>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="kicker"><span class="dot"></span><span class="eyebrow">Backtest &amp; proposal &middot; 601 entries &middot; 73 sessions &middot; 22 Aug 2026</span></div>
+  <h1>You can't stop it<br>depending on <span class="thin">big days</span>.</h1>
+  <p class="lede">You can stop the other fifty days from eating them. Every recorded entry from all four strategy versions, replayed against real minute bars under 1,953 exit configurations, scored out-of-sample. Two changes survive every honesty test. Nothing here has been deployed.</p>
+  <div class="tape" id="tape"></div>
+  <p class="small" style="margin-top:14px">Sample is the 601 <strong>chase</strong> entries (v6 + v9 + v11), 24 Apr → 21 Aug 2026, plus 78 v10 retest entries tracked separately. v6 and v9 traded chase by accident — the retest-tolerance bug — so their entries are mechanically the same thing v11 does on purpose. All 679 are replayable: every trade has minute bars from its entry to the close.</p>
+</header>
+
+<section id="truth">
+  <div class="sechead">
+    <span class="eyebrow">Start here</span>
+    <h2>What this strategy actually is</h2>
+    <p>Before any parameter talk. Take the best configuration found anywhere in this study, apply the tightest sensible symbol filter, and remove the five best days out of fifty-five. What's left is +3.22%.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Return with the best days removed</h3><span class="small">recommended exits, whole sample</span></div>
+    <div class="chartbox" id="c_exn"></div>
+    <p class="small" style="margin-top:12px">This is not a flaw to be fixed. Break-and-go momentum pays in bursts; the distribution is supposed to look like this. The filter's job is not to flatten the curve, it is to make the boring days cost nothing so you survive to be holding on the loud ones. Notice that the filtered book still stands up with five days removed and the unfiltered book is −19.42%. That difference is the entire proposal.</p>
+  </div>
+  <div class="grid3">
+    <div class="card"><div class="cardhead"><h3>Longest losing streak</h3></div><p class="cardsub" style="margin-bottom:0"><strong class="mono">17 trades</strong> in a row, and <strong class="mono">11 trading days</strong> in a row, inside the recommended configuration. This will happen again.</p></div>
+    <div class="card"><div class="cardhead"><h3>Time under water</h3></div><p class="cardsub" style="margin-bottom:0"><strong class="mono">74%</strong> of the time the account is below a prior high. A profitable version of this strategy feels like losing three days out of four.</p></div>
+    <div class="card"><div class="cardhead"><h3>Engine trust</h3></div><p class="cardsub" style="margin-bottom:0">Replaying v11's live settings on real bars reproduces the live record at <strong class="mono">r = 0.983</strong>, +56.13% vs +52.93% actual. The simulator is not inventing anything.</p></div>
+  </div>
+</section>
+
+<section id="exits">
+  <div class="sechead">
+    <span class="eyebrow">Change one</span>
+    <h2>Drop the fixed target. Trail instead.</h2>
+    <p>A 2.5% target caps the only trades that pay for everything else. Over 601 entries and five months, every trailing variant beats every fixed-target variant, and the win is not a single lucky cell in the grid.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Exit families, all 601 chase entries</h3><span class="small">bars: total % &middot; dot: same, best day removed</span></div>
+    <div class="chartbox" id="c_fam"></div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Is it a hill or a spike?</h3><span class="small">total return %, no fixed target</span></div>
+    <p class="cardsub">Stop width down the side, trail arming point across the top (give-back is always half the arm). An overfit winner is a lone bright cell surrounded by dark ones. This is a ridge: the whole <span class="mono">arm +2.0</span> column wins, and stops from 0.7% to 1.0% form the crest.</p>
+    <div class="chartbox" id="c_heat"></div>
+    <p class="small" style="margin-top:14px">The drawdown grid tells you where the crest ends. Stops at 1.25% and wider hold their return but drawdown blows out from −24% to −50%, which is the same thing as saying you'd have to trade a third of the size.</p>
+    <div class="chartbox" id="c_heat2" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>The out-of-sample test that matters</h3></div>
+    <p class="cardsub">Fit the parameters on one half of the history, then score that frozen configuration on the half it has never seen. Run it in both directions, and pick by two different criteria: raw total, and total divided by max drawdown.</p>
+    <div class="tblwrap"><table id="t_hold"><thead><tr><th class="l">Fitted on</th><th class="l">Configuration it picked</th><th>In-sample</th><th>Out-of-sample</th><th>OOS drawdown</th></tr></thead><tbody></tbody></table></div>
+    <div class="callout" style="margin-top:16px">
+      <strong>The single most useful line on this page.</strong> Fit on July–August and rank by raw total, and you get a 1.5% stop with a wide trail: +65.90% in-sample, <span class="neg mono">−1.89%</span> out-of-sample. Rank the same data by return-per-unit-of-drawdown instead and you get <strong>0.80% stop, no target, trail arming at +2.0% giving back 1.0%</strong>: +56.81% in-sample and <span class="pos mono">+35.79%</span> out-of-sample at only −14.6% drawdown. Same data, same search, different scoring rule — one config generalises and one doesn't. Never rank a backtest by total again.
+    </div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Rolling walk-forward, no filter</h3><span class="small">re-fit every month on prior data only</span></div>
+    <p class="cardsub">Choose the best configuration using only what was knowable at the start of each month, then trade it blind for that month. 525 out-of-sample trades, +53.37%, −23.50% drawdown. Positive, but two of four months are negative and the parameters wander — which is the argument for freezing one robust configuration rather than re-optimising.</p>
+    <div class="chartbox" id="c_wf"></div>
+  </div>
+</section>
+
+<section id="gate">
+  <div class="sechead">
+    <span class="eyebrow">Change two</span>
+    <h2>Only trade the day's most volatile names</h2>
+    <p>At 09:35 rank every watchlist symbol by its own 5-day average daily range plus its own opening five-minute range, and express that as a percentile of the day's universe rather than a fixed top-N — the watchlist was 11 names in spring and is 20 now. Then refuse everything below the cut.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Every filter strength, recommended exits</h3></div>
+    <div class="tblwrap"><table id="t_buckets"><thead><tr>
+      <th class="l">Filter</th><th>Trades</th><th>Per day</th><th>Total</th><th>Max DD</th><th>Return ÷ DD</th>
+      <th>Win</th><th>PF</th><th>Best day share</th><th>Months up</th></tr></thead><tbody></tbody></table></div>
+    <p class="small" style="margin-top:12px">Tightening the filter costs total return and buys everything else. Return-per-drawdown climbs from 3.85 to 4.76, months positive go from two of five to four of five, and the share of the whole result contributed by the single best day falls from 51% to 29%. Drawdown is what caps position size, so a book with half the drawdown can carry twice the money.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Month by month</h3><span class="small">recommended exits, by filter strength</span></div>
+    <div class="legend" id="l_months"></div>
+    <div class="chartbox" id="c_months"></div>
+    <p class="small" style="margin-top:12px">April and May are where this earns its keep. Unfiltered, those two months lose 8.07% between them and July loses another 8.21%. Filtered to the top 15%, April is the only losing month in the sample and it costs 3.23%.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Equity curves</h3><span class="small">cumulative summed return %, 73 sessions</span></div>
+    <div class="legend" id="l_eq"></div>
+    <div class="chartbox" id="c_eq"></div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Hard gate versus size tilt</h3></div>
+    <p class="cardsub">The alternative to refusing the low-ranked names is trading them small. Tilting has a marginally better return-per-drawdown, but it triples the absolute drawdown, keeps 450 junk trades in the book, and needs risk-based sizing to exist first. Take the gate.</p>
+    <div class="chartbox" id="c_tilt"></div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Where the big days actually come from</h3></div>
+    <p class="cardsub">Inside the top-15% gate. Note that every one of them is the same one or two symbols hit repeatedly.</p>
+    <div class="tblwrap"><table id="t_big"><thead><tr><th class="l">Date</th><th>Day total</th><th class="l">Legs, symbol and volatility rank</th></tr></thead><tbody></tbody></table></div>
+    <p class="small" style="margin-top:12px">This kills an idea from the earlier review. Repeat entries into a top-ranked name average <strong class="pos">+0.404%</strong> against <strong class="pos">+0.276%</strong> for the day's first entry in that name — the re-entries are the <em>better</em> trades. Do not add a per-symbol cooldown. If anything the cap of three orders per symbol per day is the next thing to test raising, and today's data cannot answer that because the fourth and fifth signals were never generated.</p>
+    <div class="chartbox" id="c_re" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<section id="size">
+  <div class="sechead">
+    <span class="eyebrow">Change three</span>
+    <h2>Size by risk, and know the legal ceiling</h2>
+    <p>With a fixed $5,000 notional, a 0.8% stop risks $40 and a 1.5% stop risks $75. Position size should fall out of the stop, not sit beside it: quantity = (equity × risk %) ÷ (entry − stop).</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>Compounded, top-15% gate, recommended exits, 73 sessions</h3></div>
+    <div class="tblwrap"><table id="t_size"><thead><tr><th class="l">Sizing</th><th class="l">Risk per trade</th><th>Ending equity</th><th>Return</th><th>Max drawdown</th></tr></thead><tbody></tbody></table></div>
+    <p class="small" style="margin-top:12px">Every row is the same 109 trades. Only the money management changes. 0.5% of equity per trade is the setting I would use: 36.5% over four months against an 8.3% peak-to-trough, which is a drawdown you can actually sit through.</p>
+  </div>
+  <div class="callout">
+    <strong>The constraint no backtest will tell you: pattern day trader rules.</strong> This strategy takes two to four day trades per session. In a US margin account under $25,000 of equity you are limited to three day trades in any rolling five business days, and breaking it freezes the account for 90 days. A cash account settles T+1, which makes two trades a day impossible. <strong>There is no version of this that runs daily on real money below $25,000.</strong> That is the actual gate on going live, not the strategy.
+  </div>
+  <div class="callout" style="margin-top:14px">
+    <strong>And the gross exposure it implies.</strong> Risking 0.5% of equity behind a 0.8% stop means a position worth 62.5% of the account. Median day is one trade, but the 90th percentile day is four. Without a gross cap that is 2.5x equity — margin, and a bad correlated morning takes a chunk out of you. Cap gross exposure at 1.0x equity and let later signals size down into what's left.
+  </div>
+</section>
+
+<section id="rejected">
+  <div class="sechead">
+    <span class="eyebrow">Weighed and discarded</span>
+    <h2>Things I tested that I would not build</h2>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag dont">no</span><div><h3>Daily loss limit</h3>
+      <p class="fixbody">Stopping the day after a 1.0% account loss changes the result from $34,136 to $34,641 and does not move drawdown at all. At 0.5% it costs you 19 points. There are only ten days in 55 where it would ever fire. It is a comfort feature that buys nothing measurable, and it risks cutting a day short right before the burst that pays for the month.</p>
+      <div class="chartbox" id="c_ds" style="margin-top:12px"></div></div></div>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag dont">no</span><div><h3>Per-symbol daily cooldown</h3>
+      <p class="fixbody">Proposed after week one of the A/B when v11's re-entries looked bad. Over the full sample, re-entries into <em>top-ranked</em> names are the best trades in the book. The bad re-entries were all in low-ranked names, and the volatility gate removes them for a reason that has a mechanism. Adding a cooldown on top would remove the good ones too.</p></div></div>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag dont">no</span><div><h3>Hold past the 14:58 flatten</h3>
+      <p class="fixbody">Holding to 15:58 instead scores +58.13% against +66.69% for the same stop, and goes negative once the best day is removed. The extra hour is noise. Separately, worth knowing: 14:58 is an hour before the actual close, so the flatten time looks like it was written against a 15:00 close. It happens to be the right answer anyway.</p></div></div>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag maybe">later</span><div><h3>Breakeven stop after +0.75%</h3>
+      <p class="fixbody">Cuts drawdown from −24.1% to −20.3% and total from +92.6% to +65.4%. It is a fair trade if drawdown is binding, but the volatility gate buys more drawdown reduction for less return, so do that first and re-test this after.</p></div></div>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag maybe">later</span><div><h3>Size tilt instead of a hard gate</h3>
+      <p class="fixbody">Better return-per-drawdown on paper. Needs risk-based sizing to exist, triples absolute drawdown, and keeps 450 marginal trades in the book. Revisit once the gate has run live for a month.</p></div></div>
+  </div>
+  <div class="card">
+    <div class="verdict"><span class="tag do">keep</span><div><h3>The four-trades-per-day cap</h3>
+      <p class="fixbody">Already covered in the teardown: over 18 live days it blocked 44 signals that would have lost 24.9%. Once the volatility gate is in, the cap will rarely bind anyway — the gate produces a median of one trade a day and four at the 90th percentile.</p></div></div>
+  </div>
+</section>
+
+<section id="rig">
+  <div class="sechead">
+    <span class="eyebrow">The second question</span>
+    <h2>Can you backtest this reliably? Not today.</h2>
+    <p>There are two backtesters in the repo and neither one tests what the agent does.</p>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>What is broken right now</h3></div>
+    <ul class="tight">
+      <li><strong>The /backtest page uses a different strategy.</strong> <span class="mono">src/sim/backtestEngine.ts</span> sets the stop to the entry candle's extreme and the target to twice that risk. Production uses a fixed percentage stop and a fixed percentage target from the ruleset. Every backtest run stored in the database — all of them — measured a strategy the agent has never traded.</li>
+      <li><strong>It runs on 5-minute bars by default.</strong> Production evaluates 1-minute bars. Different bar size means different break detection, different stop triggers, different everything.</li>
+      <li><strong>It has none of the live gates.</strong> No session direction lock, no SPY 1.5% move gate, no reversal gate, no daily notional cap, no MFE gate, no time exit, no EOD flatten. Those gates suppressed roughly two thirds of all signals in the live era.</li>
+      <li><strong>The replay harness is the honest one, and it is scenario-file based.</strong> <span class="mono">src/replay/harness.ts</span> runs the real engine, but one captured day at a time, and the last saved reports are from May and June.</li>
+      <li><strong>Nothing has ever been scored out of sample.</strong> No holdout, no walk-forward, no plateau check. Which is how a 5-day sample produced a "clamping trades per day is negative EV" conclusion that 18 days reversed.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>What to build — three tiers, in this order</h3></div>
+    <div class="step">
+      <div class="wk">Tier 1</div>
+      <div><h3>Exit lab</h3>
+      <p>Exactly what produced this page. Load recorded entries, replay exits against real 1-minute bars, sweep thousands of configurations in seconds. Answers every stop, target, trail, breakeven and time-exit question. Cannot answer entry questions. About 200 lines, no engine changes, zero risk to production. Verified against the live record at r = 0.983.</p>
+      <pre class="cmd">scripts/exit-lab.ts  --entries all|v11|v10  --sweep stop,target,trail,be
+                     --filter rankPct&lt;0.15  --score return/dd
+                     --holdout 2026-07-01  --walkforward month</pre></div>
+    </div>
+    <div class="step">
+      <div class="wk">Tier 2</div>
+      <div><h3>One exit engine, two callers</h3>
+      <p>Pull the exit logic out of <span class="mono">outcomeTracker</span> into a pure function that takes a config, an entry and a bar stream, and returns an exit. Have the live tracker and the exit lab both call it. This is the only structural change that makes a backtest number and a live number mean the same thing. It also gives the trailing stop one implementation instead of two.</p></div>
+    </div>
+    <div class="step">
+      <div class="wk">Tier 3</div>
+      <div><h3>Full signal replay with the real gates</h3>
+      <p>Drive <span class="mono">src/replay/harness.ts</span> over every historical session instead of one captured day, with the live gate stack wired in. Only this can answer entry questions: what a different retest tolerance does, whether raising the per-symbol daily cap from three to five helps, what happens if the session direction lock is removed. Today those signals do not exist in the database because they were never generated, so no amount of analysis on recorded trades will reach them.</p></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="cardhead"><h3>The scoring rules that make it trustworthy</h3></div>
+    <p class="cardsub">The rig is the easy part. This is the part that stops you fooling yourself, and it is worth hard-coding into the tool so a run cannot report a winner without them.</p>
+    <dl class="kv">
+      <dt>Rank by</dt><dd>Total return ÷ max drawdown. Never by total. Demonstrated above: on the same data, ranking by total produced a config that lost money out of sample and ranking by ratio produced one that made 35.79%.</dd>
+      <dt>Plateau</dt><dd>The chosen cell's immediate neighbours in the parameter grid must average within 20% of it. A winner surrounded by losers is a coincidence.</dd>
+      <dt>Consistency</dt><dd>At least 60% of calendar months positive, and still positive with the best three days removed.</dd>
+      <dt>Concentration</dt><dd>Report best-day share of total on every run. Above 0.60 means you are looking at one day, not a strategy.</dd>
+      <dt>Holdout</dt><dd>Every result reported both in-sample and on a date-split holdout, in both directions. A config that only works forward is a config that only works in one regime.</dd>
+      <dt>Costs</dt><dd>4 bps round trip charged on every trade, always, and a note that real stop fills will be worse than the recorded ones because the database logs stop exits at the exact stop price.</dd>
+      <dt>Minimum</dt><dd>No configuration adopted on fewer than 100 trades or fewer than 3 calendar months.</dd>
+    </dl>
+  </div>
+</section>
+
+<section id="plan">
+  <div class="sechead">
+    <span class="eyebrow">If it were my money</span>
+    <h2>The order I would do it in</h2>
+    <p>Nothing here changes a live setting before the thing that measures it exists.</p>
+  </div>
+  <div class="card">
+    <div class="step"><div class="wk">Step 1</div><div><h3>Build the exit lab and freeze a baseline</h3>
+      <p>Commit it, run it against today's live config, save the output as the baseline. Every future change gets compared to that file. No live change. Half a day.</p></div></div>
+    <div class="step"><div class="wk">Step 2</div><div><h3>Ship the volatility rank as an observer</h3>
+      <p>The <span class="mono">dayRegime.ts</span> snapshot already computes both inputs at 09:35. Write the percentile onto every alert and every outcome row. Change nothing else. Run it a week, then confirm the live ranks match what this study computed. Only after that does it become a gate.</p></div></div>
+    <div class="step"><div class="wk">Step 3</div><div><h3>Change the exits on v11 only</h3>
+      <p>Stop 0.80%, no fixed target, trail arms at +2.0% and gives back 1.0%. Leave v10 alone so you keep a control. Two weeks.</p></div></div>
+    <div class="step"><div class="wk">Step 4</div><div><h3>Turn the gate on, and repoint v10</h3>
+      <p>Gate at the top 20% of the day's universe — between the 15% and 25% cells, both of which are on the plateau. At the same time give v10 the identical exits and gate, so the only remaining difference between the arms is retest versus chase. That is the A/B you thought you were running in July.</p></div></div>
+    <div class="step"><div class="wk">Step 5</div><div><h3>Risk sizing and a stop that survives a crash</h3>
+      <p>Make <span class="mono">broker/service.ts</span> read <span class="mono">risk.riskValue</span>, 0.5% of equity, gross capped at 1.0x. Fix <span class="mono">placeBrokerStopAfterEntry()</span> passing <span class="mono">qty=null</span> so a broker-native stop actually exists. Right now the only thing protecting an open position is a software stop that dies with the process, and that process has already been found dead once.</p></div></div>
+    <div class="step"><div class="wk">Step 6</div><div><h3>Then, and only then, money</h3>
+      <p>Four more weeks of paper on the new configuration first, which gets you to roughly 40 gated trades — the minimum this study's own rules would accept. Then arm live with $500 positions on one arm for two weeks and reconcile every fill against what the tracker thought happened. Scale only after the fills match.</p></div></div>
+  </div>
+</section>
+
+<section id="limits">
+  <div class="sechead">
+    <span class="eyebrow">The parts I am least sure about</span>
+    <h2>What would have to be true for this to be wrong</h2>
+  </div>
+  <div class="card">
+    <ul class="tight">
+      <li><strong>One regime.</strong> April to August 2026 is a single market environment. Nothing here has seen a sustained downtrend or a volatility crush. A strategy that needs symbols moving 3% a day stops existing in a quiet tape, and the volatility gate will simply produce zero trades — which is the correct behaviour but will feel like the agent is broken.</li>
+      <li><strong>The v6 and v9 entries are a proxy, not the same thing.</strong> They are chase entries, but they came from a bug, on a smaller watchlist, through a different gate stack. They quadruple the sample and they are the reason the exit finding is believable. They are not proof that v11 would have produced identical trades in April.</li>
+      <li><strong>Intrabar order is unknowable from minute bars.</strong> When a bar touches both the trailing stop and a new high, I score it as the stop. That is conservative for the trailing configs and generous to nothing.</li>
+      <li><strong>Slippage is a flat 4 bps.</strong> A market order triggered off a 1-minute stop in a name that is moving 3% will do worse than that, and the recorded database logs stop exits at exactly the stop price. The real number is somewhere between this page and worse.</li>
+      <li><strong>109 trades in the recommended configuration.</strong> Five months, but only 109 trades and 55 active days. The plateau test and the reverse holdout are what make me willing to say it out loud; neither is a substitute for forward evidence.</li>
+      <li><strong>And the scale question.</strong> At 0.5% risk this returns roughly 9% a month on the account in the sample period. On $25,000 that is about $2,250 a month before tax. It is a real return and it is not a path to $10,000 a month, let alone $100,000 — that would need roughly $1.1M at the same rate. This is a capital compounder, not an income business. Fund it from something else and let it run.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Method: <span class="mono">outcomes</span> joined to <span class="mono">alerts</span>, <span class="mono">exit_reason = 'SKIPPED'</span> excluded. Each entry replayed against its own <span class="mono">candles_1m</span> RTH bars from the bar after entry to the 14:58 ET flatten, direction adjusted, adverse excursion checked before favourable within each bar, trailing levels computed from prior bars only. 1,953 exit configurations × 5 selection buckets. 4 bps round trip charged everywhere. Volatility rank uses each symbol's own prior-5-session average range plus its 09:30–09:34 range, expressed as a percentile of that day's measurable universe — 11 to 12 symbols in spring, 20 now. No live setting was changed.
+</footer>
+</div>
+<div class="tip" id="tip"></div>
+<script>window.__PLAN__={"buckets":[{"k":"Top 10%","n":76,"tot":28.58,"dd":-9.53,"win":39.5,"pf":1.75,"usd":1429,"conc":0.513,"rdd":3.0,"days":47,"posdays":19,"exbest":13.91,"ex3":3.83,"ex5":-4.41,"months":{"2026-04":-3.23,"2026-05":1.51,"2026-06":5.36,"2026-07":7.62,"2026-08":17.32},"posmonths":4,"nmonths":5,"curve":[{"d":"2026-04-28","v":0.13,"day":0.13,"n":1},{"d":"2026-04-30","v":-3.23,"day":-3.36,"n":4},{"d":"2026-05-01","v":-4.07,"day":-0.84,"n":1},{"d":"2026-05-12","v":-0.048,"day":4.022,"n":3},{"d":"2026-05-13","v":-0.888,"day":-0.84,"n":1},{"d":"2026-05-15","v":-1.571,"day":-0.682,"n":4},{"d":"2026-05-18","v":-2.411,"day":-0.84,"n":1},{"d":"2026-05-21","v":-4.091,"day":-1.68,"n":2},{"d":"2026-05-22","v":-3.149,"day":0.941,"n":1},{"d":"2026-05-26","v":-3.989,"day":-0.84,"n":1},{"d":"2026-05-27","v":-4.203,"day":-0.214,"n":1},{"d":"2026-05-28","v":-0.877,"day":3.326,"n":1},{"d":"2026-05-29","v":-1.717,"day":-0.84,"n":1},{"d":"2026-06-01","v":-2.557,"day":-0.84,"n":1},{"d":"2026-06-03","v":-1.828,"day":0.729,"n":2},{"d":"2026-06-05","v":1.328,"day":3.156,"n":1},{"d":"2026-06-15","v":0.488,"day":-0.84,"n":1},{"d":"2026-06-18","v":1.875,"day":1.387,"n":1},{"d":"2026-06-22","v":5.612,"day":3.737,"n":1},{"d":"2026-06-23","v":4.772,"day":-0.84,"n":1},{"d":"2026-06-24","v":3.932,"day":-0.84,"n":1},{"d":"2026-06-25","v":5.319,"day":1.387,"n":1},{"d":"2026-06-29","v":3.639,"day":-1.68,"n":2},{"d":"2026-07-02","v":2.799,"day":-0.84,"n":1},{"d":"2026-07-10","v":1.959,"day":-0.84,"n":1},{"d":"2026-07-13","v":1.119,"day":-0.84,"n":1},{"d":"2026-07-14","v":0.279,"day":-0.84,"n":1},{"d":"2026-07-16","v":-0.561,"day":-0.84,"n":1},{"d":"2026-07-17","v":-1.401,"day":-0.84,"n":1},{"d":"2026-07-20","v":-2.241,"day":-0.84,"n":1},{"d":"2026-07-21","v":-3.081,"day":-0.84,"n":1},{"d":"2026-07-24","v":-3.921,"day":-0.84,"n":1},{"d":"2026-07-27","v":-1.988,"day":1.933,"n":1},{"d":"2026-07-29","v":1.537,"day":3.525,"n":4},{"d":"2026-07-30","v":7.041,"day":5.504,"n":3},{"d":"2026-07-31","v":11.26,"day":4.219,"n":1},{"d":"2026-08-04","v":11.678,"day":0.417,"n":3},{"d":"2026-08-05","v":9.998,"day":-1.68,"n":2},{"d":"2026-08-07","v":9.158,"day":-0.84,"n":1},{"d":"2026-08-10","v":8.318,"day":-0.84,"n":1},{"d":"2026-08-11","v":12.889,"day":4.572,"n":2},{"d":"2026-08-12","v":12.049,"day":-0.84,"n":1},{"d":"2026-08-13","v":26.719,"day":14.67,"n":4},{"d":"2026-08-14","v":27.106,"day":0.387,"n":2},{"d":"2026-08-17","v":27.477,"day":0.371,"n":2},{"d":"2026-08-18","v":30.257,"day":2.779,"n":4},{"d":"2026-08-19","v":28.577,"day":-1.68,"n":2}],"tpd":1.62},{"k":"Top 15%","n":109,"tot":50.94,"dd":-13.77,"win":41.3,"pf":1.97,"usd":2547,"conc":0.288,"rdd":3.7,"days":55,"posdays":24,"exbest":36.27,"ex3":12.28,"ex5":3.22,"months":{"2026-04":-3.23,"2026-05":1.51,"2026-06":12.23,"2026-07":11.06,"2026-08":29.36},"posmonths":4,"nmonths":5,"curve":[{"d":"2026-04-28","v":0.13,"day":0.13,"n":1},{"d":"2026-04-30","v":-3.23,"day":-3.36,"n":4},{"d":"2026-05-01","v":-4.07,"day":-0.84,"n":1},{"d":"2026-05-12","v":-0.048,"day":4.022,"n":3},{"d":"2026-05-13","v":-0.888,"day":-0.84,"n":1},{"d":"2026-05-15","v":-1.571,"day":-0.682,"n":4},{"d":"2026-05-18","v":-2.411,"day":-0.84,"n":1},{"d":"2026-05-21","v":-4.091,"day":-1.68,"n":2},{"d":"2026-05-22","v":-3.149,"day":0.941,"n":1},{"d":"2026-05-26","v":-3.989,"day":-0.84,"n":1},{"d":"2026-05-27","v":-4.203,"day":-0.214,"n":1},{"d":"2026-05-28","v":-0.877,"day":3.326,"n":1},{"d":"2026-05-29","v":-1.717,"day":-0.84,"n":1},{"d":"2026-06-01","v":-2.557,"day":-0.84,"n":1},{"d":"2026-06-03","v":-1.828,"day":0.729,"n":2},{"d":"2026-06-05","v":1.328,"day":3.156,"n":1},{"d":"2026-06-09","v":6.362,"day":5.034,"n":1},{"d":"2026-06-15","v":5.522,"day":-0.84,"n":1},{"d":"2026-06-16","v":4.682,"day":-0.84,"n":1},{"d":"2026-06-17","v":6.679,"day":1.996,"n":1},{"d":"2026-06-18","v":8.066,"day":1.387,"n":1},{"d":"2026-06-22","v":11.803,"day":3.737,"n":1},{"d":"2026-06-23","v":10.963,"day":-0.84,"n":1},{"d":"2026-06-24","v":11.176,"day":0.213,"n":2},{"d":"2026-06-25","v":12.563,"day":1.387,"n":1},{"d":"2026-06-26","v":11.723,"day":-0.84,"n":1},{"d":"2026-06-29","v":11.348,"day":-0.375,"n":3},{"d":"2026-06-30","v":10.508,"day":-0.84,"n":1},{"d":"2026-07-02","v":12.581,"day":2.073,"n":2},{"d":"2026-07-08","v":11.741,"day":-0.84,"n":1},{"d":"2026-07-09","v":10.901,"day":-0.84,"n":1},{"d":"2026-07-10","v":9.221,"day":-1.68,"n":2},{"d":"2026-07-13","v":7.541,"day":-1.68,"n":2},{"d":"2026-07-14","v":6.701,"day":-0.84,"n":1},{"d":"2026-07-15","v":6.371,"day":-0.33,"n":1},{"d":"2026-07-16","v":5.531,"day":-0.84,"n":1},{"d":"2026-07-17","v":3.851,"day":-1.68,"n":2},{"d":"2026-07-20","v":2.171,"day":-1.68,"n":2},{"d":"2026-07-21","v":0.491,"day":-1.68,"n":2},{"d":"2026-07-24","v":-1.189,"day":-1.68,"n":2},{"d":"2026-07-27","v":0.744,"day":1.933,"n":1},{"d":"2026-07-29","v":4.269,"day":3.525,"n":4},{"d":"2026-07-30","v":18.193,"day":13.924,"n":6},{"d":"2026-07-31","v":21.572,"day":3.379,"n":2},{"d":"2026-08-04","v":31.637,"day":10.064,"n":6},{"d":"2026-08-05","v":30.136,"day":-1.501,"n":3},{"d":"2026-08-07","v":30.47,"day":0.335,"n":2},{"d":"2026-08-10","v":29.63,"day":-0.84,"n":1},{"d":"2026-08-11","v":33.362,"day":3.732,"n":3},{"d":"2026-08-12","v":30.842,"day":-2.52,"n":3},{"d":"2026-08-13","v":45.512,"day":14.67,"n":4},{"d":"2026-08-14","v":46.911,"day":1.399,"n":3},{"d":"2026-08-17","v":46.442,"day":-0.469,"n":3},{"d":"2026-08-18","v":49.221,"day":2.779,"n":4},{"d":"2026-08-19","v":50.936,"day":1.715,"n":4}],"tpd":1.98},{"k":"Top 25%","n":154,"tot":65.59,"dd":-13.77,"win":37.7,"pf":1.82,"usd":3279,"conc":0.485,"rdd":4.76,"days":61,"posdays":24,"exbest":33.76,"ex3":8.09,"ex5":-7.59,"months":{"2026-04":-6.14,"2026-05":0.67,"2026-06":18.18,"2026-07":10.16,"2026-08":42.72},"posmonths":4,"nmonths":5,"curve":[{"d":"2026-04-24","v":2.129,"day":2.129,"n":2},{"d":"2026-04-28","v":-2.782,"day":-4.91,"n":7},{"d":"2026-04-30","v":-6.142,"day":-3.36,"n":4},{"d":"2026-05-01","v":-6.982,"day":-0.84,"n":1},{"d":"2026-05-12","v":-3.8,"day":3.182,"n":4},{"d":"2026-05-13","v":-4.64,"day":-0.84,"n":1},{"d":"2026-05-15","v":-6.162,"day":-1.522,"n":5},{"d":"2026-05-18","v":-7.002,"day":-0.84,"n":1},{"d":"2026-05-20","v":-7.842,"day":-0.84,"n":1},{"d":"2026-05-21","v":-9.522,"day":-1.68,"n":2},{"d":"2026-05-22","v":-7.313,"day":2.208,"n":2},{"d":"2026-05-26","v":-8.153,"day":-0.84,"n":1},{"d":"2026-05-27","v":-9.208,"day":-1.054,"n":2},{"d":"2026-05-28","v":-4.943,"day":4.265,"n":2},{"d":"2026-05-29","v":-5.472,"day":-0.529,"n":2},{"d":"2026-06-01","v":-7.152,"day":-1.68,"n":2},{"d":"2026-06-02","v":-5.32,"day":1.832,"n":1},{"d":"2026-06-03","v":-5.431,"day":-0.111,"n":3},{"d":"2026-06-04","v":-6.271,"day":-0.84,"n":1},{"d":"2026-06-05","v":-1.376,"day":4.895,"n":2},{"d":"2026-06-09","v":9.405,"day":10.781,"n":2},{"d":"2026-06-10","v":8.565,"day":-0.84,"n":1},{"d":"2026-06-15","v":7.725,"day":-0.84,"n":1},{"d":"2026-06-16","v":6.885,"day":-0.84,"n":1},{"d":"2026-06-17","v":8.881,"day":1.996,"n":1},{"d":"2026-06-18","v":10.268,"day":1.387,"n":1},{"d":"2026-06-22","v":14.005,"day":3.737,"n":1},{"d":"2026-06-23","v":13.165,"day":-0.84,"n":1},{"d":"2026-06-24","v":13.379,"day":0.213,"n":2},{"d":"2026-06-25","v":14.766,"day":1.387,"n":1},{"d":"2026-06-26","v":13.926,"day":-0.84,"n":1},{"d":"2026-06-29","v":13.55,"day":-0.375,"n":3},{"d":"2026-06-30","v":12.71,"day":-0.84,"n":1},{"d":"2026-07-02","v":14.783,"day":2.073,"n":2},{"d":"2026-07-08","v":13.943,"day":-0.84,"n":1},{"d":"2026-07-09","v":13.103,"day":-0.84,"n":1},{"d":"2026-07-10","v":11.423,"day":-1.68,"n":2},{"d":"2026-07-13","v":9.743,"day":-1.68,"n":2},{"d":"2026-07-14","v":8.903,"day":-0.84,"n":1},{"d":"2026-07-15","v":8.573,"day":-0.33,"n":1},{"d":"2026-07-16","v":7.733,"day":-0.84,"n":1},{"d":"2026-07-17","v":6.053,"day":-1.68,"n":2},{"d":"2026-07-20","v":4.373,"day":-1.68,"n":2},{"d":"2026-07-21","v":2.693,"day":-1.68,"n":2},{"d":"2026-07-24","v":1.013,"day":-1.68,"n":2},{"d":"2026-07-27","v":2.946,"day":1.933,"n":1},{"d":"2026-07-29","v":6.81,"day":3.863,"n":6},{"d":"2026-07-30","v":21.169,"day":14.36,"n":9},{"d":"2026-07-31","v":22.868,"day":1.699,"n":4},{"d":"2026-08-04","v":54.696,"day":31.828,"n":9},{"d":"2026-08-05","v":52.355,"day":-2.341,"n":4},{"d":"2026-08-07","v":52.69,"day":0.335,"n":2},{"d":"2026-08-10","v":51.01,"day":-1.68,"n":2},{"d":"2026-08-11","v":53.062,"day":2.052,"n":5},{"d":"2026-08-12","v":50.542,"day":-2.52,"n":3},{"d":"2026-08-13","v":61.851,"day":11.31,"n":8},{"d":"2026-08-14","v":63.25,"day":1.399,"n":3},{"d":"2026-08-17","v":62.781,"day":-0.469,"n":3},{"d":"2026-08-18","v":62.201,"day":-0.581,"n":8},{"d":"2026-08-19","v":63.916,"day":1.715,"n":4},{"d":"2026-08-20","v":65.586,"day":1.67,"n":1}],"tpd":2.52},{"k":"Top 40%","n":253,"tot":76.4,"dd":-17.79,"win":38.7,"pf":1.61,"usd":3820,"conc":0.556,"rdd":4.29,"days":67,"posdays":28,"exbest":33.92,"ex3":8.15,"ex5":-7.95,"months":{"2026-04":-2.55,"2026-05":-2.42,"2026-06":21.28,"2026-07":6.46,"2026-08":53.63},"posmonths":3,"nmonths":5,"curve":[{"d":"2026-04-24","v":2.129,"day":2.129,"n":2},{"d":"2026-04-28","v":-2.916,"day":-5.045,"n":14},{"d":"2026-04-30","v":-2.551,"day":0.365,"n":7},{"d":"2026-05-01","v":-3.391,"day":-0.84,"n":1},{"d":"2026-05-12","v":-0.209,"day":3.182,"n":4},{"d":"2026-05-13","v":-1.049,"day":-0.84,"n":1},{"d":"2026-05-14","v":-1.889,"day":-0.84,"n":1},{"d":"2026-05-15","v":-5.931,"day":-4.042,"n":8},{"d":"2026-05-18","v":-5.368,"day":0.563,"n":2},{"d":"2026-05-19","v":-6.208,"day":-0.84,"n":1},{"d":"2026-05-20","v":-7.888,"day":-1.68,"n":2},{"d":"2026-05-21","v":-9.568,"day":-1.68,"n":2},{"d":"2026-05-22","v":-7.36,"day":2.208,"n":2},{"d":"2026-05-26","v":-8.2,"day":-0.84,"n":1},{"d":"2026-05-27","v":-8.998,"day":-0.798,"n":3},{"d":"2026-05-28","v":-4.733,"day":4.265,"n":2},{"d":"2026-05-29","v":-4.968,"day":-0.235,"n":3},{"d":"2026-06-01","v":-4.674,"day":0.294,"n":3},{"d":"2026-06-02","v":-2.753,"day":1.921,"n":3},{"d":"2026-06-03","v":-2.351,"day":0.402,"n":4},{"d":"2026-06-04","v":-4.031,"day":-1.68,"n":2},{"d":"2026-06-05","v":2.905,"day":6.936,"n":3},{"d":"2026-06-09","v":15.159,"day":12.254,"n":3},{"d":"2026-06-10","v":13.479,"day":-1.68,"n":2},{"d":"2026-06-11","v":12.639,"day":-0.84,"n":1},{"d":"2026-06-15","v":11.799,"day":-0.84,"n":1},{"d":"2026-06-16","v":10.959,"day":-0.84,"n":1},{"d":"2026-06-17","v":14.882,"day":3.923,"n":3},{"d":"2026-06-18","v":14.589,"day":-0.293,"n":3},{"d":"2026-06-22","v":23.16,"day":8.571,"n":3},{"d":"2026-06-23","v":21.48,"day":-1.68,"n":2},{"d":"2026-06-24","v":20.013,"day":-1.467,"n":4},{"d":"2026-06-25","v":19.72,"day":-0.293,"n":3},{"d":"2026-06-26","v":18.04,"day":-1.68,"n":2},{"d":"2026-06-29","v":17.99,"day":-0.05,"n":5},{"d":"2026-06-30","v":16.31,"day":-1.68,"n":2},{"d":"2026-07-02","v":18.382,"day":2.073,"n":2},{"d":"2026-07-06","v":19.072,"day":0.69,"n":1},{"d":"2026-07-07","v":18.232,"day":-0.84,"n":1},{"d":"2026-07-08","v":18.686,"day":0.454,"n":2},{"d":"2026-07-09","v":17.846,"day":-0.84,"n":1},{"d":"2026-07-10","v":15.326,"day":-2.52,"n":3},{"d":"2026-07-13","v":13.646,"day":-1.68,"n":2},{"d":"2026-07-14","v":12.806,"day":-0.84,"n":1},{"d":"2026-07-15","v":12.476,"day":-0.33,"n":1},{"d":"2026-07-16","v":12.145,"day":-0.331,"n":2},{"d":"2026-07-17","v":11.681,"day":-0.464,"n":3},{"d":"2026-07-20","v":10.001,"day":-1.68,"n":2},{"d":"2026-07-21","v":8.473,"day":-1.528,"n":3},{"d":"2026-07-24","v":6.793,"day":-1.68,"n":2},{"d":"2026-07-27","v":8.726,"day":1.933,"n":1},{"d":"2026-07-29","v":10.069,"day":1.343,"n":9},{"d":"2026-07-30","v":23.589,"day":13.52,"n":10},{"d":"2026-07-31","v":22.768,"day":-0.821,"n":7},{"d":"2026-08-03","v":20.248,"day":-2.52,"n":3},{"d":"2026-08-04","v":62.726,"day":42.478,"n":18},{"d":"2026-08-05","v":57.865,"day":-4.861,"n":7},{"d":"2026-08-07","v":59.381,"day":1.516,"n":3},{"d":"2026-08-10","v":57.262,"day":-2.119,"n":4},{"d":"2026-08-11","v":58.473,"day":1.212,"n":6},{"d":"2026-08-12","v":59.656,"day":1.183,"n":6},{"d":"2026-08-13","v":67.185,"day":7.529,"n":13},{"d":"2026-08-14","v":69.436,"day":2.251,"n":4},{"d":"2026-08-17","v":76.567,"day":7.131,"n":8},{"d":"2026-08-18","v":74.302,"day":-2.265,"n":13},{"d":"2026-08-19","v":75.57,"day":1.267,"n":7},{"d":"2026-08-20","v":76.4,"day":0.83,"n":2}],"tpd":3.78},{"k":"No filter","n":601,"tot":92.6,"dd":-24.08,"win":42.9,"pf":1.39,"usd":4630,"conc":0.51,"rdd":3.85,"days":72,"posdays":29,"exbest":45.39,"ex3":9.17,"ex5":-19.42,"months":{"2026-04":-1.27,"2026-05":-6.8,"2026-06":43.87,"2026-07":-8.21,"2026-08":65.02},"posmonths":2,"nmonths":5,"curve":[{"d":"2026-04-24","v":2.572,"day":2.572,"n":6},{"d":"2026-04-28","v":-9.159,"day":-11.731,"n":36},{"d":"2026-04-30","v":-1.274,"day":7.885,"n":34},{"d":"2026-05-01","v":-1.094,"day":0.181,"n":4},{"d":"2026-05-12","v":2.554,"day":3.648,"n":11},{"d":"2026-05-13","v":1.714,"day":-0.84,"n":1},{"d":"2026-05-14","v":1.433,"day":-0.281,"n":3},{"d":"2026-05-15","v":-2.395,"day":-3.828,"n":16},{"d":"2026-05-18","v":-3.737,"day":-1.342,"n":6},{"d":"2026-05-19","v":-6.481,"day":-2.744,"n":4},{"d":"2026-05-20","v":-6.844,"day":-0.362,"n":6},{"d":"2026-05-21","v":-8.344,"day":-1.501,"n":5},{"d":"2026-05-22","v":-6.759,"day":1.586,"n":5},{"d":"2026-05-26","v":-7.788,"day":-1.029,"n":5},{"d":"2026-05-27","v":-10.243,"day":-2.455,"n":7},{"d":"2026-05-28","v":-6.539,"day":3.703,"n":5},{"d":"2026-05-29","v":-8.076,"day":-1.537,"n":5},{"d":"2026-06-01","v":-8.994,"day":-0.918,"n":5},{"d":"2026-06-02","v":-5.922,"day":3.072,"n":5},{"d":"2026-06-03","v":-4.184,"day":1.738,"n":6},{"d":"2026-06-04","v":-6.062,"day":-1.878,"n":6},{"d":"2026-06-05","v":8.703,"day":14.765,"n":5},{"d":"2026-06-09","v":27.114,"day":18.411,"n":6},{"d":"2026-06-10","v":25.434,"day":-1.68,"n":2},{"d":"2026-06-11","v":24.594,"day":-0.84,"n":1},{"d":"2026-06-15","v":25.715,"day":1.121,"n":5},{"d":"2026-06-16","v":25.027,"day":-0.688,"n":5},{"d":"2026-06-17","v":31.093,"day":6.066,"n":5},{"d":"2026-06-18","v":29.96,"day":-1.133,"n":4},{"d":"2026-06-22","v":40.205,"day":10.245,"n":4},{"d":"2026-06-23","v":37.685,"day":-2.52,"n":3},{"d":"2026-06-24","v":35.379,"day":-2.307,"n":5},{"d":"2026-06-25","v":38.261,"day":2.883,"n":7},{"d":"2026-06-26","v":35.741,"day":-2.52,"n":3},{"d":"2026-06-29","v":35.022,"day":-0.72,"n":7},{"d":"2026-06-30","v":35.79,"day":0.768,"n":4},{"d":"2026-07-01","v":34.182,"day":-1.607,"n":3},{"d":"2026-07-02","v":36.595,"day":2.413,"n":3},{"d":"2026-07-06","v":38.256,"day":1.661,"n":3},{"d":"2026-07-07","v":37.081,"day":-1.175,"n":3},{"d":"2026-07-08","v":36.695,"day":-0.386,"n":3},{"d":"2026-07-09","v":33.874,"day":-2.821,"n":5},{"d":"2026-07-10","v":30.514,"day":-3.36,"n":4},{"d":"2026-07-13","v":29.048,"day":-1.466,"n":3},{"d":"2026-07-14","v":27.368,"day":-1.68,"n":2},{"d":"2026-07-15","v":27.698,"day":0.33,"n":2},{"d":"2026-07-16","v":27.809,"day":0.111,"n":3},{"d":"2026-07-17","v":25.665,"day":-2.144,"n":5},{"d":"2026-07-20","v":23.951,"day":-1.713,"n":3},{"d":"2026-07-21","v":21.734,"day":-2.217,"n":5},{"d":"2026-07-22","v":25.317,"day":3.583,"n":2},{"d":"2026-07-23","v":24.477,"day":-0.84,"n":1},{"d":"2026-07-24","v":23.626,"day":-0.851,"n":4},{"d":"2026-07-27","v":26.973,"day":3.348,"n":3},{"d":"2026-07-28","v":23.42,"day":-3.553,"n":5},{"d":"2026-07-29","v":18.352,"day":-5.068,"n":19},{"d":"2026-07-30","v":32.179,"day":13.827,"n":25},{"d":"2026-07-31","v":27.578,"day":-4.601,"n":14},{"d":"2026-08-03","v":24.206,"day":-3.372,"n":14},{"d":"2026-08-04","v":71.416,"day":47.21,"n":26},{"d":"2026-08-05","v":64.613,"day":-6.803,"n":19},{"d":"2026-08-06","v":62.121,"day":-2.492,"n":5},{"d":"2026-08-07","v":61.602,"day":-0.519,"n":10},{"d":"2026-08-10","v":60.187,"day":-1.415,"n":9},{"d":"2026-08-11","v":66.852,"day":6.665,"n":14},{"d":"2026-08-12","v":74.722,"day":7.87,"n":25},{"d":"2026-08-13","v":78.422,"day":3.7,"n":34},{"d":"2026-08-14","v":82.862,"day":4.44,"n":11},{"d":"2026-08-17","v":100.67,"day":17.808,"n":26},{"d":"2026-08-18","v":95.824,"day":-4.846,"n":22},{"d":"2026-08-19","v":92.091,"day":-3.733,"n":14},{"d":"2026-08-20","v":92.6,"day":0.509,"n":5}],"tpd":8.35}],"buckets_live":[{"k":"Top 10%","n":76,"tot":22.51,"dd":-12.41,"win":42.1,"pf":1.51,"usd":1126,"conc":0.437,"rdd":1.81,"days":47,"posdays":19,"exbest":12.67,"ex3":0.88,"ex5":-7.92,"months":{"2026-04":-4.03,"2026-05":-1.29,"2026-06":1.68,"2026-07":6.5,"2026-08":19.66},"posmonths":3,"nmonths":5,"curve":[{"d":"2026-04-28","v":0.13,"day":0.13,"n":1},{"d":"2026-04-30","v":-4.03,"day":-4.16,"n":4},{"d":"2026-05-01","v":-5.07,"day":-1.04,"n":1},{"d":"2026-05-12","v":-1.19,"day":3.88,"n":3},{"d":"2026-05-13","v":-2.23,"day":-1.04,"n":1},{"d":"2026-05-15","v":-3.312,"day":-1.082,"n":4},{"d":"2026-05-18","v":-4.352,"day":-1.04,"n":1},{"d":"2026-05-21","v":-6.432,"day":-2.08,"n":2},{"d":"2026-05-22","v":-5.491,"day":0.941,"n":1},{"d":"2026-05-26","v":-6.531,"day":-1.04,"n":1},{"d":"2026-05-27","v":-6.745,"day":-0.214,"n":1},{"d":"2026-05-28","v":-4.285,"day":2.46,"n":1},{"d":"2026-05-29","v":-5.325,"day":-1.04,"n":1},{"d":"2026-06-01","v":-6.365,"day":-1.04,"n":1},{"d":"2026-06-03","v":-5.836,"day":0.529,"n":2},{"d":"2026-06-05","v":-3.376,"day":2.46,"n":1},{"d":"2026-06-15","v":-4.416,"day":-1.04,"n":1},{"d":"2026-06-18","v":-4.401,"day":0.015,"n":1},{"d":"2026-06-22","v":-1.941,"day":2.46,"n":1},{"d":"2026-06-23","v":-2.981,"day":-1.04,"n":1},{"d":"2026-06-24","v":-4.021,"day":-1.04,"n":1},{"d":"2026-06-25","v":-1.561,"day":2.46,"n":1},{"d":"2026-06-29","v":-3.641,"day":-2.08,"n":2},{"d":"2026-07-02","v":-4.681,"day":-1.04,"n":1},{"d":"2026-07-10","v":-5.721,"day":-1.04,"n":1},{"d":"2026-07-13","v":-6.761,"day":-1.04,"n":1},{"d":"2026-07-14","v":-7.801,"day":-1.04,"n":1},{"d":"2026-07-16","v":-8.841,"day":-1.04,"n":1},{"d":"2026-07-17","v":-9.881,"day":-1.04,"n":1},{"d":"2026-07-20","v":-10.921,"day":-1.04,"n":1},{"d":"2026-07-21","v":-11.243,"day":-0.322,"n":1},{"d":"2026-07-24","v":-12.283,"day":-1.04,"n":1},{"d":"2026-07-27","v":-9.823,"day":2.46,"n":1},{"d":"2026-07-29","v":-3.483,"day":6.34,"n":4},{"d":"2026-07-30","v":0.397,"day":3.88,"n":3},{"d":"2026-07-31","v":2.857,"day":2.46,"n":1},{"d":"2026-08-04","v":6.737,"day":3.88,"n":3},{"d":"2026-08-05","v":4.657,"day":-2.08,"n":2},{"d":"2026-08-07","v":3.617,"day":-1.04,"n":1},{"d":"2026-08-10","v":2.577,"day":-1.04,"n":1},{"d":"2026-08-11","v":7.497,"day":4.92,"n":2},{"d":"2026-08-12","v":6.457,"day":-1.04,"n":1},{"d":"2026-08-13","v":16.297,"day":9.84,"n":4},{"d":"2026-08-14","v":14.217,"day":-2.08,"n":2},{"d":"2026-08-17","v":15.637,"day":1.42,"n":2},{"d":"2026-08-18","v":21.092,"day":5.455,"n":4},{"d":"2026-08-19","v":22.512,"day":1.42,"n":2}],"tpd":1.62},{"k":"Top 15%","n":109,"tot":36.92,"dd":-13.13,"win":43.1,"pf":1.61,"usd":1846,"conc":0.305,"rdd":2.81,"days":55,"posdays":25,"exbest":25.66,"ex3":8.06,"ex5":-3.74,"months":{"2026-04":-4.03,"2026-05":-1.29,"2026-06":4.74,"2026-07":10.15,"2026-08":27.36},"posmonths":3,"nmonths":5,"curve":[{"d":"2026-04-28","v":0.13,"day":0.13,"n":1},{"d":"2026-04-30","v":-4.03,"day":-4.16,"n":4},{"d":"2026-05-01","v":-5.07,"day":-1.04,"n":1},{"d":"2026-05-12","v":-1.19,"day":3.88,"n":3},{"d":"2026-05-13","v":-2.23,"day":-1.04,"n":1},{"d":"2026-05-15","v":-3.312,"day":-1.082,"n":4},{"d":"2026-05-18","v":-4.352,"day":-1.04,"n":1},{"d":"2026-05-21","v":-6.432,"day":-2.08,"n":2},{"d":"2026-05-22","v":-5.491,"day":0.941,"n":1},{"d":"2026-05-26","v":-6.531,"day":-1.04,"n":1},{"d":"2026-05-27","v":-6.745,"day":-0.214,"n":1},{"d":"2026-05-28","v":-4.285,"day":2.46,"n":1},{"d":"2026-05-29","v":-5.325,"day":-1.04,"n":1},{"d":"2026-06-01","v":-6.365,"day":-1.04,"n":1},{"d":"2026-06-03","v":-5.836,"day":0.529,"n":2},{"d":"2026-06-05","v":-3.376,"day":2.46,"n":1},{"d":"2026-06-09","v":-0.916,"day":2.46,"n":1},{"d":"2026-06-15","v":-1.956,"day":-1.04,"n":1},{"d":"2026-06-16","v":-2.996,"day":-1.04,"n":1},{"d":"2026-06-17","v":-0.999,"day":1.996,"n":1},{"d":"2026-06-18","v":-0.985,"day":0.015,"n":1},{"d":"2026-06-22","v":1.475,"day":2.46,"n":1},{"d":"2026-06-23","v":0.435,"day":-1.04,"n":1},{"d":"2026-06-24","v":-0.897,"day":-1.333,"n":2},{"d":"2026-06-25","v":1.563,"day":2.46,"n":1},{"d":"2026-06-26","v":0.523,"day":-1.04,"n":1},{"d":"2026-06-29","v":-0.253,"day":-0.775,"n":3},{"d":"2026-06-30","v":-0.59,"day":-0.337,"n":1},{"d":"2026-07-02","v":0.83,"day":1.42,"n":2},{"d":"2026-07-08","v":3.29,"day":2.46,"n":1},{"d":"2026-07-09","v":2.25,"day":-1.04,"n":1},{"d":"2026-07-10","v":3.67,"day":1.42,"n":2},{"d":"2026-07-13","v":1.59,"day":-2.08,"n":2},{"d":"2026-07-14","v":0.55,"day":-1.04,"n":1},{"d":"2026-07-15","v":0.221,"day":-0.33,"n":1},{"d":"2026-07-16","v":-0.819,"day":-1.04,"n":1},{"d":"2026-07-17","v":-2.899,"day":-2.08,"n":2},{"d":"2026-07-20","v":-4.979,"day":-2.08,"n":2},{"d":"2026-07-21","v":-6.342,"day":-1.362,"n":2},{"d":"2026-07-24","v":-8.422,"day":-2.08,"n":2},{"d":"2026-07-27","v":-5.962,"day":2.46,"n":1},{"d":"2026-07-29","v":0.378,"day":6.34,"n":4},{"d":"2026-07-30","v":8.138,"day":7.76,"n":6},{"d":"2026-07-31","v":9.558,"day":1.42,"n":2},{"d":"2026-08-04","v":20.818,"day":11.26,"n":6},{"d":"2026-08-05","v":18.917,"day":-1.901,"n":3},{"d":"2026-08-07","v":19.748,"day":0.831,"n":2},{"d":"2026-08-10","v":18.708,"day":-1.04,"n":1},{"d":"2026-08-11","v":22.588,"day":3.88,"n":3},{"d":"2026-08-12","v":19.468,"day":-3.12,"n":3},{"d":"2026-08-13","v":29.308,"day":9.84,"n":4},{"d":"2026-08-14","v":28.24,"day":-1.068,"n":3},{"d":"2026-08-17","v":28.62,"day":0.38,"n":3},{"d":"2026-08-18","v":34.076,"day":5.455,"n":4},{"d":"2026-08-19","v":36.916,"day":2.84,"n":4}],"tpd":1.98},{"k":"Top 25%","n":154,"tot":32.55,"dd":-15.12,"win":39.6,"pf":1.35,"usd":1627,"conc":0.573,"rdd":2.15,"days":61,"posdays":25,"exbest":13.91,"ex3":-1.99,"ex5":-12.59,"months":{"2026-04":-8.65,"2026-05":-1.35,"2026-06":7.96,"2026-07":9.87,"2026-08":24.72},"posmonths":3,"nmonths":5,"curve":[{"d":"2026-04-24","v":1.624,"day":1.624,"n":2},{"d":"2026-04-28","v":-4.486,"day":-6.11,"n":7},{"d":"2026-04-30","v":-8.646,"day":-4.16,"n":4},{"d":"2026-05-01","v":-9.686,"day":-1.04,"n":1},{"d":"2026-05-12","v":-6.846,"day":2.84,"n":4},{"d":"2026-05-13","v":-7.886,"day":-1.04,"n":1},{"d":"2026-05-15","v":-8.418,"day":-0.532,"n":5},{"d":"2026-05-18","v":-9.458,"day":-1.04,"n":1},{"d":"2026-05-20","v":-10.498,"day":-1.04,"n":1},{"d":"2026-05-21","v":-12.578,"day":-2.08,"n":2},{"d":"2026-05-22","v":-10.37,"day":2.208,"n":2},{"d":"2026-05-26","v":-11.41,"day":-1.04,"n":1},{"d":"2026-05-27","v":-12.664,"day":-1.254,"n":2},{"d":"2026-05-28","v":-9.266,"day":3.399,"n":2},{"d":"2026-05-29","v":-9.995,"day":-0.729,"n":2},{"d":"2026-06-01","v":-12.075,"day":-2.08,"n":2},{"d":"2026-06-02","v":-9.615,"day":2.46,"n":1},{"d":"2026-06-03","v":-10.126,"day":-0.511,"n":3},{"d":"2026-06-04","v":-11.166,"day":-1.04,"n":1},{"d":"2026-06-05","v":-6.246,"day":4.92,"n":2},{"d":"2026-06-09","v":-1.326,"day":4.92,"n":2},{"d":"2026-06-10","v":-2.366,"day":-1.04,"n":1},{"d":"2026-06-15","v":-3.406,"day":-1.04,"n":1},{"d":"2026-06-16","v":-4.446,"day":-1.04,"n":1},{"d":"2026-06-17","v":-2.449,"day":1.996,"n":1},{"d":"2026-06-18","v":-2.434,"day":0.015,"n":1},{"d":"2026-06-22","v":0.026,"day":2.46,"n":1},{"d":"2026-06-23","v":-1.014,"day":-1.04,"n":1},{"d":"2026-06-24","v":-2.347,"day":-1.333,"n":2},{"d":"2026-06-25","v":0.113,"day":2.46,"n":1},{"d":"2026-06-26","v":-0.927,"day":-1.04,"n":1},{"d":"2026-06-29","v":-1.702,"day":-0.775,"n":3},{"d":"2026-06-30","v":-2.039,"day":-0.337,"n":1},{"d":"2026-07-02","v":-0.619,"day":1.42,"n":2},{"d":"2026-07-08","v":1.841,"day":2.46,"n":1},{"d":"2026-07-09","v":0.801,"day":-1.04,"n":1},{"d":"2026-07-10","v":2.221,"day":1.42,"n":2},{"d":"2026-07-13","v":0.141,"day":-2.08,"n":2},{"d":"2026-07-14","v":-0.899,"day":-1.04,"n":1},{"d":"2026-07-15","v":-1.229,"day":-0.33,"n":1},{"d":"2026-07-16","v":-2.269,"day":-1.04,"n":1},{"d":"2026-07-17","v":-4.349,"day":-2.08,"n":2},{"d":"2026-07-20","v":-6.429,"day":-2.08,"n":2},{"d":"2026-07-21","v":-7.791,"day":-1.362,"n":2},{"d":"2026-07-24","v":-9.871,"day":-2.08,"n":2},{"d":"2026-07-27","v":-7.411,"day":2.46,"n":1},{"d":"2026-07-29","v":0.349,"day":7.76,"n":6},{"d":"2026-07-30","v":8.489,"day":8.14,"n":9},{"d":"2026-07-31","v":7.829,"day":-0.66,"n":4},{"d":"2026-08-04","v":26.469,"day":18.64,"n":9},{"d":"2026-08-05","v":23.527,"day":-2.941,"n":4},{"d":"2026-08-07","v":24.358,"day":0.831,"n":2},{"d":"2026-08-10","v":22.278,"day":-2.08,"n":2},{"d":"2026-08-11","v":24.078,"day":1.8,"n":5},{"d":"2026-08-12","v":20.958,"day":-3.12,"n":3},{"d":"2026-08-13","v":26.638,"day":5.68,"n":8},{"d":"2026-08-14","v":25.57,"day":-1.068,"n":3},{"d":"2026-08-17","v":25.95,"day":0.38,"n":3},{"d":"2026-08-18","v":27.246,"day":1.295,"n":8},{"d":"2026-08-19","v":30.086,"day":2.84,"n":4},{"d":"2026-08-20","v":32.546,"day":2.46,"n":1}],"tpd":2.52},{"k":"Top 40%","n":253,"tot":43.97,"dd":-15.21,"win":41.1,"pf":1.31,"usd":2198,"conc":0.731,"rdd":2.89,"days":67,"posdays":31,"exbest":11.83,"ex3":-3.47,"ex5":-18.23,"months":{"2026-04":-6.8,"2026-05":-1.28,"2026-06":12.72,"2026-07":3.16,"2026-08":36.18},"posmonths":3,"nmonths":5,"curve":[{"d":"2026-04-24","v":1.624,"day":1.624,"n":2},{"d":"2026-04-28","v":-4.821,"day":-6.445,"n":14},{"d":"2026-04-30","v":-6.805,"day":-1.984,"n":7},{"d":"2026-05-01","v":-7.845,"day":-1.04,"n":1},{"d":"2026-05-12","v":-5.005,"day":2.84,"n":4},{"d":"2026-05-13","v":-6.045,"day":-1.04,"n":1},{"d":"2026-05-14","v":-4.682,"day":1.363,"n":1},{"d":"2026-05-15","v":-7.444,"day":-2.762,"n":8},{"d":"2026-05-18","v":-6.024,"day":1.42,"n":2},{"d":"2026-05-19","v":-7.064,"day":-1.04,"n":1},{"d":"2026-05-20","v":-9.144,"day":-2.08,"n":2},{"d":"2026-05-21","v":-11.224,"day":-2.08,"n":2},{"d":"2026-05-22","v":-9.015,"day":2.208,"n":2},{"d":"2026-05-26","v":-10.055,"day":-1.04,"n":1},{"d":"2026-05-27","v":-11.053,"day":-0.998,"n":3},{"d":"2026-05-28","v":-7.655,"day":3.399,"n":2},{"d":"2026-05-29","v":-8.089,"day":-0.435,"n":3},{"d":"2026-06-01","v":-8.195,"day":-0.106,"n":3},{"d":"2026-06-02","v":-5.847,"day":2.349,"n":3},{"d":"2026-06-03","v":-5.845,"day":0.002,"n":4},{"d":"2026-06-04","v":-7.925,"day":-2.08,"n":2},{"d":"2026-06-05","v":-0.545,"day":7.38,"n":3},{"d":"2026-06-09","v":6.835,"day":7.38,"n":3},{"d":"2026-06-10","v":4.755,"day":-2.08,"n":2},{"d":"2026-06-11","v":3.715,"day":-1.04,"n":1},{"d":"2026-06-15","v":2.675,"day":-1.04,"n":1},{"d":"2026-06-16","v":1.635,"day":-1.04,"n":1},{"d":"2026-06-17","v":5.558,"day":3.923,"n":3},{"d":"2026-06-18","v":3.492,"day":-2.065,"n":3},{"d":"2026-06-22","v":10.872,"day":7.38,"n":3},{"d":"2026-06-23","v":8.792,"day":-2.08,"n":2},{"d":"2026-06-24","v":5.38,"day":-3.413,"n":4},{"d":"2026-06-25","v":5.978,"day":0.599,"n":3},{"d":"2026-06-26","v":3.898,"day":-2.08,"n":2},{"d":"2026-06-29","v":4.543,"day":0.645,"n":5},{"d":"2026-06-30","v":4.627,"day":0.084,"n":2},{"d":"2026-07-02","v":6.047,"day":1.42,"n":2},{"d":"2026-07-06","v":6.737,"day":0.69,"n":1},{"d":"2026-07-07","v":6.748,"day":0.011,"n":1},{"d":"2026-07-08","v":10.502,"day":3.754,"n":2},{"d":"2026-07-09","v":9.462,"day":-1.04,"n":1},{"d":"2026-07-10","v":9.842,"day":0.38,"n":3},{"d":"2026-07-13","v":7.762,"day":-2.08,"n":2},{"d":"2026-07-14","v":6.722,"day":-1.04,"n":1},{"d":"2026-07-15","v":6.392,"day":-0.33,"n":1},{"d":"2026-07-16","v":5.861,"day":-0.531,"n":2},{"d":"2026-07-17","v":2.741,"day":-3.12,"n":3},{"d":"2026-07-20","v":0.661,"day":-2.08,"n":2},{"d":"2026-07-21","v":-0.549,"day":-1.21,"n":3},{"d":"2026-07-24","v":-2.629,"day":-2.08,"n":2},{"d":"2026-07-27","v":-0.169,"day":2.46,"n":1},{"d":"2026-07-29","v":4.471,"day":4.64,"n":9},{"d":"2026-07-30","v":11.571,"day":7.1,"n":10},{"d":"2026-07-31","v":7.791,"day":-3.78,"n":7},{"d":"2026-08-03","v":4.671,"day":-3.12,"n":3},{"d":"2026-08-04","v":36.804,"day":32.133,"n":18},{"d":"2026-08-05","v":30.743,"day":-6.061,"n":7},{"d":"2026-08-07","v":30.534,"day":-0.209,"n":3},{"d":"2026-08-10","v":27.815,"day":-2.719,"n":4},{"d":"2026-08-11","v":28.575,"day":0.76,"n":6},{"d":"2026-08-12","v":29.335,"day":0.76,"n":6},{"d":"2026-08-13","v":30.656,"day":1.322,"n":13},{"d":"2026-08-14","v":30.44,"day":-0.216,"n":4},{"d":"2026-08-17","v":38.364,"day":7.924,"n":8},{"d":"2026-08-18","v":39.327,"day":0.963,"n":13},{"d":"2026-08-19","v":42.547,"day":3.22,"n":7},{"d":"2026-08-20","v":43.967,"day":1.42,"n":2}],"tpd":3.78},{"k":"No filter","n":601,"tot":50.49,"dd":-26.72,"win":44.9,"pf":1.19,"usd":2525,"conc":0.747,"rdd":1.89,"days":72,"posdays":29,"exbest":12.78,"ex3":-18.59,"ex5":-39.94,"months":{"2026-04":-6.73,"2026-05":-5.82,"2026-06":31.96,"2026-07":-18.88,"2026-08":49.96},"posmonths":2,"nmonths":5,"curve":[{"d":"2026-04-24","v":2.067,"day":2.067,"n":6},{"d":"2026-04-28","v":-11.264,"day":-13.331,"n":36},{"d":"2026-04-30","v":-6.728,"day":4.536,"n":34},{"d":"2026-05-01","v":-8.234,"day":-1.506,"n":4},{"d":"2026-05-12","v":-5.128,"day":3.106,"n":11},{"d":"2026-05-13","v":-6.168,"day":-1.04,"n":1},{"d":"2026-05-14","v":-4.246,"day":1.922,"n":3},{"d":"2026-05-15","v":-6.103,"day":-1.856,"n":16},{"d":"2026-05-18","v":-5.374,"day":0.729,"n":6},{"d":"2026-05-19","v":-8.718,"day":-3.344,"n":4},{"d":"2026-05-20","v":-9.681,"day":-0.962,"n":6},{"d":"2026-05-21","v":-11.781,"day":-2.101,"n":5},{"d":"2026-05-22","v":-9.163,"day":2.618,"n":5},{"d":"2026-05-26","v":-10.392,"day":-1.229,"n":5},{"d":"2026-05-27","v":-13.247,"day":-2.855,"n":7},{"d":"2026-05-28","v":-10.61,"day":2.637,"n":5},{"d":"2026-05-29","v":-12.546,"day":-1.937,"n":5},{"d":"2026-06-01","v":-14.064,"day":-1.518,"n":5},{"d":"2026-06-02","v":-10.765,"day":3.3,"n":5},{"d":"2026-06-03","v":-8.593,"day":2.171,"n":6},{"d":"2026-06-04","v":-11.333,"day":-2.74,"n":6},{"d":"2026-06-05","v":0.967,"day":12.3,"n":5},{"d":"2026-06-09","v":13.733,"day":12.767,"n":6},{"d":"2026-06-10","v":11.653,"day":-2.08,"n":2},{"d":"2026-06-11","v":10.613,"day":-1.04,"n":1},{"d":"2026-06-15","v":11.476,"day":0.863,"n":5},{"d":"2026-06-16","v":10.388,"day":-1.088,"n":5},{"d":"2026-06-17","v":16.454,"day":6.066,"n":5},{"d":"2026-06-18","v":13.349,"day":-3.105,"n":4},{"d":"2026-06-22","v":22.403,"day":9.055,"n":4},{"d":"2026-06-23","v":20.725,"day":-1.678,"n":3},{"d":"2026-06-24","v":16.272,"day":-4.453,"n":5},{"d":"2026-06-25","v":20.257,"day":3.985,"n":7},{"d":"2026-06-26","v":17.137,"day":-3.12,"n":3},{"d":"2026-06-29","v":16.913,"day":-0.224,"n":7},{"d":"2026-06-30","v":19.411,"day":2.498,"n":4},{"d":"2026-07-01","v":17.404,"day":-2.007,"n":3},{"d":"2026-07-02","v":19.164,"day":1.76,"n":3},{"d":"2026-07-06","v":20.825,"day":1.661,"n":3},{"d":"2026-07-07","v":20.301,"day":-0.524,"n":3},{"d":"2026-07-08","v":23.015,"day":2.714,"n":3},{"d":"2026-07-09","v":19.594,"day":-3.421,"n":5},{"d":"2026-07-10","v":18.934,"day":-0.66,"n":4},{"d":"2026-07-13","v":17.068,"day":-1.866,"n":3},{"d":"2026-07-14","v":14.988,"day":-2.08,"n":2},{"d":"2026-07-15","v":15.318,"day":0.33,"n":2},{"d":"2026-07-16","v":15.229,"day":-0.089,"n":3},{"d":"2026-07-17","v":10.029,"day":-5.2,"n":5},{"d":"2026-07-20","v":7.916,"day":-2.113,"n":3},{"d":"2026-07-21","v":5.816,"day":-2.1,"n":5},{"d":"2026-07-22","v":8.4,"day":2.584,"n":2},{"d":"2026-07-23","v":7.36,"day":-1.04,"n":1},{"d":"2026-07-24","v":6.109,"day":-1.251,"n":4},{"d":"2026-07-27","v":9.983,"day":3.874,"n":3},{"d":"2026-07-28","v":6.04,"day":-3.944,"n":5},{"d":"2026-07-29","v":0.28,"day":-5.76,"n":19},{"d":"2026-07-30","v":8.093,"day":7.814,"n":25},{"d":"2026-07-31","v":0.533,"day":-7.56,"n":14},{"d":"2026-08-03","v":-2.271,"day":-2.804,"n":14},{"d":"2026-08-04","v":35.444,"day":37.715,"n":26},{"d":"2026-08-05","v":23.503,"day":-11.941,"n":19},{"d":"2026-08-06","v":20.21,"day":-3.292,"n":5},{"d":"2026-08-07","v":17.822,"day":-2.388,"n":10},{"d":"2026-08-10","v":16.194,"day":-1.628,"n":9},{"d":"2026-08-11","v":22.407,"day":6.213,"n":14},{"d":"2026-08-12","v":29.588,"day":7.181,"n":25},{"d":"2026-08-13","v":28.845,"day":-0.744,"n":34},{"d":"2026-08-14","v":32.905,"day":4.06,"n":11},{"d":"2026-08-17","v":51.505,"day":18.6,"n":26},{"d":"2026-08-18","v":49.863,"day":-1.643,"n":22},{"d":"2026-08-19","v":48.521,"day":-1.342,"n":14},{"d":"2026-08-20","v":50.492,"day":1.971,"n":5}],"tpd":8.35}],"plateau":{"arms":[1.0,1.5,2.0,2.5,3.0],"stops":[0.4,0.5,0.6,0.7,0.8,1.0,1.25,1.5,2.0],"tot":[[5.72,25.68,43.31,35.53,31.32],[14.43,35.22,56.31,47.31,41.9],[15.99,35.66,59.58,47.78,43.87],[25.5,53.75,81.82,69.78,74.85],[26.08,60.11,92.6,82.43,87.28],[19.64,53.83,89.14,80.27,86.61],[12.17,41.14,72.11,62.94,70.76],[16.0,45.77,77.11,66.04,73.61],[10.63,47.59,78.49,67.71,74.5]],"dd":[[-21.13,-19.28,-21.05,-20.68,-19.48],[-17.9,-20.72,-19.07,-19.37,-19.88],[-21.64,-28.29,-23.58,-26.76,-26.76],[-19.12,-21.14,-21.21,-22.74,-23.9],[-24.44,-24.88,-24.08,-27.21,-28.47],[-32.84,-31.7,-23.72,-27.69,-28.73],[-37.79,-29.8,-27.12,-31.58,-32.41],[-47.27,-35.34,-33.11,-37.48,-39.44],[-50.41,-37.61,-42.22,-46.15,-48.13]]},"families":[{"k":"Live v11: 1.0% stop / 2.5% target","n":601,"tot":50.49,"dd":-26.72,"win":44.9,"pf":1.19,"usd":2525,"conc":0.747,"rdd":1.89,"days":72,"posdays":29,"exbest":12.78,"ex3":-18.59,"ex5":-39.94,"months":{"2026-04":-6.73,"2026-05":-5.82,"2026-06":31.96,"2026-07":-18.88,"2026-08":49.96},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"Live v10: 0.4% stop / 2.0% target","n":601,"tot":18.9,"dd":-20.03,"win":29.5,"pf":1.11,"usd":945,"conc":0.75,"rdd":0.94,"days":72,"posdays":31,"exbest":4.72,"ex3":-19.05,"ex5":-36.45,"months":{"2026-04":1.34,"2026-05":-12.76,"2026-06":28.51,"2026-07":-6.18,"2026-08":7.99},"posmonths":3,"nmonths":5,"tpd":8.35},{"k":"1.0% stop / 4.0% target","n":601,"tot":76.31,"dd":-26.53,"win":44.3,"pf":1.28,"usd":3815,"conc":0.648,"rdd":2.88,"days":72,"posdays":30,"exbest":26.86,"ex3":-8.21,"ex5":-38.11,"months":{"2026-04":-3.73,"2026-05":-6.86,"2026-06":37.57,"2026-07":-13.68,"2026-08":63.02},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"1.0% stop / hold to flatten","n":601,"tot":78.24,"dd":-34.0,"win":44.1,"pf":1.29,"usd":3912,"conc":0.859,"rdd":2.3,"days":72,"posdays":29,"exbest":11.04,"ex3":-27.92,"ex5":-53.39,"months":{"2026-04":-5.96,"2026-05":-6.86,"2026-06":35.17,"2026-07":-18.87,"2026-08":74.76},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"0.8% stop / trail +1.5 give 1.0","n":601,"tot":88.25,"dd":-21.72,"win":44.3,"pf":1.37,"usd":4413,"conc":0.505,"rdd":4.06,"days":72,"posdays":32,"exbest":43.68,"ex3":7.46,"ex5":-17.74,"months":{"2026-04":-1.64,"2026-05":-6.61,"2026-06":43.59,"2026-07":-13.12,"2026-08":66.03},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"0.8% stop / trail +2.0 give 1.0","n":601,"tot":92.6,"dd":-24.08,"win":42.9,"pf":1.39,"usd":4630,"conc":0.51,"rdd":3.85,"days":72,"posdays":29,"exbest":45.39,"ex3":9.17,"ex5":-19.42,"months":{"2026-04":-1.27,"2026-05":-6.8,"2026-06":43.87,"2026-07":-8.21,"2026-08":65.02},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"1.0% stop / trail +2.0 give 1.0","n":601,"tot":89.14,"dd":-23.72,"win":46.3,"pf":1.34,"usd":4457,"conc":0.584,"rdd":3.76,"days":72,"posdays":29,"exbest":37.05,"ex3":1.24,"ex5":-25.56,"months":{"2026-04":-4.87,"2026-05":-3.51,"2026-06":40.04,"2026-07":-12.44,"2026-08":69.93},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"1.5% stop / trail +3.0 give 2.0","n":601,"tot":74.68,"dd":-39.7,"win":49.3,"pf":1.24,"usd":3734,"conc":0.92,"rdd":1.88,"days":72,"posdays":32,"exbest":6.01,"ex3":-35.57,"ex5":-67.51,"months":{"2026-04":-12.93,"2026-05":-11.42,"2026-06":34.15,"2026-07":-20.74,"2026-08":85.62},"posmonths":2,"nmonths":5,"tpd":8.35},{"k":"0.8% stop / trail +2.0 give 1.0 + BE@0.75","n":601,"tot":65.43,"dd":-20.3,"win":35.3,"pf":1.31,"usd":3271,"conc":0.44,"rdd":3.22,"days":72,"posdays":30,"exbest":36.63,"ex3":0.69,"ex5":-21.42,"months":{"2026-04":-0.27,"2026-05":-12.65,"2026-06":36.5,"2026-07":-7.09,"2026-08":48.95},"posmonths":2,"nmonths":5,"tpd":8.35}],"holdout":{"fwd":[{"k":"fit Apr\u2013Jun, best by total","pick":"0.60% stop / tgt 6.0 / trail +1.5 give 1.0","ins":41.49,"oos":14.16,"dd":-27.8},{"k":"fit Apr\u2013Jun, best by return/DD","pick":"0.60% stop / tgt 4.0 / trail +2.0 give 1.5","ins":39.66,"oos":11.15,"dd":-23.5}],"rev":[{"k":"fit Jul\u2013Aug, best by total","pick":"1.50% stop / trail +3.0 give 2.0 / BE@1.0","ins":65.9,"oos":-1.89,"dd":-30.5},{"k":"fit Jul\u2013Aug, best by return/DD","pick":"0.80% stop / trail +2.0 give 1.0","ins":56.81,"oos":35.79,"dd":-14.6}]},"walkforward":[{"m":"2026-05","n":83,"pick":"0.40% stop / tgt 4.0 / trail +2.0 give 1.0 / BE@1.0","tot":-16.41},{"m":"2026-06","n":88,"pick":"0.60% stop / tgt 4.0 / trail +1.5 give 1.0","tot":43.44},{"m":"2026-07","n":120,"pick":"0.60% stop / tgt 4.0 / trail +2.0 give 1.5","tot":-16.12},{"m":"2026-08","n":234,"pick":"0.70% stop / tgt 6.0 / trail +2.0 give 1.5","tot":42.45}],"sizing":[{"k":"Fixed $5,000 notional, $10k account","end":12547,"ret":25.5,"dd":-6.5,"risk":"varies with stop"},{"k":"Risk 0.25% of equity, $25k account","end":29263,"ret":17.1,"dd":-4.2,"risk":"$62 per trade"},{"k":"Risk 0.50% of equity, $25k account","end":34136,"ret":36.5,"dd":-8.3,"risk":"$125 per trade"},{"k":"Risk 1.00% of equity, $25k account","end":40886,"ret":63.5,"dd":-13.0,"risk":"$250 per trade"}],"dailystop":[{"k":"none","end":34136,"dd":-8.3,"cut":0},{"k":"0.5%","end":29415,"dd":-7.3,"cut":36},{"k":"1.0%","end":34641,"dd":-8.3,"cut":10},{"k":"1.5%","end":34317,"dd":-8.3,"cut":2},{"k":"2.0%","end":34136,"dd":-8.3,"cut":1}],"gatetilt":[{"k":"Gate: top 10%","n":76,"tot":28.58,"dd":-9.53,"rdd":3.0,"conc":0.51,"pm":"4/5"},{"k":"Gate: top 15%","n":109,"tot":50.94,"dd":-13.77,"rdd":3.7,"conc":0.29,"pm":"4/5"},{"k":"Gate: top 25%","n":154,"tot":65.59,"dd":-13.77,"rdd":4.76,"conc":0.49,"pm":"4/5"},{"k":"Gate: top 40%","n":253,"tot":76.4,"dd":-17.79,"rdd":4.29,"conc":0.56,"pm":"3/5"},{"k":"Tilt 3x top-25% / 1x rest","n":601,"tot":147.95,"dd":-33.77,"rdd":4.38,"conc":0.5,"pm":"3/5"},{"k":"Tilt 3x / 0.5x","n":601,"tot":184.35,"dd":-40.14,"rdd":4.59,"conc":0.49,"pm":"3/5"},{"k":"No filter","n":601,"tot":92.6,"dd":-24.08,"rdd":3.85,"conc":0.51,"pm":"2/5"}],"reentry":[{"k":"Top 20% \u2014 first entry of the day","n":102,"tot":28.19,"avg":0.276},{"k":"Top 20% \u2014 repeat entries","n":34,"tot":13.73,"avg":0.404},{"k":"Outside top 20% \u2014 first entry","n":315,"tot":23.78,"avg":0.076},{"k":"Outside top 20% \u2014 repeat entries","n":150,"tot":26.89,"avg":0.179}],"streak":{"losetrades":17,"losedays":11,"underwater":74,"worstday":-3.36,"bestday":14.67,"days":55,"sessions":73,"tpd":2.0},"validation":{"v11_live":52.93,"v11_sim":56.13,"corr":0.983,"v10_live":-12.46,"v10_sim":-6.97,"corr10":0.824},"bigdays":[{"d":"2026-08-13","tot":14.67,"legs":"SMCI #0 +5.47, MU #1 +3.49, MU #1 +3.33, SMCI #0 +2.38"},{"d":"2026-07-30","tot":13.92,"legs":"AMD #2 +4.14, MU #1 +3.79, AMD #2 +3.00, MU #1 +2.55, AMD #2 +1.28, MU #1 \u22120.84"},{"d":"2026-08-04","tot":10.06,"legs":"AMD #2 +3.91, AMD #2 +3.35, AMD #2 +2.38, MU #0 +2.10, MU #0 \u22120.84, HOOD #1 \u22120.84"},{"d":"2026-06-09","tot":5.03,"legs":"PLTR #1 +5.03"},{"d":"2026-05-12","tot":4.02,"legs":"TSLA #1 +2.47, TSLA #1 +2.39, TSLA #1 \u22120.84"}]};</script>
+<script>
+(function(){
+const D = window.__TA__;
+const NS='http://www.w3.org/2000/svg';
+const cs = getComputedStyle(document.documentElement);
+const C = k => cs.getPropertyValue(k).trim();
+const tip = document.getElementById('tip');
+function showTip(e,html){ tip.innerHTML=html; tip.classList.add('on');
+  const r=tip.getBoundingClientRect(); let x=e.clientX+14,y=e.clientY-10;
+  if(x+r.width>innerWidth-8) x=e.clientX-r.width-14;
+  if(y+r.height>innerHeight-8) y=innerHeight-r.height-8;
+  tip.style.left=x+'px'; tip.style.top=Math.max(8,y)+'px'; }
+function hideTip(){ tip.classList.remove('on'); }
+function el(t,a){ const n=document.createElementNS(NS,t); for(const k in (a||{})) n.setAttribute(k,a[k]); return n; }
+const f1=v=>(v>=0?'+':'')+v.toFixed(1)+'%';
+const f2=v=>(v>=0?'+':'')+v.toFixed(2)+'%';
+const usd=v=>(v>=0?'+$':'−$')+Math.abs(Math.round(v)).toLocaleString();
+const cGain=()=>C('--gain'), cLoss=()=>C('--loss');
+const col=v=>v>=0?cGain():cLoss();
+
+function svg(box,w,h){ box.innerHTML='';
+  const s=el('svg',{viewBox:`0 0 ${w} ${h}`,width:w,height:h,role:'img'});
+  s.style.maxWidth='100%'; s.style.height='auto'; box.appendChild(s); return s; }
+
+/* ---------- horizontal diverging bars ---------- */
+function hbar(id,rows,opt){
+  opt=opt||{}; const box=document.getElementById(id); if(!box) return;
+  const rowH=opt.rowH||26, padT=8, padB=opt.axis===false?6:24;
+  const labW=opt.labW||132, valW=opt.valW||78, W=opt.w||820;
+  const H=padT+padB+rows.length*rowH;
+  const s=svg(box,W,H);
+  const x0=labW, x1=W-valW, mid=(x0+x1)/2;
+  const vals=rows.flatMap(r=>[r.v, r.dot!=null?r.dot:r.v]);
+  const mx=Math.max(1e-6,...vals.map(Math.abs))*1.08;
+  const hasNeg=Math.min(...vals)<0;
+  const zx = hasNeg ? mid : x0;
+  const scale = v => zx + (v/mx)*((hasNeg?(x1-x0)/2:(x1-x0)));
+  // zero line
+  s.appendChild(el('line',{x1:zx,x2:zx,y1:padT-2,y2:padT+rows.length*rowH+2,stroke:C('--rule-2'),'stroke-width':1}));
+  rows.forEach((r,i)=>{
+    const y=padT+i*rowH, bh=Math.min(14,rowH-9);
+    const xa=scale(0), xb=scale(r.v);
+    const x=Math.min(xa,xb), w=Math.max(2,Math.abs(xb-xa));
+    const c = r.color || col(r.v);
+    const rect=el('rect',{x:x,y:y+(rowH-bh)/2,width:w,height:bh,rx:3,fill:c});
+    rect.style.cursor='crosshair';
+    s.appendChild(rect);
+    if(r.dot!=null){
+      const dx=scale(r.dot);
+      s.appendChild(el('circle',{cx:dx,cy:y+rowH/2,r:4.5,fill:C('--surface'),stroke:c,'stroke-width':2}));
+    }
+    const lab=el('text',{x:labW-10,y:y+rowH/2+4,'text-anchor':'end',fill:C('--ink-2'),'font-size':11.5,'font-family':'Public Sans, sans-serif'});
+    lab.textContent=r.k; s.appendChild(lab);
+    const vt=el('text',{x:W-8,y:y+rowH/2+4,'text-anchor':'end',fill:C('--ink'),'font-size':11.5,'font-weight':600,'font-family':'IBM Plex Mono, monospace'});
+    vt.textContent=(opt.fmt||f1)(r.v); s.appendChild(vt);
+    const hit=el('rect',{x:0,y:y,width:W,height:rowH,fill:'transparent'});
+    hit.style.cursor='crosshair';
+    hit.addEventListener('mousemove',e=>showTip(e,r.tip||`<b>${r.k}</b><br>${f2(r.v)}`));
+    hit.addEventListener('mouseleave',hideTip);
+    s.appendChild(hit);
+  });
+  if(opt.axis!==false){
+    const y=padT+rows.length*rowH+14;
+    const dmax=Math.max(...vals), dmin=Math.min(...vals);
+    const ticks=hasNeg?[dmin,0,dmax]:[0,dmax];
+    ticks.forEach(v=>{
+      const t=el('text',{x:scale(v),y:y,'text-anchor':'middle',fill:C('--muted'),'font-size':10,'font-family':'IBM Plex Mono, monospace'});
+      t.textContent=(Math.abs(v)<1e-9?'0':(v>0?'+':'')+v.toFixed(0))+'%'; s.appendChild(t); });
+  }
+}
+
+/* ---------- vertical diverging bars ---------- */
+function vbar(id,rows,opt){
+  opt=opt||{}; const box=document.getElementById(id); if(!box) return;
+  const W=opt.w||880, H=opt.h||270, padL=46,padR=10,padT=12,padB=opt.rot?52:30;
+  const s=svg(box,W,H);
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const vals=rows.flatMap(r=>r.stack?r.stack.map(x=>x.v):[r.v]);
+  const mx=Math.max(...vals,0)*1.1||1, mn=Math.min(...vals,0)*1.1;
+  const y0=padT+ih*(mx/(mx-mn||1));
+  const sy=v=>y0-(v/(mx-mn||1))*ih;
+  // grid
+  const ticks=4; for(let i=0;i<=ticks;i++){
+    const v=mn+(mx-mn)*i/ticks, y=sy(v);
+    s.appendChild(el('line',{x1:padL,x2:W-padR,y1:y,y2:y,stroke:v===0?C('--rule-2'):C('--grid'),'stroke-width':1}));
+    const t=el('text',{x:padL-8,y:y+3.5,'text-anchor':'end',fill:C('--muted'),'font-size':10,'font-family':'IBM Plex Mono, monospace'});
+    t.textContent=(Math.abs(v)<0.5?'0':(v>0?'+':'')+v.toFixed(0))+(opt.unit||''); s.appendChild(t);
+  }
+  const bw=iw/rows.length, gap=Math.min(4,bw*0.28), w=Math.max(2,bw-gap);
+  rows.forEach((r,i)=>{
+    const cx=padL+i*bw+bw/2;
+    if(r.stack){
+      let up=0,dn=0;
+      r.stack.forEach(seg=>{
+        const base = seg.v>=0?up:dn, top=base+seg.v;
+        const ya=sy(base), yb=sy(top);
+        s.appendChild(el('rect',{x:cx-w/2,y:Math.min(ya,yb),width:w,height:Math.max(1.5,Math.abs(yb-ya)-1),rx:2,fill:seg.c}));
+        if(seg.v>=0) up=top; else dn=top;
+      });
+    } else {
+      const ya=sy(0), yb=sy(r.v);
+      s.appendChild(el('rect',{x:cx-w/2,y:Math.min(ya,yb),width:w,height:Math.max(2,Math.abs(yb-ya)),rx:3,fill:r.color||col(r.v)}));
+    }
+    if(r.lab){
+      const t=el('text',{x:cx,y:H-padB+(opt.rot?12:14),fill:C('--muted'),'font-size':9.5,'font-family':'IBM Plex Mono, monospace'});
+      if(opt.rot){ t.setAttribute('text-anchor','end'); t.setAttribute('transform',`rotate(-52 ${cx} ${H-padB+12})`);} else t.setAttribute('text-anchor','middle');
+      t.textContent=r.lab; s.appendChild(t);
+    }
+    const hit=el('rect',{x:padL+i*bw,y:padT,width:bw,height:ih,fill:'transparent'});
+    hit.style.cursor='crosshair';
+    hit.addEventListener('mousemove',e=>showTip(e,r.tip));
+    hit.addEventListener('mouseleave',hideTip);
+    s.appendChild(hit);
+  });
+}
+
+/* ---------- line / area ---------- */
+function line(id,pts,opt){
+  opt=opt||{}; const box=document.getElementById(id); if(!box) return;
+  const W=opt.w||880,H=opt.h||300,padL=46,padR=12,padT=14,padB=26;
+  const s=svg(box,W,H); const iw=W-padL-padR, ih=H-padT-padB;
+  const ys=pts.map(p=>p.v); const mx=Math.max(...ys,0)*1.06, mn=Math.min(...ys,0)*1.06;
+  const sx=i=>padL+(i/(pts.length-1))*iw;
+  const sy=v=>padT+ih-((v-mn)/((mx-mn)||1))*ih;
+  for(let i=0;i<=4;i++){ const v=mn+(mx-mn)*i/4,y=sy(v);
+    s.appendChild(el('line',{x1:padL,x2:W-padR,y1:y,y2:y,stroke:Math.abs(v)<1e-9?C('--rule-2'):C('--grid'),'stroke-width':1}));
+    const t=el('text',{x:padL-8,y:y+3.5,'text-anchor':'end',fill:C('--muted'),'font-size':10,'font-family':'IBM Plex Mono, monospace'});
+    t.textContent=(v>0?'+':'')+v.toFixed(0)+'%'; s.appendChild(t); }
+  const y0=sy(0);
+  const dPath=pts.map((p,i)=>(i?'L':'M')+sx(i).toFixed(1)+' '+sy(p.v).toFixed(1)).join(' ');
+  const grad=el('linearGradient',{id:'g_'+id,x1:0,y1:0,x2:0,y2:1});
+  const st1=el('stop',{offset:'0%','stop-color':C('--gain'),'stop-opacity':.22});
+  const st2=el('stop',{offset:'100%','stop-color':C('--gain'),'stop-opacity':0});
+  grad.appendChild(st1); grad.appendChild(st2);
+  const defs=el('defs'); defs.appendChild(grad); s.appendChild(defs);
+  s.appendChild(el('path',{d:dPath+` L ${sx(pts.length-1).toFixed(1)} ${y0} L ${sx(0).toFixed(1)} ${y0} Z`,fill:`url(#g_${id})`}));
+  s.appendChild(el('path',{d:dPath,fill:'none',stroke:C('--gain'),'stroke-width':2,'stroke-linejoin':'round'}));
+  const last=pts[pts.length-1];
+  s.appendChild(el('circle',{cx:sx(pts.length-1),cy:sy(last.v),r:4,fill:C('--gain'),stroke:C('--surface'),'stroke-width':2}));
+  // era markers
+  (opt.marks||[]).forEach(m=>{
+    const x=sx(m.i);
+    s.appendChild(el('line',{x1:x,x2:x,y1:padT,y2:padT+ih,stroke:C('--rule-2'),'stroke-width':1,'stroke-dasharray':'3 3'}));
+    const t=el('text',{x:x+5,y:padT+11,fill:C('--muted'),'font-size':9.5,'font-family':'IBM Plex Mono, monospace'});
+    t.textContent=m.l; s.appendChild(t);
+  });
+  const cross=el('line',{x1:0,x2:0,y1:padT,y2:padT+ih,stroke:C('--rule-2'),'stroke-width':1,opacity:0});
+  s.appendChild(cross);
+  const hit=el('rect',{x:padL,y:padT,width:iw,height:ih,fill:'transparent'});
+  hit.style.cursor='crosshair';
+  hit.addEventListener('mousemove',e=>{
+    const r=s.getBoundingClientRect();
+    const i=Math.round(((e.clientX-r.left)/r.width*W-padL)/iw*(pts.length-1));
+    const p=pts[Math.max(0,Math.min(pts.length-1,i))]; if(!p) return;
+    cross.setAttribute('x1',sx(i)); cross.setAttribute('x2',sx(i)); cross.setAttribute('opacity',1);
+    showTip(e,p.tip);
+  });
+  hit.addEventListener('mouseleave',()=>{cross.setAttribute('opacity',0);hideTip();});
+  s.appendChild(hit);
+}
+
+function tape(id,cells){
+  const box=document.getElementById(id); if(!box) return;
+  box.innerHTML=cells.map(c=>`<div class="cell"><div class="lab">${c.l}</div><div class="val${c.cls?' '+c.cls:''}">${c.v}</div>${c.s?`<div class="sub">${c.s}</div>`:''}</div>`).join('');
+}
+function legend(id,items){
+  const box=document.getElementById(id); if(!box) return;
+  box.innerHTML=items.map(i=>`<span class="k"><span class="sw" style="background:${i.c}"></span>${i.l}</span>`).join('');
+}
+
+/* ---------- multi-series line ---------- */
+function mline(id,series,opt){
+  opt=opt||{}; const box=document.getElementById(id); if(!box) return;
+  const W=opt.w||880,H=opt.h||320,padL=48,padR=14,padT=14,padB=34;
+  const s=svg(box,W,H); const iw=W-padL-padR, ih=H-padT-padB;
+  const allx=series[0].pts.map(p=>p.x);
+  const ys=series.flatMap(t=>t.pts.map(p=>p.v));
+  const mx=Math.max(...ys,0)*1.06, mn=Math.min(...ys,0)*1.08;
+  const sx=i=>padL+(i/(allx.length-1))*iw;
+  const sy=v=>padT+ih-((v-mn)/((mx-mn)||1))*ih;
+  for(let i=0;i<=4;i++){ const v=mn+(mx-mn)*i/4,y=sy(v);
+    s.appendChild(el('line',{x1:padL,x2:W-padR,y1:y,y2:y,stroke:Math.abs(v)<1e-9?C('--rule-2'):C('--grid'),'stroke-width':1}));
+    const t=el('text',{x:padL-8,y:y+3.5,'text-anchor':'end',fill:C('--muted'),'font-size':10,'font-family':'IBM Plex Mono, monospace'});
+    t.textContent=(v>0?'+':'')+v.toFixed(0)+'%'; s.appendChild(t);}
+  const step=Math.ceil(allx.length/9);
+  allx.forEach((d,i)=>{ if(i%step) return;
+    const t=el('text',{x:sx(i),y:H-padB+18,'text-anchor':'middle',fill:C('--muted'),'font-size':9.5,'font-family':'IBM Plex Mono, monospace'});
+    t.textContent=d.slice(5); s.appendChild(t);});
+  series.forEach(t=>{
+    const d=t.pts.map((p,i)=>(i?'L':'M')+sx(i).toFixed(1)+' '+sy(p.v).toFixed(1)).join(' ');
+    s.appendChild(el('path',{d:d,fill:'none',stroke:t.c,'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+    const last=t.pts[t.pts.length-1];
+    s.appendChild(el('circle',{cx:sx(t.pts.length-1),cy:sy(last.v),r:4,fill:t.c,stroke:C('--surface'),'stroke-width':2}));
+    const lt=el('text',{x:sx(t.pts.length-1)-6,y:sy(last.v)-9,'text-anchor':'end',fill:t.c,'font-size':10.5,'font-weight':600,'font-family':'IBM Plex Mono, monospace'});
+    lt.textContent=t.name; s.appendChild(lt);
+  });
+  const cross=el('line',{x1:0,x2:0,y1:padT,y2:padT+ih,stroke:C('--rule-2'),'stroke-width':1,opacity:0});
+  s.appendChild(cross);
+  const hit=el('rect',{x:padL,y:padT,width:iw,height:ih,fill:'transparent'});
+  hit.style.cursor='crosshair';
+  hit.addEventListener('mousemove',e=>{
+    const r=s.getBoundingClientRect();
+    let i=Math.round(((e.clientX-r.left)/r.width*W-padL)/iw*(allx.length-1));
+    i=Math.max(0,Math.min(allx.length-1,i));
+    cross.setAttribute('x1',sx(i)); cross.setAttribute('x2',sx(i)); cross.setAttribute('opacity',1);
+    showTip(e,`<b>${allx[i]}</b><br>`+series.map(t=>`${t.name} ${f2(t.pts[i].v)}`).join('<br>'));
+  });
+  hit.addEventListener('mouseleave',()=>{cross.setAttribute('opacity',0);hideTip();});
+  s.appendChild(hit);
+}
+
+/* ---------- heatmap ---------- */
+function heat(id,rows,cols,vals,opt){
+  opt=opt||{}; const box=document.getElementById(id); if(!box) return;
+  const flat=vals.flat(); const lo=Math.min(...flat), hi=Math.max(...flat);
+  const ramp=['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#184f95','#0d366b'];
+  const dark=document.documentElement.getAttribute('data-theme')==='dark' ||
+    (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const scale=v=>{ const t=(v-lo)/((hi-lo)||1); let i=Math.round(t*(ramp.length-1));
+    if(dark) i=ramp.length-1-i; return ramp[Math.max(0,Math.min(ramp.length-1,i))]; };
+  const ink=v=>{ const t=(v-lo)/((hi-lo)||1); return (dark? t>0.45 : t<0.55)?'#0b1a2e':'#ffffff'; };
+  let h=`<div style="overflow-x:auto"><table class="heat"><thead><tr><th></th>`+
+    cols.map(c=>`<th>${opt.colPrefix||''}${c}</th>`).join('')+`</tr></thead><tbody>`;
+  rows.forEach((r,i)=>{
+    h+=`<tr><td class="rowlab">${opt.rowPrefix||''}${r}${opt.rowSuffix||''}</td>`;
+    vals[i].forEach((v,j)=>{
+      h+=`<td style="background:${scale(v)};color:${ink(v)}" title="stop ${r}% · arm +${cols[j]}">${(v>=0?'+':'')+v.toFixed(1)}</td>`;
+    });
+    h+=`</tr>`;
+  });
+  box.innerHTML=h+`</tbody></table></div>`;
+}
+
+/* ---------- table filler ---------- */
+function fill(id,rows){
+  const tb=document.querySelector('#'+id+' tbody'); if(!tb) return;
+  tb.innerHTML=rows.map(r=>'<tr>'+r.map(c=>typeof c==='string'?`<td class="l">${c}</td>`:`<td class="num ${c.cls||''}">${c.t}</td>`).join('')+'</tr>').join('');
+}
+
+/* =========== render =========== */
+function render(){
+const P=window.__PLAN__;
+const B=Object.fromEntries(P.buckets.map(b=>[b.k,b]));
+const nf=B['No filter'], t15=B['Top 15%'], t25=B['Top 25%'];
+
+tape('tape',[
+  {l:'Entries replayed',v:'601',s:'chase era, 24 Apr → 21 Aug'},
+  {l:'Configs tested',v:'1,953',s:'× 5 selection buckets'},
+  {l:'Engine agreement',v:'r 0.983',s:'sim vs the live v11 record'},
+  {l:'Live config',v:f2(nf.tot),cls:'pos',s:`drawdown ${nf.dd}%`},
+  {l:'Proposed',v:f2(t15.tot),cls:'pos',s:`drawdown ${t15.dd}%, 4 of 5 months up`},
+  {l:'Out-of-sample',v:'+35.79%',cls:'pos',s:'frozen config, unseen half'},
+]);
+
+// ex-N
+const exn=[];
+[['Top 15% gate',t15],['Top 25% gate',t25],['No filter',nf]].forEach(([k,b])=>{
+  exn.push({k:k+' — full',v:b.tot,tip:`<b>${k}</b><br>all ${b.days} days<br>${f2(b.tot)}`});
+  exn.push({k:k+' — minus best day',v:b.exbest,tip:`<b>${k}</b><br>best day removed<br>${f2(b.exbest)}`});
+  exn.push({k:k+' — minus best 3',v:b.ex3,tip:`<b>${k}</b><br>best 3 days removed<br>${f2(b.ex3)}`});
+  exn.push({k:k+' — minus best 5',v:b.ex5,tip:`<b>${k}</b><br>best 5 days removed<br>${f2(b.ex5)}`});
+});
+hbar('c_exn',exn,{labW:236,w:880,fmt:f2,rowH:24});
+
+// families
+const fam=P.families.slice().sort((a,b)=>b.tot-a.tot);
+hbar('c_fam',fam.map(x=>({k:x.k,v:x.tot,dot:x.exbest,
+  tip:`<b>${x.k}</b><br>${x.n} trades · ${f2(x.tot)} (${usd(x.usd)})<br>minus best day ${f2(x.exbest)} · minus best 3 ${f2(x.ex3)}<br>win ${x.win}% · PF ${x.pf} · max DD ${x.dd}%<br>months up ${x.posmonths}/${x.nmonths}`})),
+  {labW:290,w:900,fmt:f2,rowH:26});
+
+// heatmaps
+heat('c_heat',P.plateau.stops,P.plateau.arms,P.plateau.tot,{rowPrefix:'stop ',rowSuffix:'%',colPrefix:'arm +'});
+heat('c_heat2',P.plateau.stops,P.plateau.arms,P.plateau.dd,{rowPrefix:'stop ',rowSuffix:'%',colPrefix:'arm +'});
+
+// holdout table
+const hr=[];
+P.holdout.fwd.concat(P.holdout.rev).forEach(x=>hr.push([x.k,x.pick,
+  {t:f2(x.ins)},{t:f2(x.oos),cls:x.oos>=0?'pos':'neg'},{t:x.dd.toFixed(1)+'%',cls:'neg'}]));
+fill('t_hold',hr);
+
+// walk forward
+vbar('c_wf',P.walkforward.map(w=>({lab:w.m.slice(5),v:w.tot,
+  tip:`<b>${w.m}</b> · ${w.n} trades<br>picked on prior data:<br>${w.pick}<br>result ${f2(w.tot)}`})),
+  {w:880,h:210,unit:'%'});
+
+// buckets table
+fill('t_buckets',P.buckets.map(b=>[b.k,{t:b.n},{t:b.tpd.toFixed(1)},
+  {t:f2(b.tot),cls:b.tot>=0?'pos':'neg'},{t:b.dd.toFixed(1)+'%',cls:'neg'},
+  {t:b.rdd.toFixed(2)},{t:b.win.toFixed(1)+'%'},{t:b.pf?b.pf.toFixed(2):'—'},
+  {t:(b.conc*100).toFixed(0)+'%'},{t:b.posmonths+'/'+b.nmonths}]));
+
+// months grouped
+const ms=Object.keys(t15.months);
+legend('l_months',[{c:C('--s1'),l:'Top 15%'},{c:C('--s2'),l:'Top 25%'},{c:C('--s3'),l:'No filter'}]);
+const mrows=[];
+ms.forEach(m=>{
+  [['Top 15%',t15,'--s1'],['Top 25%',t25,'--s2'],['No filter',nf,'--s3']].forEach(([k,b,cv],j)=>{
+    mrows.push({lab:j===1?m.slice(5)+'/26':'',v:b.months[m],color:C(cv),
+      tip:`<b>${m} · ${k}</b><br>${f2(b.months[m])}`});
+  });
+  mrows.push({lab:'',v:0,color:'transparent',tip:''});
+});
+vbar('c_months',mrows,{w:880,h:250,unit:'%'});
+
+// equity curves
+legend('l_eq',[{c:C('--s1'),l:'Top 15% gate'},{c:C('--s2'),l:'Top 25% gate'},{c:C('--s3'),l:'No filter'}]);
+const alldays=nf.curve.map(p=>p.d);
+const align=(b)=>{ const m=Object.fromEntries(b.curve.map(p=>[p.d,p.v])); let last=0;
+  return alldays.map(d=>{ if(d in m) last=m[d]; return {x:d,v:last}; }); };
+mline('c_eq',[{name:'Top 15%',c:C('--s1'),pts:align(t15)},
+              {name:'Top 25%',c:C('--s2'),pts:align(t25)},
+              {name:'No filter',c:C('--s3'),pts:align(nf)}],{w:880,h:330});
+
+// gate vs tilt
+hbar('c_tilt',P.gatetilt.map(x=>({k:x.k,v:x.rdd,
+  tip:`<b>${x.k}</b><br>${x.n} trades<br>total ${f2(x.tot)} · max DD ${x.dd}%<br>return/DD ${x.rdd} · best-day share ${(x.conc*100).toFixed(0)}%<br>months up ${x.pm}`})),
+  {labW:210,w:840,fmt:v=>v.toFixed(2)+'×',rowH:27});
+
+// big days
+fill('t_big',P.bigdays.map(d=>[d.d,{t:f2(d.tot),cls:'pos'},d.legs]));
+
+// reentry
+hbar('c_re',P.reentry.map(x=>({k:x.k,v:x.avg,
+  tip:`<b>${x.k}</b><br>${x.n} trades · total ${f2(x.tot)}<br>average ${f2(x.avg)} per trade`})),
+  {labW:250,w:840,fmt:v=>f2(v),rowH:26});
+
+// sizing
+fill('t_size',P.sizing.map(s=>[s.k,s.risk,{t:'$'+s.end.toLocaleString()},
+  {t:(s.ret>=0?'+':'')+s.ret.toFixed(1)+'%',cls:'pos'},{t:s.dd.toFixed(1)+'%',cls:'neg'}]));
+
+// daily stop
+hbar('c_ds',P.dailystop.map(x=>({k:'daily stop '+x.k,v:x.end-34136,
+  tip:`<b>daily stop ${x.k}</b><br>ending equity $${x.end.toLocaleString()}<br>max DD ${x.dd}% · days cut short ${x.cut}`})),
+  {labW:150,w:600,fmt:v=>(v>=0?'+$':'−$')+Math.abs(Math.round(v)).toLocaleString(),rowH:25,valW:96});
+}
+render();
+let _t=null;
+addEventListener('resize',()=>{clearTimeout(_t);_t=setTimeout(render,180);});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>setTimeout(render,60));
+})();
+
+</script>

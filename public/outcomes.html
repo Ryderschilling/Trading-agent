@@ -253,6 +253,7 @@
           <a class="tab active" href="/outcomes">Outcomes</a>
           <a class="tab" href="/analytics">Analytics</a>
           <a class="tab" href="/compare">Compare</a>
+          <a class="tab" href="/regime">Regime</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
@@ -281,11 +282,14 @@
           <div id="statsBar" class="stats-bar"></div>
 
           <div class="table-wrap">
-            <div class="range-toggles" role="group" aria-label="Time range" style="display:flex;gap:8px;margin-bottom:12px;">
-              <button type="button" class="tab range-toggle active" data-range="day">1D</button>
-              <button type="button" class="tab range-toggle" data-range="month">1M</button>
-              <button type="button" class="tab range-toggle" data-range="year">1Y</button>
-              <button type="button" class="tab range-toggle" data-range="all">All</button>
+            <div style="display:flex;gap:8px 18px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
+              <div class="range-toggles" role="group" aria-label="Time range" style="display:flex;gap:8px;">
+                <button type="button" class="tab range-toggle active" data-range="day">1D</button>
+                <button type="button" class="tab range-toggle" data-range="month">1M</button>
+                <button type="button" class="tab range-toggle" data-range="year">1Y</button>
+                <button type="button" class="tab range-toggle" data-range="all">All</button>
+              </div>
+              <div id="stratToggles" role="group" aria-label="Filter by strategy" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
             </div>
 
             <div id="dbEmpty" class="small" style="padding:8px; display:none;">No rows.</div>

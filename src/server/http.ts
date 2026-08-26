@@ -54,7 +54,7 @@ export function createHttpApp(args: {
   getDbRows?: () => any[];
   /** A/B comparison: closed trades grouped by ruleset version. */
   getStrategyCompare?: () => any;
-  getAnalytics?: () => any;
+  getAnalytics?: (strategyVersion?: number | null) => any;
   // From remote — used by /api/candles/:symbol route below. Optional so HEAD's
   // existing multi-strategy main file isn't forced to provide it immediately.
   getBars1?: (symbol: string) => any[];
@@ -108,6 +108,8 @@ deleteRuleset?: (version: number, changedBy?: string) => any;
   getGhostPositions?: () => any;
   reconcileNow?: () => Promise<any>;
   getDataCoverage?: () => any;
+  /** Day Regime observer — vol quintile + symbol rank sliced against closed trades. */
+  getRegimeReport?: (strategyVersion?: number | null) => any;
 
   httpGetJson: (url: string, headers: Record<string, string>) => Promise<any>;
 
@@ -285,6 +287,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/outcomes", (_req, res) => sendPage(res, "outcomes.html"));
   app.get("/analytics", (_req, res) => sendPage(res, "analytics.html"));
   app.get("/compare", (_req, res) => sendPage(res, "compare.html"));
+  app.get("/regime", (_req, res) => sendPage(res, "regime.html"));
   app.get("/watch", (_req, res) => sendPage(res, "watchlist.html"));
   app.get("/watchlist", (_req, res) => sendPage(res, "watchlist.html")); // backward compat
   app.get("/rules", (_req, res) => sendPage(res, "rules.html"));
@@ -295,6 +298,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
   app.get("/analytics.html", (_req, res) => res.redirect(301, "/analytics"));
   app.get("/compare.html", (_req, res) => res.redirect(301, "/compare"));
+  app.get("/regime.html", (_req, res) => res.redirect(301, "/regime"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
   app.get("/brokers.html", (_req, res) => res.redirect(301, "/brokers"));
@@ -541,11 +545,15 @@ app.get("/api/broker/activity", (req, res) => {
 
   // Strategy performance analytics — aggregated win rate, expectancy, R,
   // drawdown, equity curve, and breakdowns by exit reason / direction /
-  // symbol / strategy.
-  app.get("/api/analytics", (_req, res) => {
+  // symbol / strategy. Optional ?strategy=<rulesetVersion> slices every stat
+  // to one strategy; omitted = all strategies combined.
+  app.get("/api/analytics", (req, res) => {
     if (!args.getAnalytics) return res.json({ ok: false, error: "analytics not enabled" });
     try {
-      res.json({ ok: true, ...args.getAnalytics() });
+      const raw = req.query?.strategy;
+      const parsed = raw == null || raw === "" || raw === "all" ? null : Number(raw);
+      const strategyVersion = parsed != null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      res.json({ ok: true, ...args.getAnalytics(strategyVersion) });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || "analytics failed" });
     }
@@ -566,6 +574,21 @@ app.get("/api/broker/activity", (req, res) => {
       res.json({ ok: true, result });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || "reconcile failed" });
+    }
+  });
+
+  // Day Regime — the 09:35 ET volatility score and symbol rank for each
+  // session, sliced against closed trades. Observer only: nothing on this
+  // route influences signals, orders, or caps. Optional ?strategy=<version>.
+  app.get("/api/regime", (req, res) => {
+    if (!args.getRegimeReport) return res.json({ ok: false, error: "regime tracker not enabled" });
+    try {
+      const raw = req.query?.strategy;
+      const parsed = raw == null || raw === "" || raw === "all" ? null : Number(raw);
+      const strategyVersion = parsed != null && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      res.json({ ok: true, ...args.getRegimeReport(strategyVersion) });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "regime failed" });
     }
   });
 

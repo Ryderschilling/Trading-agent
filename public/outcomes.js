@@ -14,6 +14,13 @@ const dbEmptyEl = document.getElementById("dbEmpty");
 const rangeToggleEls = Array.from(document.querySelectorAll(".range-toggle"));
 let activeRange = "day"; // 1D default
 
+// Strategy filter — "all" or a ruleset version as a string. Keyed on the
+// version, never the display name, because two versions can share a name
+// (v6 and v9 are both "Improved Break and Retest Strategy").
+const stratTogglesEl = document.getElementById("stratToggles");
+let activeStrategy = "all";
+let stratSignature = "";
+
 const modalEl = document.getElementById("modal");
 const modalCloseEl = document.getElementById("modalClose");
 const modalSubEl = document.getElementById("modalSub");
@@ -986,8 +993,63 @@ function applyDbFilters(rows) {
 
   return (rows || []).filter((r) => {
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
+    if (activeStrategy !== "all" && String(r.strategyVersion ?? "") !== activeStrategy) return false;
     return true;
   });
+}
+
+// Build the strategy filter buttons from whatever strategies exist in the
+// loaded rows. Rebuilt only when the strategy set changes, so the active
+// button never flickers on the 6s refresh.
+function renderStrategyToggles() {
+  if (!stratTogglesEl) return;
+
+  const byVersion = new Map();
+  for (const r of dbRowsRaw || []) {
+    const v = r?.strategyVersion;
+    if (v == null || !Number.isFinite(Number(v)) || Number(v) <= 0) continue;
+    const key = String(Number(v));
+    const cur = byVersion.get(key);
+    if (cur) cur.trades += 1;
+    else byVersion.set(key, { version: Number(v), name: String(r.strategyName || ""), trades: 1 });
+  }
+
+  const list = [...byVersion.values()].sort((a, b) => b.version - a.version);
+  const sig = list.map((s) => `${s.version}:${s.name}:${s.trades}`).join("|") + `@${activeStrategy}`;
+  if (sig === stratSignature) return;
+  stratSignature = sig;
+
+  if (activeStrategy !== "all" && !byVersion.has(activeStrategy)) activeStrategy = "all";
+
+  const label = (s) => {
+    let nm = s.name && s.name.trim() ? s.name.trim() : `v${s.version}`;
+    if (!new RegExp(`v\\s*${s.version}\\b`, "i").test(nm)) nm += ` (v${s.version})`;
+    if (nm.length > 26) nm = nm.slice(0, 25) + "…";
+    return nm;
+  };
+
+  stratTogglesEl.innerHTML = "";
+
+  const makeBtn = (value, text, title) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tab range-toggle" + (activeStrategy === value ? " active" : "");
+    b.textContent = text;
+    if (title) b.title = title;
+    b.addEventListener("click", () => {
+      if (activeStrategy === value) return;
+      activeStrategy = value;
+      stratSignature = ""; // force button re-render with new active state
+      renderDbTable();
+    });
+    return b;
+  };
+
+  stratTogglesEl.appendChild(makeBtn("all", "All strategies", "Every strategy combined"));
+  for (const s of list) {
+    const full = s.name ? `${s.name} (v${s.version})` : `v${s.version}`;
+    stratTogglesEl.appendChild(makeBtn(String(s.version), label(s), full));
+  }
 }
 
 function computePnlPct(row) {
@@ -1054,6 +1116,8 @@ function renderStats(rows) {
 
 function renderDbTable() {
   if (!dbBodyEl || !dbEmptyEl) return;
+
+  renderStrategyToggles();
 
   const rows = applyDbFilters(dbRowsRaw);
 

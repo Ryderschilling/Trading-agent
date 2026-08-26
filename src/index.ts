@@ -21,8 +21,16 @@ import { resolveSectorEtf } from "./market/sectorResolver";
 import { AlpacaStream, AlpacaBarMsg } from "./data/alpaca";
 import { initLevels, onBarUpdateLevels } from "./market/levels";
 import { computeMarketDirection, Bar5, MarketDirection } from "./market/marketDirection";
-import { nyDayKey, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY, isRegularSessionNY, isPastEodFlattenNY } from "./market/time";
+import { nyDayKey, nyPartsFromMs, isFirstHourNY, isPastEntryCutoffNY, isPremarketNY, isRegularSessionNY, isPastEodFlattenNY } from "./market/time";
 import { computeRS } from "./engine/rs";
+import {
+  REGIME_SNAPSHOT_MIN,
+  computeDayRegime,
+  saveDayRegime,
+  hasDayRegime,
+  buildRegimeReport,
+  ensureDayRegimeTable,
+} from "./engine/dayRegime";
 import { SignalEngine } from "./engine/signalEngine";
 import { Alert, TradeDirection, TradeOutcome } from "./engine/types";
 import { OutcomeTracker } from "./engine/outcomeTracker";
@@ -1487,9 +1495,10 @@ function getDbRows() {
 // single source of truth for the outcome set (SKIPPED/FORMING/INVALID already
 // excluded there).
 //
-// Scoring unit: exit_return_pct (PERCENT). ~129 closed trades carry it.
-// realized_pnl_usd is only on ~13 rows, so it is reported as a secondary
-// metric, never the primary score.
+// Scoring unit: exit_return_pct (PERCENT). realized_pnl_usd exists only where
+// a broker fill was captured, so it is reported as a secondary metric, never
+// the primary score. Closed trades with no exit score at all are excluded
+// rather than counted as fake 0% breakevens.
 //
 // R-multiple is reconstructed from the structure stop:
 //   oneRpct = |entryRef - structureLevel| / entryRef * 100
@@ -1497,7 +1506,24 @@ function getDbRows() {
 //
 // Returns are summed (additive), not compounded — a simple, honest expectancy
 // view. The equity curve is the running sum of per-trade % returns.
-function getAnalytics() {
+//
+// Every strategy version that ever traded is included — there is no filter at
+// the data layer. Pass a strategyVersion to slice everything (stats, curve,
+// breakdowns) to one strategy; the `strategies` list in the response is always
+// computed from the FULL trade set so the UI can render the filter buttons.
+//
+// Distinct ruleset versions can share a display name (v6 and v9 are both
+// "Improved Break and Retest Strategy"), so grouping and filtering key on the
+// version number, never the name.
+function strategyLabelFor(version: number | null, name: string): string {
+  if (!version) return name || "Unknown";
+  const base = name && name.trim() ? name.trim() : "";
+  if (!base) return `v${version}`;
+  // Avoid "A — Retest (v10) (v10)" when the name already carries the version.
+  return new RegExp(`v\\s*${version}\\b`, "i").test(base) ? base : `${base} (v${version})`;
+}
+
+function getAnalytics(strategyFilter?: number | null) {
   type T = {
     ts: number;
     endTs: number;
@@ -1505,17 +1531,23 @@ function getAnalytics() {
     dir: string; // LONG | SHORT | —
     exitReason: string;
     strategy: string;
+    strategyVersion: number | null;
     retPct: number; // exit_return_pct, percent units
     r: number | null; // R-multiple
     pnlUsd: number | null; // realized $ if present
   };
 
-  const trades: T[] = [];
+  const allTrades: T[] = [];
   for (const row of getDbRows()) {
-    // A closed trade has a finite exit return and is not still LIVE.
-    const retPct = typeof row.exitReturnPct === "number" ? row.exitReturnPct : Number(row.exitReturnPct);
-    if (!Number.isFinite(retPct)) continue;
     if (row.status === "LIVE") continue;
+
+    // A closed trade needs a real exit score. getDbRows() maps a missing
+    // score to "" — Number("") is 0, which used to sneak unscored trades in
+    // as fake 0% breakevens. Treat missing/blank as "not scored, skip".
+    const rawRet = row.exitReturnPct;
+    if (rawRet === "" || rawRet == null) continue;
+    const retPct = typeof rawRet === "number" ? rawRet : Number(rawRet);
+    if (!Number.isFinite(retPct)) continue;
 
     const entryRef = Number(row.entryRef);
     const structure = Number(row.structureLevel);
@@ -1530,22 +1562,41 @@ function getAnalytics() {
         ? row.realizedPnlUsd
         : null;
 
-    const strategy =
-      (row.strategyName && String(row.strategyName)) ||
-      (row.strategyVersion ? `v${row.strategyVersion}` : "Unknown");
+    const version =
+      row.strategyVersion != null && Number.isFinite(Number(row.strategyVersion)) && Number(row.strategyVersion) > 0
+        ? Number(row.strategyVersion)
+        : null;
+    const strategy = strategyLabelFor(version, String(row.strategyName || ""));
 
-    trades.push({
+    allTrades.push({
       ts: Number(row.ts) || 0,
       endTs: Number(row.endTs) || Number(row.ts) || 0,
       symbol: String(row.symbol || "?"),
       dir: String(row.dir || "—"),
       exitReason: String(row.exitReason || "UNKNOWN") || "UNKNOWN",
       strategy,
+      strategyVersion: version,
       retPct,
       r: rMultiple,
       pnlUsd,
     });
   }
+
+  // Filter buttons come from the full set, independent of the active filter.
+  const stratMap = new Map<string, { version: number | null; label: string; trades: number }>();
+  for (const t of allTrades) {
+    const key = t.strategyVersion != null ? `v${t.strategyVersion}` : "unknown";
+    const cur = stratMap.get(key);
+    if (cur) cur.trades += 1;
+    else stratMap.set(key, { version: t.strategyVersion, label: t.strategy, trades: 1 });
+  }
+  const strategies = [...stratMap.values()].sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
+
+  const filterV =
+    strategyFilter != null && Number.isFinite(Number(strategyFilter)) && Number(strategyFilter) > 0
+      ? Number(strategyFilter)
+      : null;
+  const trades = filterV == null ? allTrades : allTrades.filter((t) => t.strategyVersion === filterV);
 
   const sum = (xs: number[]) => xs.reduce((s, x) => s + x, 0);
   const mean = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
@@ -1625,6 +1676,8 @@ function getAnalytics() {
     generatedAt: Date.now(),
     firstTradeTs: chrono.length ? chrono[0].ts : null,
     lastTradeTs: chrono.length ? chrono[chrono.length - 1].ts : null,
+    strategies,
+    strategyFilter: filterV,
     overall: summarize(trades),
     maxDrawdownPct: r4(maxDrawdownPct),
     equityCurve,
@@ -2223,6 +2276,10 @@ function ingestMinuteBar(
       console.log(`[spy-gate] session ref set: SPY open=${o} for ${dk}`);
     }
     spyLastClose = c;
+
+    // Day Regime snapshot — observer only, fires once per session at 09:35 ET.
+    // Wrapped so a failure here can never interrupt bar processing or entries.
+    maybeSnapshotDayRegime(ts);
   }
 
   const allowSignals = !warmup && isRegularMarketHours(ts);
@@ -3054,6 +3111,7 @@ const app = createHttpApp({
   getGhostPositions,
   reconcileNow: () => runOrphanReconciler("manual"),
   getDataCoverage,
+  getRegimeReport,
 
   getMarketState: () => computeMarketState(),
 
@@ -3208,6 +3266,53 @@ const COVERAGE_STALE_MS = 3 * 60_000; // 3 min stale = warn
 function recordCoverageBar(symbol: string, ts: number) {
   const prev = lastBarTsBySymbol.get(symbol) || 0;
   if (ts > prev) lastBarTsBySymbol.set(symbol, ts);
+}
+
+// -----------------------------
+// Day Regime tracker (observer)
+// -----------------------------
+// Records the day's QQQ volatility score and a per-symbol movement rank once
+// per session at 09:35 ET. Read by /api/regime only. Nothing here feeds the
+// signal engine, the broker layer, or any cap — deleting it changes zero
+// trades. See src/engine/dayRegime.ts for the study behind the numbers.
+let regimeSnapshotDay: string | null = null;
+
+function maybeSnapshotDayRegime(ts: number) {
+  try {
+    const dayKey = nyDayKey(ts);
+    if (regimeSnapshotDay === dayKey) return;
+
+    const p = nyPartsFromMs(ts);
+    const mins = p.hh * 60 + p.mm;
+    if (mins < REGIME_SNAPSHOT_MIN) return;
+    // Only snapshot during the session; a late restart still catches the day.
+    if (mins > 16 * 60) return;
+
+    if (hasDayRegime(db, dayKey)) {
+      regimeSnapshotDay = dayKey;
+      return;
+    }
+
+    const regime = computeDayRegime(db, ts, normalizedWatchlist());
+    if (!regime) return;
+
+    saveDayRegime(db, regime);
+    // If QQQ's opening range wasn't in the DB yet, keep retrying on later bars
+    // until 09:45 rather than locking in a partial snapshot for the session.
+    if (regime.volScore != null || mins >= REGIME_SNAPSHOT_MIN + 10) {
+      regimeSnapshotDay = dayKey;
+    }
+    console.log(
+      `[regime] ${dayKey} volScore=${regime.volScore == null ? "n/a" : regime.volScore.toFixed(2)} ` +
+      `Q${regime.volQuintile ?? "?"} top5=${regime.topSymbols.join(",") || "none"}`
+    );
+  } catch (e: any) {
+    console.log("[regime] snapshot error (ignored)", e?.message || e);
+  }
+}
+
+function getRegimeReport(strategyVersion?: number | null) {
+  return buildRegimeReport(db, { strategyVersion: strategyVersion ?? null });
 }
 
 function getDataCoverage() {
@@ -3404,6 +3509,8 @@ server.listen(PORT, () => {
   // Reconstruct in-memory sessions for any positions that survived a server
   // restart. Must run before backfill so live bars arriving immediately after
   // startup are tracked against the correct session state.
+  try { ensureDayRegimeTable(db); } catch (e: any) { console.log('[regime] table init error (ignored)', e?.message || e); }
+
   reconstructLiveSessionsFromDb();
 
   // Orphan position reconciler — run once at startup (after session

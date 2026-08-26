@@ -92,6 +92,42 @@
         color: var(--muted);
         font-size: 13px;
       }
+
+      .strat-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 2px 0 12px;
+      }
+
+      .strat-toggle {
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        transition: background .15s, color .15s, border-color .15s;
+      }
+
+      .strat-toggle:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .strat-toggle.active {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+
+      .strat-toggle .count {
+        margin-left: 6px;
+        opacity: 0.55;
+        font-weight: 600;
+      }
     </style>
   </head>
 
@@ -110,6 +146,7 @@
           <a class="tab" href="/outcomes">Outcomes</a>
           <a class="tab active" href="/analytics">Analytics</a>
           <a class="tab" href="/compare">Compare</a>
+          <a class="tab" href="/regime">Regime</a>
           <a class="tab" href="/watch">Watch</a>
           <a class="tab" href="/rules">Rules</a>
           <a class="tab" href="/backtest">Backtest</a>
@@ -137,6 +174,8 @@
             </div>
             <button type="button" class="btn" id="refreshBtn">Refresh</button>
           </div>
+
+          <div id="stratToggles" class="strat-toggles" role="group" aria-label="Filter by strategy"></div>
 
           <div id="headStats" class="stats-bar"></div>
         </div>

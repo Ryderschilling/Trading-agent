@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Regime • Trading Agent</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/logo.PNG" />
+    <link rel="stylesheet" href="/styles-v4.css" />
+    <script src="/ui.js" defer></script>
+
+    <style>
+      .rgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 4px; }
+      .rcard { border: 1px solid rgba(255,255,255,.10); border-radius: 14px; background: rgba(255,255,255,.04); padding: 14px 16px; }
+      .rcard h3 { margin: 0 0 3px; font-size: 15px; font-weight: 800; }
+      .rcard .desc { color: var(--muted); font-size: 11.5px; line-height: 1.55; margin: 0 0 12px; }
+      .today { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+      .tbox { border-top: 1px solid rgba(255,255,255,.08); padding-top: 8px; }
+      .tbox .k { color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+      .tbox .v { font-size: 20px; font-weight: 800; margin-top: 3px; letter-spacing: -.01em; }
+      table.rg { width: 100%; border-collapse: collapse; font-size: 13px; }
+      table.rg th { text-align: right; padding: 8px 10px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,.10); }
+      table.rg th:first-child, table.rg td:first-child { text-align: left; }
+      table.rg td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.05); text-align: right; font-variant-numeric: tabular-nums; }
+      table.rg tr.thin td { opacity: .45; }
+      .pos { color: #4ade80; } .neg { color: #ff6b6b; } .mut { color: var(--muted); }
+      .chip { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; padding: 2px 7px; border-radius: 6px; margin-right: 4px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); }
+      .chip.hit { background: rgba(74,222,128,.14); border-color: rgba(74,222,128,.4); color: #4ade80; }
+      .qbadge { display:inline-block; min-width: 26px; text-align: center; font-size: 10.5px; font-weight: 800; padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,.15); }
+      .q1 { background: rgba(74,222,128,.16); border-color: rgba(74,222,128,.45); color:#4ade80; }
+      .q2 { background: rgba(74,222,128,.08); }
+      .q4, .q5 { background: rgba(255,255,255,.04); color: var(--muted); }
+      .muted-note { color: var(--muted); font-size: 11.5px; line-height: 1.6; margin-top: 12px; }
+      .filters { display:flex; gap:6px; flex-wrap: wrap; margin-bottom: 12px; }
+      .filters button { font-size: 11px; font-weight: 800; letter-spacing:.04em; padding: 5px 11px; border-radius: 999px; cursor: pointer; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.14); color: var(--muted); }
+      .filters button.on { background: rgba(255,255,255,.14); color: #fff; border-color: rgba(255,255,255,.3); }
+      .warn { border-radius: 12px; padding: 11px 14px; margin-bottom: 14px; font-size: 12.5px; line-height: 1.6; border: 1px solid rgba(255,180,84,.3); background: rgba(255,180,84,.07); color: #ffd9a3; }
+    </style>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <img src="/logo.PNG" class="brand-logo" alt="Logo" />
+          <div class="brand-text">Trading Agent</div>
+        </div>
+
+        <nav class="tabs">
+          <a class="tab" href="/">Workspace</a>
+          <a class="tab" href="/outcomes">Outcomes</a>
+          <a class="tab" href="/analytics">Analytics</a>
+          <a class="tab" href="/compare">Compare</a>
+          <a class="tab active" href="/regime">Regime</a>
+          <a class="tab" href="/watch">Watch</a>
+          <a class="tab" href="/rules">Rules</a>
+          <a class="tab" href="/backtest">Backtest</a>
+          <a class="tab" href="/brokers">Brokers</a>
+        </nav>
+      </div>
+
+      <div class="topbar-right">
+        <div class="status">
+          <div class="status-dot" id="socketDot"></div>
+          <div class="status-text">Realtime</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="stack">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Day Regime</div>
+              <div class="card-sub" id="sub">loading…</div>
+            </div>
+          </div>
+
+          <div class="warn">
+            Observer only. Nothing on this page gates a signal, an order, or a cap. It records what
+            the day looked like at 09:35 ET so the two open questions can be answered with real
+            trades instead of a backtest: does a volatile day pay, and does trading the top-ranked
+            movers beat trading whatever breaks first.
+          </div>
+
+          <div class="filters" id="filters"></div>
+          <div id="today"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">By volatility quintile</div>
+          <div class="card-sub">Q1 is the most volatile fifth of days, Q5 the quietest. Score is QQQ prior-day range + first five minutes' range + 5-day average range, z-scored.</div></div></div>
+          <table class="rg" id="qtbl"></table>
+          <div class="muted-note">
+            Over the 116 days studied on 2026-08-04, Q1 produced a big runner on 26% of days and Q5
+            on 0%. That study measured how far symbols <em>moved</em>, not whether the agent made
+            money. 2026-07-31 scored the 96th percentile and the chase arm lost 7.17%. If the sums
+            below stay flat across quintiles once there are 40+ trades in each, volatility is not
+            worth sizing on and this whole idea is dead.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">Top-5 rank vs the rest</div>
+          <div class="card-sub">Each symbol scored at 09:35 by its own 5-day average range plus its first five minutes' range. Top 5 = the names most likely to move today.</div></div></div>
+          <table class="rg" id="rtbl"></table>
+          <div class="muted-note">
+            This is the untested one. On 2026-08-03 the agent traded the mega caps while COIN, HOOD,
+            MU, AMD and NVDA ran 4.7% to 7.1%, and lost. On 2026-08-04 it caught PLTR and SMCI and
+            had its best day. Only 8 days of full 20-symbol candle history exist, so nothing here is
+            proven. Give it four to six weeks.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div><div class="card-title">Session log</div>
+          <div class="card-sub">One row per session, recorded at 09:35 ET.</div></div></div>
+          <table class="rg" id="dtbl"></table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/regime.js" defer></script>
+  </body>
+</html>

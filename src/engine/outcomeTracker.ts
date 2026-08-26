@@ -825,8 +825,13 @@ export class OutcomeTracker {
    * branch never runs and the position hangs open forever (2026-05-20 incident:
    * AMZN + IWM lost their feed at 13:10 and were never flattened at 14:59).
    *
-   * exitFill is left null — the caller closes the position at the broker and
-   * patches the real fill via finalizeOutcomeWithBrokerFill().
+   * exitFill starts as the last known market close for the symbol so the
+   * trade ALWAYS carries an exit score, even when no broker order exists for
+   * it. When the caller does close a real position at the broker, the patch
+   * in finalizeOutcomeWithBrokerFill() overwrites this with the true fill.
+   * (Before 2026-07-31 this path left exitFill null and waited for a broker
+   * patch that often never came — every clock-swept EOD trade landed in the
+   * DB with no exit_return_pct and polluted analytics as a fake 0% breakeven.)
    */
   eodFlattenAll(ts: number): TradeOutcome[] {
     const results: TradeOutcome[] = [];
@@ -836,7 +841,15 @@ export class OutcomeTracker {
       s.status = "COMPLETED";
       s.exec.exitReason = "EOD";
       s.exec.exitTs = ts;
-      s.exec.exitFill = null;
+
+      const last = this.latestClose.get(s.symbol);
+      if (last != null && isFiniteNum(last) && last > 0) {
+        s.exec.exitFill = last;
+        s.returnsPct["exit"] = computeReturnPct(s.dir, s.entryRefPrice, last);
+      } else {
+        s.exec.exitFill = null;
+      }
+
       const out = this.finalize(id);
       if (out) results.push(out);
     }
