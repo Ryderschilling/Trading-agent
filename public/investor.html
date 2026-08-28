@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Trading Agent — Investor Dashboard</title>
+<link rel="icon" href="/favicon.png" />
+<style>
+  :root{
+    --bg:#0b0f15; --card:#0f1520; --text:#e7edf6; --muted:#9aa6bb;
+    --line:rgba(255,255,255,0.10); --accent:#5da9ff;
+    --pos:#22c55e; --neg:#ef4444; --radius:18px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 20px 72px; color:var(--text);
+    background:
+      radial-gradient(1000px 560px at 15% -12%, rgba(93,169,255,0.10), transparent 62%),
+      var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto}
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px; padding:28px 0 6px; flex-wrap:wrap;
+  }
+  .brand{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  .brand h1{font-size:20px; margin:0; letter-spacing:-0.01em}
+  .tag{
+    font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); border:1px solid var(--line);
+    padding:4px 9px; border-radius:99px;
+  }
+  .meta{font-size:12px; color:var(--muted); display:flex; align-items:center; gap:14px}
+  .meta a{color:var(--muted)}
+
+  /* Hero */
+  .hero{
+    margin-top:22px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:30px 32px;
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:28px;
+  }
+  .hero .lab{font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted)}
+  .hero .big{
+    font-family:var(--mono); font-size:40px; font-weight:600;
+    letter-spacing:-0.03em; margin-top:8px; font-variant-numeric:tabular-nums;
+  }
+  .hero .note{font-size:12px; color:var(--muted); margin-top:6px}
+
+  /* KPIs */
+  .kpis{
+    margin-top:16px; display:grid; gap:14px;
+    grid-template-columns:repeat(auto-fit,minmax(168px,1fr));
+  }
+  .kpi{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px 20px}
+  .kpi .lab{font-size:11px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted)}
+  .kpi .val{
+    font-family:var(--mono); font-size:23px; margin-top:9px;
+    font-variant-numeric:tabular-nums; letter-spacing:-0.02em;
+  }
+  .kpi .sub{font-size:11px; color:var(--muted); margin-top:5px; line-height:1.4}
+
+  .pos{color:var(--pos)} .neg{color:var(--neg)}
+
+  /* Panels */
+  .panel{
+    margin-top:16px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); padding:24px 26px;
+  }
+  .panel h2{font-size:14px; margin:0 0 4px; letter-spacing:-0.01em}
+  .panel .hint{font-size:12px; color:var(--muted); margin:0 0 18px}
+  .chart{width:100%; height:230px; display:block}
+
+  /* Table */
+  .scroll{overflow-x:auto; margin:0 -26px; padding:0 26px}
+  table{width:100%; border-collapse:collapse; font-size:13px; min-width:620px}
+  th{
+    text-align:left; font-size:10px; letter-spacing:.11em; text-transform:uppercase;
+    color:var(--muted); font-weight:600; padding:0 14px 11px 0; white-space:nowrap;
+  }
+  td{padding:11px 14px 11px 0; border-top:1px solid var(--line); white-space:nowrap}
+  td.num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+  .pill{
+    font-size:10px; letter-spacing:.06em; padding:3px 8px; border-radius:99px;
+    border:1px solid var(--line); color:var(--muted);
+  }
+
+  footer{margin-top:26px; font-size:12px; color:var(--muted); line-height:1.65}
+  footer strong{color:#c3cddc; font-weight:600}
+
+  .state{padding:56px 0; text-align:center; color:var(--muted); font-size:14px}
+  .btn-out{
+    background:none; border:1px solid var(--line); color:var(--muted);
+    font-size:12px; padding:6px 12px; border-radius:99px; cursor:pointer;
+  }
+  .btn-out:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <h1>Trading Agent</h1>
+      <span class="tag" id="strategyTag">—</span>
+      <span class="tag" id="modeTag" style="display:none"></span>
+    </div>
+    <div class="meta">
+      <span id="asOf">Loading…</span>
+      <button class="btn-out" id="logout">Sign out</button>
+    </div>
+  </header>
+
+  <div id="state" class="state">Loading account performance…</div>
+
+  <main id="main" style="display:none">
+
+    <section class="hero">
+      <div>
+        <div class="lab">Account value</div>
+        <div class="big" id="equity">—</div>
+        <div class="note" id="equityNote">Live broker balance</div>
+      </div>
+      <div>
+        <div class="lab">Total return</div>
+        <div class="big" id="totalReturn">—</div>
+        <div class="note">Sum of closed trades, after costs</div>
+      </div>
+      <div>
+        <div class="lab">Closed trades</div>
+        <div class="big" id="tradeCount">—</div>
+        <div class="note" id="period">—</div>
+      </div>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi">
+        <div class="lab">Win rate</div>
+        <div class="val" id="winRate">—</div>
+        <div class="sub" id="winLoss">—</div>
+      </div>
+      <div class="kpi">
+        <div class="lab">Average trade</div>
+        <div class="val" id="avgTrade">—</div>
+        <div class="sub">Net of trading costs</div>
+      </div>
+      <div class="kpi">
+        <div class="lab">Worst drawdown</div>
+        <div class="val" id="maxDd">—</div>
+        <div class="sub">Largest peak-to-trough fall</div>
+      </div>
+      <div class="kpi">
+        <div class="lab">Best day share</div>
+        <div class="val" id="conc">—</div>
+        <div class="sub" id="concSub">How much of the return came from one day</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Cumulative return</h2>
+      <p class="hint">Every closed trade in order, after costs. Not a projection.</p>
+      <svg class="chart" id="chart" preserveAspectRatio="none" aria-label="Cumulative return curve"></svg>
+    </section>
+
+    <section class="panel">
+      <h2>Recent closed trades</h2>
+      <p class="hint">The last 40 positions the agent opened and closed.</p>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th><th>Symbol</th><th>Side</th>
+              <th>Entry</th><th>Exit</th><th>Return</th><th>P&amp;L</th><th>Closed by</th>
+            </tr>
+          </thead>
+          <tbody id="tradeRows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <strong>How to read this.</strong> Returns are per-trade percentages summed in order and charged
+      <span id="costNote">trading costs</span> on every round trip, so what you see is after costs, not before.
+      Percentages describe the strategy's performance on the capital it puts to work, which is not the same as
+      the account's overall balance.<br />
+      <strong>This is a real trading account and it can lose money.</strong> Past results, including every number
+      on this page, do not predict future results. A short track record can look good or bad mostly by luck.
+    </footer>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const nf = (n, d) => Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  function pct(n, digits) {
+    const d = digits == null ? 2 : digits;
+    if (n == null || !isFinite(n)) return '—';
+    return (n > 0 ? '+' : '') + nf(n, d) + '%';
+  }
+  function usd(n) {
+    if (n == null || !isFinite(n)) return '—';
+    return (n < 0 ? '-' : '') + '$' + nf(Math.abs(n), 2);
+  }
+  function sign(el, n) {
+    el.classList.remove('pos', 'neg');
+    if (n > 0) el.classList.add('pos');
+    else if (n < 0) el.classList.add('neg');
+  }
+  function dayLabel(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function drawChart(points) {
+    const svg = $('chart');
+    svg.innerHTML = '';
+    if (!points.length) return;
+
+    const W = 1000, H = 230, padY = 18, padX = 4;
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+    const ys = points.map(p => p.cumPct);
+    let lo = Math.min(0, ...ys), hi = Math.max(0, ...ys);
+    if (hi === lo) { hi += 1; lo -= 1; }
+
+    const x = i => padX + (i / Math.max(1, points.length - 1)) * (W - padX * 2);
+    const y = v => padY + (1 - (v - lo) / (hi - lo)) * (H - padY * 2);
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const line = points.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.cumPct).toFixed(1)).join(' ');
+    const last = ys[ys.length - 1];
+    const stroke = last >= 0 ? '#22c55e' : '#ef4444';
+
+    // zero baseline
+    if (lo < 0 && hi > 0) {
+      const zero = document.createElementNS(ns, 'line');
+      zero.setAttribute('x1', padX); zero.setAttribute('x2', W - padX);
+      zero.setAttribute('y1', y(0)); zero.setAttribute('y2', y(0));
+      zero.setAttribute('stroke', 'rgba(255,255,255,0.16)');
+      zero.setAttribute('stroke-dasharray', '3 5');
+      svg.appendChild(zero);
+    }
+
+    const grad = document.createElementNS(ns, 'linearGradient');
+    grad.setAttribute('id', 'fill'); grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+    grad.innerHTML = '<stop offset="0%" stop-color="' + stroke + '" stop-opacity="0.22"/>' +
+                     '<stop offset="100%" stop-color="' + stroke + '" stop-opacity="0"/>';
+    const defs = document.createElementNS(ns, 'defs');
+    defs.appendChild(grad); svg.appendChild(defs);
+
+    const area = document.createElementNS(ns, 'path');
+    area.setAttribute('d', line + ' L' + x(points.length - 1).toFixed(1) + ' ' + y(lo < 0 && hi > 0 ? 0 : lo).toFixed(1) +
+                            ' L' + x(0).toFixed(1) + ' ' + y(lo < 0 && hi > 0 ? 0 : lo).toFixed(1) + ' Z');
+    area.setAttribute('fill', 'url(#fill)');
+    svg.appendChild(area);
+
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', line);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', stroke);
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+  }
+
+  function render(d) {
+    const p = d.performance;
+
+    $('strategyTag').textContent = (d.strategies && d.strategies.length)
+      ? d.strategies.map(s => s.name).join(' · ')
+      : 'No active strategy';
+
+    if (d.mode) {
+      const m = $('modeTag');
+      m.textContent = d.mode === 'live' ? 'Live money' : d.mode;
+      m.style.display = '';
+    }
+
+    $('asOf').textContent = 'Updated ' + new Date(d.asOf)
+      .toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
+    if (d.account && d.account.equity != null) {
+      $('equity').textContent = usd(d.account.equity);
+    } else {
+      $('equity').textContent = '—';
+      $('equityNote').textContent = 'Broker balance unavailable right now';
+    }
+
+    const tr = $('totalReturn');
+    tr.textContent = pct(p.totalReturnPct);
+    sign(tr, p.totalReturnPct);
+
+    $('tradeCount').textContent = p.trades.toLocaleString('en-US');
+    $('period').textContent = p.firstTradeTs
+      ? dayLabel(p.firstTradeTs) + ' – ' + dayLabel(p.lastTradeTs)
+      : 'No closed trades yet';
+
+    $('winRate').textContent = p.trades ? nf(p.winRatePct, 1) + '%' : '—';
+    $('winLoss').textContent = p.trades ? (p.wins + ' winners, ' + p.losses + ' losers') : '—';
+
+    const at = $('avgTrade');
+    at.textContent = p.trades ? pct(p.avgReturnPct, 3) : '—';
+    sign(at, p.avgReturnPct);
+
+    const dd = $('maxDd');
+    dd.textContent = p.trades ? nf(p.maxDrawdownPct, 2) + '%' : '—';
+    if (p.maxDrawdownPct < 0) dd.classList.add('neg');
+
+    if (p.trades && p.totalReturnPct > 0) {
+      $('conc').textContent = nf(p.concentration * 100, 0) + '%';
+      $('concSub').textContent = p.concentration >= 0.5
+        ? 'Concentrated: one day drove most of it'
+        : 'Spread across many days';
+    } else {
+      $('conc').textContent = '—';
+    }
+
+    $('costNote').textContent = nf(d.costModelPct, 2) + '%';
+
+    drawChart(d.equityCurve || []);
+
+    const tbody = $('tradeRows');
+    tbody.innerHTML = '';
+    if (!d.recentTrades.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="color:var(--muted);padding:20px 0">No closed trades yet.</td></tr>';
+    }
+    for (const t of d.recentTrades) {
+      const tr2 = document.createElement('tr');
+      const cls = t.returnPct > 0 ? 'pos' : (t.returnPct < 0 ? 'neg' : '');
+      tr2.innerHTML =
+        '<td class="num">' + new Date(t.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + '</td>' +
+        '<td>' + t.symbol + '</td>' +
+        '<td><span class="pill">' + t.dir + '</span></td>' +
+        '<td class="num">' + (t.entryFill != null ? nf(t.entryFill, 2) : '—') + '</td>' +
+        '<td class="num">' + (t.exitFill != null ? nf(t.exitFill, 2) : '—') + '</td>' +
+        '<td class="num ' + cls + '">' + pct(t.returnPct, 2) + '</td>' +
+        '<td class="num ' + cls + '">' + (t.pnlUsd != null ? usd(t.pnlUsd) : '—') + '</td>' +
+        '<td style="color:var(--muted)">' + (t.exitReason || '—') + '</td>';
+      tbody.appendChild(tr2);
+    }
+
+    $('state').style.display = 'none';
+    $('main').style.display = '';
+  }
+
+  async function load() {
+    try {
+      const res = await fetch('/api/investor/stats', { headers: { Accept: 'application/json' } });
+      if (res.status === 401) { window.location.href = '/investor/login'; return; }
+      const d = await res.json();
+      if (!d.ok) throw new Error(d.error || 'failed');
+      render(d);
+    } catch (e) {
+      $('state').textContent = 'Could not load performance data. Refresh in a moment.';
+    }
+  }
+
+  $('logout').addEventListener('click', async () => {
+    await fetch('/api/investor/logout', { method: 'POST' });
+    window.location.href = '/investor/login';
+  });
+
+  load();
+  setInterval(load, 60000);
+})();
+</script>
+</body>
+</html>

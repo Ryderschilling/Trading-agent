@@ -254,7 +254,10 @@ function getRules() {
 }
 
 function listRulesets() {
-  return db.prepare(`SELECT version, created_ts, name, active FROM rulesets ORDER BY version DESC LIMIT 50`).all();
+  // CHASE-ONLY (2026-08-27): the dashboards list only ACTIVE strategies.
+  // Retired eras stay in the table with active=0 and simply stop appearing.
+  // Re-enable one with: UPDATE rulesets SET active=1 WHERE version=<n>;
+  return db.prepare(`SELECT version, created_ts, name, active FROM rulesets WHERE active=1 ORDER BY version DESC LIMIT 50`).all();
 }
 
 // -----------------------------
@@ -1203,7 +1206,7 @@ function getStrategyCompare() {
   const SLIPPAGE_PCT = 0.04; // 4 bps round trip, same as the July 2026 review
 
   const rulesets = db
-    .prepare(`SELECT version, name, active, config_json FROM rulesets ORDER BY version DESC`)
+    .prepare(`SELECT version, name, active, config_json FROM rulesets WHERE active=1 ORDER BY version DESC`)
     .all() as any[];
 
   const rows = db
@@ -1326,6 +1329,119 @@ function getStrategyCompare() {
   };
 }
 
+/**
+ * INVESTOR STATS (2026-08-27)
+ *
+ * Everything the read-only investor dashboard shows, computed server-side so
+ * the page itself holds no query logic and can never ask for more than this.
+ *
+ * Scope: closed trades on the ACTIVE strategies only (chase v11). Returns are
+ * charged SLIPPAGE_PCT per trade, the same 4 bps used everywhere else in this
+ * codebase, so the number an investor reads is net of cost, not gross.
+ *
+ * Deliberately absent: API keys, broker controls, order internals, open
+ * positions, watchlist edits, rule configs. Adding a field here is the only
+ * way to widen what an investor can see.
+ */
+function getInvestorStats() {
+  const SLIPPAGE_PCT = 0.04;
+
+  const strategies = db
+    .prepare(`SELECT version, name FROM rulesets WHERE active=1 ORDER BY version DESC`)
+    .all() as any[];
+
+  const rows = db
+    .prepare(
+      `SELECT o.symbol, o.dir, o.entry_ts, o.end_ts, o.exit_reason,
+              o.entry_fill, o.exit_fill, o.exit_return_pct, o.realized_pnl_usd,
+              COALESCE(o.ruleset_version,
+                CAST(json_extract(a.meta_json, '$.rulesetVersion') AS INTEGER)) AS rv
+         FROM outcomes o
+         LEFT JOIN alerts a ON a.id = o.alert_id
+        WHERE o.exit_return_pct IS NOT NULL
+          AND o.status NOT IN ('SKIPPED','FORMING','INVALID')
+          AND o.exit_reason != 'SKIPPED'
+          AND COALESCE(o.ruleset_version,
+                CAST(json_extract(a.meta_json, '$.rulesetVersion') AS INTEGER))
+              IN (SELECT version FROM rulesets WHERE active=1)
+        ORDER BY o.entry_ts ASC`
+    )
+    .all() as any[];
+
+  const net = rows.map((r) => Number(r.exit_return_pct) - SLIPPAGE_PCT);
+  const trades = net.length;
+  const wins = net.filter((x) => x > 0).length;
+  const totalReturnPct = net.reduce((a, b) => a + b, 0);
+
+  // Equity curve in cumulative percent, plus the worst peak-to-trough along it.
+  let cum = 0;
+  let peak = 0;
+  let maxDrawdownPct = 0;
+  const equityCurve: Array<{ ts: number; cumPct: number }> = [];
+  for (let i = 0; i < rows.length; i++) {
+    cum += net[i];
+    peak = Math.max(peak, cum);
+    maxDrawdownPct = Math.min(maxDrawdownPct, cum - peak);
+    equityCurve.push({ ts: Number(rows[i].end_ts || rows[i].entry_ts), cumPct: Number(cum.toFixed(3)) });
+  }
+
+  // Per-day totals. Concentration answers "is this one lucky day?" — the single
+  // most useful honesty check on a short track record.
+  const byDayMap = new Map<string, { pct: number; n: number }>();
+  for (let i = 0; i < rows.length; i++) {
+    const day = nyDayKey(Number(rows[i].entry_ts));
+    const cur = byDayMap.get(day) ?? { pct: 0, n: 0 };
+    cur.pct += net[i];
+    cur.n += 1;
+    byDayMap.set(day, cur);
+  }
+  const byDay = [...byDayMap.entries()]
+    .map(([day, v]) => ({ day, pct: Number(v.pct.toFixed(3)), trades: v.n }))
+    .sort((a, b) => (a.day < b.day ? -1 : 1));
+
+  const bestDayPct = byDay.reduce((m, d) => Math.max(m, d.pct), 0);
+  const concentration = totalReturnPct > 0 ? bestDayPct / totalReturnPct : 0;
+
+  const realizedPnlUsd = rows.reduce((a, r) => a + (Number(r.realized_pnl_usd) || 0), 0);
+
+  const recentTrades = rows
+    .slice(-40)
+    .reverse()
+    .map((r) => ({
+      ts: Number(r.end_ts || r.entry_ts),
+      symbol: String(r.symbol),
+      dir: String(r.dir) === "CALL" ? "LONG" : "SHORT",
+      entryFill: r.entry_fill == null ? null : Number(r.entry_fill),
+      exitFill: r.exit_fill == null ? null : Number(r.exit_fill),
+      returnPct: Number((Number(r.exit_return_pct) - SLIPPAGE_PCT).toFixed(3)),
+      pnlUsd: r.realized_pnl_usd == null ? null : Number(r.realized_pnl_usd),
+      exitReason: String(r.exit_reason || ""),
+    }));
+
+  return {
+    asOf: Date.now(),
+    strategies: strategies.map((r) => ({ version: Number(r.version), name: String(r.name) })),
+    costModelPct: SLIPPAGE_PCT,
+    performance: {
+      trades,
+      wins,
+      losses: trades - wins,
+      winRatePct: trades ? Number(((100 * wins) / trades).toFixed(2)) : 0,
+      totalReturnPct: Number(totalReturnPct.toFixed(3)),
+      avgReturnPct: trades ? Number((totalReturnPct / trades).toFixed(4)) : 0,
+      maxDrawdownPct: Number(maxDrawdownPct.toFixed(3)),
+      bestDayPct: Number(bestDayPct.toFixed(3)),
+      concentration: Number(concentration.toFixed(3)),
+      realizedPnlUsd: Number(realizedPnlUsd.toFixed(2)),
+      firstTradeTs: rows.length ? Number(rows[0].entry_ts) : null,
+      lastTradeTs: rows.length ? Number(rows[rows.length - 1].end_ts || rows[rows.length - 1].entry_ts) : null,
+    },
+    equityCurve,
+    byDay,
+    recentTrades,
+  };
+}
+
 function getDbRows() {
   const rows = db
     .prepare(
@@ -1371,6 +1487,9 @@ function getDbRows() {
        WHERE a.dir IN ('CALL','PUT')
          AND (a.message IS NULL OR (a.message NOT LIKE '%FORMING%' AND a.message NOT LIKE '%INVALID%'))
          AND (o.exit_reason IS NULL OR o.exit_reason != 'SKIPPED')
+         AND COALESCE(o.ruleset_version,
+               CAST(json_extract(a.meta_json, '$.rulesetVersion') AS INTEGER))
+             IN (SELECT version FROM rulesets WHERE active=1)
        ORDER BY a.ts DESC
        LIMIT 50000`
     )
@@ -3103,6 +3222,7 @@ const app = createHttpApp({
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
   getDbRows,
+  getInvestorStats,
   getStrategyCompare,
   getAnalytics,
   getCandles1m,

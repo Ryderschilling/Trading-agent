@@ -9,6 +9,8 @@ import {
   isLoginLocked,
   recordLoginFailure,
   recordLoginSuccess,
+  createInvestorCookie,
+  clearInvestorCookie,
 } from "./auth";
 
 console.log("[HTTP.TS] LOADED createHttpApp vRULESET");
@@ -54,6 +56,8 @@ export function createHttpApp(args: {
   getDbRows?: () => any[];
   /** A/B comparison: closed trades grouped by ruleset version. */
   getStrategyCompare?: () => any;
+  /** Curated read-only payload for the investor dashboard. */
+  getInvestorStats?: () => any;
   getAnalytics?: (strategyVersion?: number | null) => any;
   // From remote — used by /api/candles/:symbol route below. Optional so HEAD's
   // existing multi-strategy main file isn't forced to provide it immediately.
@@ -279,6 +283,10 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
       return res.sendFile(filePath);
     }
   }
+
+  // ── Investor (read-only) ────────────────────────────────────────────────
+  app.get("/investor", (_req, res) => sendPage(res, "investor.html"));
+  app.get("/investor/login", (_req, res) => sendPage(res, "investor-login.html"));
 
   app.get("/login", (_req, res) => sendPage(res, "login.html"));
   app.get("/login.html", (_req, res) => res.redirect(301, "/login"));
@@ -532,6 +540,67 @@ app.get("/api/broker/activity", (req, res) => {
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // INVESTOR API — read-only. Three endpoints, no mutations anywhere.
+  // ──────────────────────────────────────────────────────────────────────────
+  app.post("/api/investor/login", express.json(), (req, res) => {
+    const expected = process.env.INVESTOR_PASSWORD || "";
+    if (!expected) return res.status(400).json({ ok: false, error: "Investor access is not configured." });
+
+    const lock = isLoginLocked(req);
+    if (lock.locked) {
+      res.setHeader("Retry-After", String(lock.retryAfterSec));
+      return res.status(429).json({ ok: false, error: `Too many attempts. Try again in ${lock.retryAfterSec}s.` });
+    }
+
+    const password = String(req.body?.password || "");
+    if (!password || password !== expected) {
+      recordLoginFailure(req);
+      return res.status(401).json({ ok: false, error: "Incorrect password" });
+    }
+
+    recordLoginSuccess(req);
+    res.setHeader("Set-Cookie", createInvestorCookie());
+    return res.json({ ok: true });
+  });
+
+  app.post("/api/investor/logout", (_req, res) => {
+    res.setHeader("Set-Cookie", clearInvestorCookie());
+    res.json({ ok: true });
+  });
+
+  app.get("/api/investor/stats", async (_req, res) => {
+    try {
+      if (!args.getInvestorStats) return res.status(400).json({ ok: false, error: "investor stats not enabled" });
+      const stats = args.getInvestorStats();
+
+      // Account snapshot is best-effort: the dashboard still renders the full
+      // track record if the broker is unreachable.
+      let account: any = null;
+      let mode: string | null = null;
+      try {
+        if (args.getBrokerStatus) {
+          const status: any = await args.getBrokerStatus();
+          mode = status?.config?.mode ?? status?.mode ?? null;
+          const acct = status?.account ?? status?.snapshot?.account ?? null;
+          if (acct) {
+            account = {
+              equity: acct.equity ?? null,
+              cash: acct.cash ?? null,
+              status: acct.status ?? null,
+            };
+          }
+        }
+      } catch {
+        account = null;
+      }
+
+      res.json({ ok: true, ...stats, account, mode });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "failed" });
+    }
+  });
 
   // A/B comparison across active rulesets. Powers /compare.html.
   app.get("/api/compare", (_req, res) => {

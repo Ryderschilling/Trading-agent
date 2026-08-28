@@ -1,0 +1,161 @@
+{
+  "ruleset": {
+    "version": 11,
+    "name": "B \u2014 Chase (v11)",
+    "config": {
+      "version": 3,
+      "name": "B \u2014 Chase (v11)",
+      "description": "Breakout continuation. Enters on the first bar after the break, wherever price is. This is what the retest tolerance bug produced by accident for 301 trades, kept as an explicit control arm. 1.0% stop (the entry is already well past the level), 2.5% target, no trailing stop.",
+      "setupType": "break_retest",
+      "timeframeMin": 5,
+      "direction": "both",
+      "setup": {
+        "levels": [
+          "pmh",
+          "pml",
+          "vwap"
+        ],
+        "movingAverage": null,
+        "breakConfirmation": "wick_and_close",
+        "retestConfirmation": "reclaim_close",
+        "maxRetestBars": 12,
+        "entryTrigger": "retest_close",
+        "entryMode": "immediate",
+        "retestTolerancePct": 0.2
+      },
+      "filters": {
+        "session": "regular",
+        "universe": "watchlist",
+        "minVolume": null,
+        "minVolatilityPct": null,
+        "requireMarketBias": true,
+        "requireSpyQqqAlignment": true,
+        "requireVwapAgreement": true,
+        "requireRelativeStrength": true
+      },
+      "risk": {
+        "riskMode": "percent_account",
+        "riskValue": 1,
+        "stopMode": "percent",
+        "stopValueR": null,
+        "moveToBreakevenAtR": null,
+        "timeExitBars": 72,
+        "maxOpenPositions": 3,
+        "trailActivatePct": 0,
+        "trailDistancePct": 0,
+        "trailTightenPct": 0,
+        "trailTightenDistancePct": 0,
+        "mfeGateMinutes": 30,
+        "mfeGatePct": 0.05,
+        "stopValuePct": 1,
+        "profitTargetR": 2.5
+      },
+      "brokerCaps": {
+        "maxTradesPerDay": 4,
+        "maxCapital": null
+      }
+    }
+  },
+  "watchlist": [
+    {
+      "symbol": "SPY",
+      "sector_etf": null,
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "QQQ",
+      "sector_etf": null,
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "IWM",
+      "sector_etf": null,
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "NVDA",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "AAPL",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "MSFT",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "AMD",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "AVGO",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "MU",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "SMCI",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "CRWD",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "PLTR",
+      "sector_etf": "XLK",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "META",
+      "sector_etf": "XLC",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "GOOGL",
+      "sector_etf": "XLC",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "NFLX",
+      "sector_etf": "XLC",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "AMZN",
+      "sector_etf": "XLY",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "TSLA",
+      "sector_etf": "XLY",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "UBER",
+      "sector_etf": "XLY",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "HOOD",
+      "sector_etf": "XLF",
+      "updated_ts": 1785256901493
+    },
+    {
+      "symbol": "COIN",
+      "sector_etf": "XLF",
+      "updated_ts": 1785256901493
+    }
+  ]
+}

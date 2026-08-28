@@ -31,6 +31,8 @@ RUN npm install --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY public ./public
+# Seed for a fresh volume: without this an empty disk boots with no strategy.
+COPY seed ./seed
 
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

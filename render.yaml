@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: trading-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: ohio
+    plan: starter
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      # SQLite lives here. Without a mounted disk every deploy wipes all
+      # trade history and the agent re-seeds itself from scratch.
+      name: trading-agent-data
+      mountPath: /app/data
+      sizeGB: 5
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      # --- Alpaca: set these in the Render dashboard, never in this file ---
+      - key: APCA_API_KEY_ID
+        sync: false
+      - key: APCA_API_SECRET_KEY
+        sync: false
+      - key: ALPACA_BASE_URL
+        value: https://paper-api.alpaca.markets
+      - key: ALPACA_FEED
+        value: iex
+      # --- Auth for the operator dashboard ---
+      - key: AUTH_USERNAME
+        sync: false
+      - key: AUTH_PASSWORD
+        sync: false
+      - key: AGENT_SECRET
+        sync: false
+      # --- Investor read-only login ---
+      - key: INVESTOR_PASSWORD
+        sync: false
+      # --- Execution safety. Live money stays OFF until explicitly armed. ---
+      - key: EXECUTION_ENABLED
+        value: "false"
+      - key: EXEC_ALLOWED_RULESETS
+        value: "11"
+      - key: EXEC_LONG_ONLY
+        value: "false"
+      - key: RISK_PCT_PER_TRADE
+        value: "0.005"
+      - key: MAX_TRADES_PER_DAY
+        value: "5"
+      - key: DAILY_LOSS_LIMIT_PCT
+        value: "0.03"
+      - key: MIN_RISK_PCT
+        value: "0.0015"

@@ -385,7 +385,65 @@ export function openDb() {
   ensureDataDir();
   const db = new Database(DB_PATH);
   migrate(db);
+  bootstrapIfEmpty(db);
   return db;
+}
+
+/**
+ * FRESH-DEPLOY SEED (2026-08-27).
+ *
+ * A brand new volume has an empty `rulesets` table. loadActiveRuleset() then
+ * returns null and the agent boots happily with NO strategy — it streams bars,
+ * logs nothing, places nothing, and looks alive. That is the silent-death
+ * deploy trap. Seed the active strategy and the watchlist on first boot so a
+ * fresh disk comes up trading the same thing the Mac was.
+ *
+ * Only runs when `rulesets` is completely empty, so it can never overwrite a
+ * live database or resurrect a retired strategy.
+ */
+function bootstrapIfEmpty(db: Database.Database) {
+  const existing = db.prepare(`SELECT COUNT(*) AS n FROM rulesets`).get() as any;
+  if (Number(existing?.n || 0) > 0) return;
+
+  const seedPath = path.join(process.cwd(), "seed", "bootstrap.json");
+  if (!fs.existsSync(seedPath)) {
+    console.warn("[BOOTSTRAP] rulesets table is empty and seed/bootstrap.json is missing — the agent will run with NO strategy.");
+    return;
+  }
+
+  let seed: any;
+  try {
+    seed = JSON.parse(fs.readFileSync(seedPath, "utf-8"));
+  } catch (err) {
+    console.error("[BOOTSTRAP] seed/bootstrap.json is unreadable:", err);
+    return;
+  }
+
+  const rs = seed?.ruleset;
+  if (!rs || !Number.isFinite(Number(rs.version))) {
+    console.error("[BOOTSTRAP] seed file has no usable ruleset — the agent will run with NO strategy.");
+    return;
+  }
+
+  db.prepare(`INSERT INTO rulesets(version, created_ts, name, active, config_json) VALUES(?,?,?,?,?)`).run(
+    Number(rs.version),
+    Date.now(),
+    String(rs.name || `v${rs.version}`),
+    1,
+    JSON.stringify(rs.config ?? {})
+  );
+
+  const watchlist = Array.isArray(seed?.watchlist) ? seed.watchlist : [];
+  const insertSymbol = db.prepare(
+    `INSERT OR IGNORE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`
+  );
+  for (const row of watchlist) {
+    const symbol = String(row?.symbol || "").trim().toUpperCase();
+    if (!symbol) continue;
+    insertSymbol.run(symbol, row?.sector_etf == null ? null : String(row.sector_etf), Date.now());
+  }
+
+  console.log(`[BOOTSTRAP] fresh database seeded: ruleset v${rs.version} "${rs.name}" active, ${watchlist.length} watchlist symbols.`);
 }
 
 // Minimal helpers used across app

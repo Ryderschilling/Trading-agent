@@ -21,6 +21,35 @@ let warnedOnce = false;
 const AUTH_COOKIE = "agent_auth";
 const LEGACY_COOKIE = "agent_token";
 
+// -----------------------------------------------------------------------------
+// INVESTOR ROLE (2026-08-27)
+//
+// A second, strictly read-only identity. Set INVESTOR_PASSWORD and an investor
+// can sign in at /investor/login and see ONLY the pages and endpoints listed in
+// INVESTOR_ALLOWED below. There is no username: one shared password, one view.
+//
+// The investor cookie is signed with INVESTOR_PASSWORD, so it is cryptographically
+// incapable of authorizing an owner route, and rotating that password logs every
+// investor out without touching the owner session.
+//
+// An investor who lands anywhere else is redirected to /investor, never shown a
+// 404 or a control they cannot use.
+// -----------------------------------------------------------------------------
+const INVESTOR_COOKIE = "investor_auth";
+
+const INVESTOR_EXCLUDED = new Set([
+  "/investor/login",
+  "/api/investor/login",
+  "/api/investor/logout",
+]);
+
+function isInvestorPath(pathname: string): boolean {
+  if (pathname === "/investor") return true;
+  if (pathname.startsWith("/investor/")) return true;
+  if (pathname.startsWith("/api/investor/")) return true;
+  return false;
+}
+
 const EXCLUDED_PATHS = new Set([
   "/login",
   "/login.html",
@@ -90,6 +119,64 @@ export function createAuthCookie(username: string): string {
 
 export function clearAuthCookie(): string {
   return `${AUTH_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+export function investorAuthEnabled(): boolean {
+  return Boolean(process.env.INVESTOR_PASSWORD);
+}
+
+export function createInvestorCookie(): string {
+  const pass = process.env.INVESTOR_PASSWORD || "";
+  const ttl = getCookieTtlMs();
+  const exp = Date.now() + ttl;
+  const payload = `investor.${exp}`;
+  const value = `${payload}.${sign(payload, pass)}`;
+  const maxAgeSec = Math.floor(ttl / 1000);
+  const secureFlag = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${INVESTOR_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}${secureFlag}`;
+}
+
+export function clearInvestorCookie(): string {
+  return `${INVESTOR_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+}
+
+function verifyInvestorCookie(value: string): boolean {
+  const pass = process.env.INVESTOR_PASSWORD || "";
+  if (!pass) return false;
+
+  const parts = value.split(".");
+  if (parts.length !== 3) return false;
+  const [who, expStr, sig] = parts;
+  if (who !== "investor") return false;
+
+  if (!timingSafeEq(sig, sign(`${who}.${expStr}`, pass))) return false;
+
+  const exp = Number(expStr);
+  return Number.isFinite(exp) && exp >= Date.now();
+}
+
+/** True when the request carries a valid owner session. */
+export function hasOwnerSession(req: Request): boolean {
+  const mode = getAuthMode();
+  if (mode === "open") return true;
+
+  const cookies = parseCookies(req.header("Cookie") || "");
+  if (mode === "userpass") {
+    const raw = cookies[AUTH_COOKIE];
+    return Boolean(raw && verifyAuthCookie(decodeURIComponent(raw)));
+  }
+
+  const secret = process.env.AGENT_SECRET || "";
+  if (!secret) return false;
+  const authHeader = req.header("Authorization") || "";
+  if (authHeader.startsWith("Bearer ") && authHeader.slice(7).trim() === secret) return true;
+  return cookies[LEGACY_COOKIE] === secret;
+}
+
+/** True when the request carries a valid investor session. */
+export function hasInvestorSession(req: Request): boolean {
+  const raw = parseCookies(req.header("Cookie") || "")[INVESTOR_COOKIE];
+  return Boolean(raw && verifyInvestorCookie(decodeURIComponent(raw)));
 }
 
 function verifyAuthCookie(value: string): { username: string } | null {
@@ -188,6 +275,44 @@ function unauthorized(req: Request, res: Response): void {
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const mode = getAuthMode();
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // INVESTOR ROUTING — runs before owner auth so the two roles never blur.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (INVESTOR_EXCLUDED.has(req.path)) return next();
+
+  const investorSession = hasInvestorSession(req);
+
+  if (isInvestorPath(req.path)) {
+    // The investor view is readable by the investor and by the owner.
+    if (investorSession) return next();
+    if (hasOwnerSession(req)) return next();
+    if (!investorAuthEnabled()) {
+      // No INVESTOR_PASSWORD configured — the view is owner-only.
+      return unauthorized(req, res);
+    }
+    if (wantsJson(req)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    res.redirect(302, "/investor/login");
+    return;
+  }
+
+  // An investor session anywhere else gets sent home. It can never fall through
+  // to the owner checks below, so a leaked investor password cannot reach the
+  // broker controls, the rules editor, or the kill switch.
+  if (investorSession && !hasOwnerSession(req)) {
+    // Static assets are inert UI code, not data — let them load so the
+    // investor page can pull fonts and stylesheets.
+    if (STATIC_EXT_RE.test(req.path)) return next();
+    if (wantsJson(req)) {
+      res.status(403).json({ error: "forbidden", role: "investor" });
+      return;
+    }
+    res.redirect(302, "/investor");
+    return;
+  }
 
   if (mode === "open") {
     if (!warnedOnce) {
