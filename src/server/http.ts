@@ -54,6 +54,7 @@ export function createHttpApp(args: {
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
+  reseedPremarket?: () => Promise<any>;
   /** A/B comparison: closed trades grouped by ruleset version. */
   getStrategyCompare?: () => any;
   /** Curated read-only payload for the investor dashboard. */
@@ -542,6 +543,19 @@ app.get("/api/broker/activity", (req, res) => {
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+  // Manual PMH/PML re-seed. Used to verify premarket data actually reaches this
+  // box before relying on it at 09:15 ET.
+  app.post("/api/premarket-reseed", async (_req, res) => {
+    if (!args.reseedPremarket) return res.status(404).json({ ok: false, error: "not enabled" });
+    try {
+      const levels = await args.reseedPremarket();
+      const withPmh = (levels || []).filter((l: any) => l.pmh != null).length;
+      res.json({ ok: true, withPmh, total: (levels || []).length, levels });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // INVESTOR API — read-only. Three endpoints, no mutations anywhere.

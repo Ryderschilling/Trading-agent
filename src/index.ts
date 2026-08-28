@@ -3232,6 +3232,15 @@ const app = createHttpApp({
   // outcomes
   getOutcomes: () => outcomes,
   getOutcomeByAlertId: (id: string) => outcomes.find((o) => o.alertId === id) ?? null,
+  reseedPremarket: async () => {
+    const syms = streamSymbols();
+    await fetchPremarketLevelsForToday(syms);
+    recomputeSignalsAndBroadcast();
+    return syms.map((s) => {
+      const lv = getLevels(s);
+      return { symbol: s, pmh: lv.pmh, pml: lv.pml, pdh: lv.pdh, pdl: lv.pdl, dayKey: lv.dayKey };
+    });
+  },
   getDbRows,
   getInvestorStats,
   getStrategyCompare,
@@ -3660,6 +3669,36 @@ server.listen(PORT, () => {
     if (cov.staleCount > 0) {
       console.warn(`[coverage] ${cov.staleCount}/${cov.watchlistCount} symbol(s) stale > ${cov.thresholdMs / 1000}s: ${cov.staleSymbols.join(", ")}`);
     }
+  }, 60_000);
+
+  // Daily premarket level seeder.
+  //
+  // fetchPremarketLevelsForToday() used to run ONLY inside runStartupBackfill(),
+  // i.e. once per process. A process that boots the evening before a session
+  // therefore fetches an empty premarket window, logs "PMH/PML will be null",
+  // and then trades the entire next day with pmh/pml = null. 67% of the
+  // historical trade record used PMH or PML, so that silently removes most of
+  // the strategy while the dashboard still looks healthy.
+  //
+  // Re-seed once per NY day between 09:15 and 09:29 ET, before entries open.
+  let lastPremarketSeedDay: string | null = null;
+  setInterval(() => {
+    if (!HAS_KEYS) return;
+    const now = Date.now();
+    const p = nyPartsFromMs(now);
+    const mins = p.hh * 60 + p.mm;
+    if (mins < 9 * 60 + 15 || mins > 9 * 60 + 29) return;
+    const dk = nyDayKey(now);
+    if (lastPremarketSeedDay === dk) return;
+    lastPremarketSeedDay = dk;
+    console.log(`[premarket] daily re-seed starting for ${dk}`);
+    void fetchPremarketLevelsForToday(streamSymbols())
+      .then(() => {
+        const filled = streamSymbols().filter((s) => getLevels(s).pmh != null).length;
+        console.log(`[premarket] daily re-seed done — ${filled}/${streamSymbols().length} symbols have PMH/PML`);
+        recomputeSignalsAndBroadcast();
+      })
+      .catch((e) => console.log("[premarket] daily re-seed error:", e?.message || e));
   }, 60_000);
 
   // Clock-driven EOD flatten — every 30s, checks wall-clock time and force-
