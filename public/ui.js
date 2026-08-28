@@ -541,3 +541,36 @@
 
   document.addEventListener("DOMContentLoaded", initAssistant);
 })();
+
+// ---------------------------------------------------------------------------
+// Sign out (2026-08-27)
+//
+// Present on every operator page's topbar. Clears the agent_auth cookie via
+// /api/logout and returns to the login screen. In dev mode (no AUTH_USERNAME /
+// AUTH_PASSWORD set) there is no session to clear, so the button hides itself
+// rather than pretending to do something.
+// ---------------------------------------------------------------------------
+(function () {
+  function init() {
+    var btn = document.getElementById('signOutBtn');
+    if (!btn) return;
+
+    fetch('/api/auth/mode', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.mode === 'open') btn.style.display = 'none'; })
+      .catch(function () { /* leave the button visible if the check fails */ });
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      fetch('/api/logout', { method: 'POST' })
+        .catch(function () {})
+        .then(function () { window.location.href = '/login'; });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
