@@ -2875,3 +2875,82 @@ body.page-rules .rules-trigger-actions{
     max-height: 72vh;
   }
 }
+
+/* ===========================================================================
+   MOBILE (added 2026-08-27)
+
+   Everything here lives inside a media query, so desktop rendering is
+   untouched. Three problems this solves:
+
+   1. The brand logo is 80px tall, which ate most of a phone's header.
+   2. ~30 grids in this file and ~29 more in inline page styles use fixed
+      column counts (1fr 1fr, repeat(3, ...)). None of them collapse on their
+      own, so cards were rendering a few characters wide. auto-fit grids are
+      deliberately left alone — they already reflow.
+   3. Tables set width:100% with no min-width, so a 13-column outcomes table
+      crushed itself rather than scrolling.
+   ========================================================================= */
+@media (max-width: 720px){
+
+  .shell{ margin:12px auto; padding:0 12px 32px 12px; }
+
+  /* Header */
+  .topbar{ min-height:56px; padding:8px 12px; }
+  .topbar-left{ gap:8px; }
+  .brand-logo{ height:34px; margin-right:4px; }
+  .brand-text{ font-size:15px; white-space:nowrap; }
+  .tabs{ gap:6px; -webkit-overflow-scrolling:touch; }
+  .tab{ padding:8px 11px; font-size:12px; white-space:nowrap; }
+  /* Keep the connection dot, drop the word next to it — the Sign out
+     button in the same corner is the more useful thing at this width. */
+  .topbar-right .status-text{ display:none; }
+
+  /* Fixed multi-column grids defined in this stylesheet */
+  .hero-head, .hero-grid, .signals-cols, .workspace-grid,
+  .rules-editor, .rules-grid, .rules-grid-3, .bt-analytics-grid, .stat-row,
+  #rsModalWrap .rs-kv,
+  #rsModalWrap .rs-edit-mount .rules-editor,
+  body.page-rules .rules-grid-2,
+  body.page-rules .rules-grid-3,
+  body.page-rules .rules-grid-4,
+  body.page-rules .rules-inline-group,
+  body.page-rules .rules-builder-layout,
+  .page-backtest .bt-grid,
+  .page-backtest .bt-bottom,
+  .page-backtest .bt-config-grid{
+    grid-template-columns: 1fr !important;
+  }
+
+  /* The same problem, but written inline in the page markup */
+  [style*="grid-template-columns: repeat(2"],
+  [style*="grid-template-columns: repeat(3"],
+  [style*="grid-template-columns: repeat(4"],
+  [style*="grid-template-columns: repeat(5"],
+  [style*="grid-template-columns: repeat(6"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns:repeat(2"],
+  [style*="grid-template-columns:repeat(3"],
+  [style*="grid-template-columns:repeat(4"],
+  [style*="grid-template-columns:1fr 1fr"]{
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Tables scroll sideways instead of compressing to nothing */
+  .table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-wrap table{ min-width:640px; }
+  thead th, tbody td{ padding:10px; font-size:12px; white-space:nowrap; }
+
+  .card{ border-radius:14px; }
+
+  /* Tap targets, and 16px inputs so iOS Safari stops zooming the page
+     every time a field takes focus. */
+  .btn, .tab, button{ min-height:38px; }
+  input, select, textarea, .input{ font-size:16px; }
+}
+
+@media (max-width: 420px){
+  .brand-text{ display:none; }
+  .shell{ padding:0 10px 28px 10px; }
+  .tab{ padding:7px 10px; font-size:11.5px; }
+  .btn{ padding:9px 12px; }
+}
