@@ -82,7 +82,9 @@ body{
 }
 
 .brand-logo{
-  height: 80px;              /* slightly taller than text */
+  /* logo-mark.png is cropped tight to the artwork, unlike the old padded
+     1024x1024 logo.PNG, so this height is the mark's real rendered height. */
+  height: 36px;
   width: auto;
   object-fit: contain;
   margin-right: 8px;
@@ -1066,7 +1068,9 @@ html[data-theme="light"] .topbar.is-solid{
   /* Make tabs match “pill segmented” feel */
   .tabs{
     gap: 10px;
-    flex-wrap: wrap;
+    /* Was flex-wrap:wrap, which overrode the nowrap defined with .tabs above
+       and let the nav break onto a second row. The row scrolls instead. */
+    flex-wrap: nowrap;
   }
   
   .tab{
@@ -2897,7 +2901,7 @@ body.page-rules .rules-trigger-actions{
   /* Header */
   .topbar{ min-height:56px; padding:8px 12px; }
   .topbar-left{ gap:8px; }
-  .brand-logo{ height:34px; margin-right:4px; }
+  .brand-logo{ height:30px; margin-right:4px; }
   .brand-text{ font-size:15px; white-space:nowrap; }
   .tabs{ gap:6px; -webkit-overflow-scrolling:touch; }
   .tab{ padding:8px 11px; font-size:12px; white-space:nowrap; }
