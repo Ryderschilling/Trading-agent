@@ -2353,35 +2353,8 @@ html[data-theme="light"] .topbar.is-solid{
    Rules page redesign
    ========================= */
 
-body.page-rules .topbar{
-  position: sticky;
-  top: 0;
-  z-index: 300;
-  background: #141a23 !important;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  backdrop-filter: none !important;
-}
-
-body.page-rules .topbar.is-solid{
-  background: #141a23 !important;
-  box-shadow: 0 14px 32px rgba(0,0,0,0.28);
-  border-bottom-color: rgba(255,255,255,0.08) !important;
-}
-
-html[data-theme="light"] body.page-rules .topbar{
-  background: #ffffff !important;
-  border-bottom-color: rgba(16,24,39,0.10) !important;
-}
-
-html[data-theme="light"] body.page-rules .topbar.is-solid{
-  background: #ffffff !important;
-  border-bottom-color: rgba(16,24,39,0.10) !important;
-  box-shadow: 0 14px 32px rgba(15,23,42,0.10);
-}
-
-body.page-rules{
-  --app-header-h: 72px;
-}
+/* page-rules header overrides removed 2026-08-27: /rules now uses the shared
+   .topbar exactly as every other page does. */
 
 body.page-rules .rules-main-shell{
   position: relative;

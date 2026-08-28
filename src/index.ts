@@ -257,7 +257,18 @@ function listRulesets() {
   // CHASE-ONLY (2026-08-27): the dashboards list only ACTIVE strategies.
   // Retired eras stay in the table with active=0 and simply stop appearing.
   // Re-enable one with: UPDATE rulesets SET active=1 WHERE version=<n>;
-  return db.prepare(`SELECT version, created_ts, name, active FROM rulesets WHERE active=1 ORDER BY version DESC LIMIT 50`).all();
+  // Includes config_json: /api/rulesets is what the Rules page lists AND renders
+  // from. Without the config every field on that page fell back to its default,
+  // which is why an active "both directions, 1% risk" strategy displayed as
+  // "Short only" and "undefined%".
+  const rows = db
+    .prepare(`SELECT version, created_ts, name, active, config_json FROM rulesets WHERE active=1 ORDER BY version DESC LIMIT 50`)
+    .all() as any[];
+  return rows.map((r) => {
+    let config: any = {};
+    try { config = JSON.parse(String(r.config_json || "{}")); } catch { config = {}; }
+    return { version: Number(r.version), created_ts: Number(r.created_ts), name: String(r.name), active: r.active, config };
+  });
 }
 
 // -----------------------------

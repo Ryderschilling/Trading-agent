@@ -294,7 +294,9 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
   app.get("/", (_req, res) => sendPage(res, "index.html"));
   app.get("/outcomes", (_req, res) => sendPage(res, "outcomes.html"));
   app.get("/analytics", (_req, res) => sendPage(res, "analytics.html"));
-  app.get("/compare", (_req, res) => sendPage(res, "compare.html"));
+  // Compare was removed from the UI on 2026-08-27 (one active strategy, nothing
+  // to compare). Old bookmarks land on the workspace instead of a 404.
+  app.get("/compare", (_req, res) => res.redirect(302, "/"));
   app.get("/regime", (_req, res) => sendPage(res, "regime.html"));
   app.get("/watch", (_req, res) => sendPage(res, "watchlist.html"));
   app.get("/watchlist", (_req, res) => sendPage(res, "watchlist.html")); // backward compat
@@ -305,7 +307,7 @@ app.post("/api/backtests/replay", express.json(), async (req, res) =>{
 
   app.get("/outcomes.html", (_req, res) => res.redirect(301, "/outcomes"));
   app.get("/analytics.html", (_req, res) => res.redirect(301, "/analytics"));
-  app.get("/compare.html", (_req, res) => res.redirect(301, "/compare"));
+  app.get("/compare.html", (_req, res) => res.redirect(302, "/"));
   app.get("/regime.html", (_req, res) => res.redirect(301, "/regime"));
   app.get("/watchlist.html", (_req, res) => res.redirect(301, "/watch"));
   app.get("/rules.html", (_req, res) => res.redirect(301, "/rules"));
