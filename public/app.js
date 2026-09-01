@@ -649,6 +649,18 @@ const equityCanvasEl = document.getElementById("equityChart");
 const equityEmptyEl = document.getElementById("equityEmpty");
 const equityHintEl = document.getElementById("equityHint");
 
+/**
+ * Did the broker actually take this trade? `brokerFilled` is the server's
+ * answer (submitted AND filled, or still open); `brokerSubmitted` is the older
+ * field and is only used as a fallback if the page is served by a build that
+ * predates brokerFilled.
+ */
+function isTakenTrade(r) {
+  if (!r) return false;
+  if (r.brokerFilled != null) return Boolean(r.brokerFilled);
+  return Boolean(r.brokerSubmitted);
+}
+
 function usd(n) {
   if (n == null || !Number.isFinite(Number(n))) return "—";
   return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -681,7 +693,7 @@ function nyDayStartMs(now = Date.now()) {
 /** Broker-submitted rows from today, newest first. */
 function todayRows() {
   const start = nyDayStartMs();
-  return (dbRows || []).filter((r) => r?.brokerSubmitted && Number(r.ts || 0) >= start);
+  return (dbRows || []).filter((r) => isTakenTrade(r) && Number(r.ts || 0) >= start);
 }
 
 /**
@@ -726,8 +738,29 @@ function renderHeroTiles() {
     }
   }
 
+  // Percent basis is the equity the day STARTED at, not the current equity —
+  // dividing today's P&L by an equity figure that already contains it would
+  // understate the move. Falls back to current equity before the first sample
+  // of the day lands.
+  const openEquity =
+    equityPoints.length && Number.isFinite(Number(equityPoints[0].equity))
+      ? Number(equityPoints[0].equity)
+      : equity;
+  const dayPct =
+    hasDay && openEquity && Number.isFinite(openEquity) && openEquity > 0
+      ? (dayTotal / openEquity) * 100
+      : null;
+
   if (statTodayEl) {
     statTodayEl.textContent = hasDay ? signedUsd(dayTotal) : "—";
+    if (hasDay && dayPct != null) {
+      const pctEl = document.createElement("span");
+      pctEl.style.fontSize = "0.72em";
+      pctEl.style.opacity = "0.85";
+      pctEl.style.marginLeft = "6px";
+      pctEl.textContent = `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}%`;
+      statTodayEl.appendChild(pctEl);
+    }
     statTodayEl.className = "stat-tile-value " + (hasDay ? signClass(dayTotal) : "");
   }
   if (statTodaySubEl) {
@@ -1125,7 +1158,7 @@ function renderFeed() {
   // Every entry the broker took, newest first — closed ones included, because
   // this is the trade log, not a list of what is still open.
   const ordered = (dbRows || [])
-    .filter((r) => r?.brokerSubmitted)
+    .filter((r) => isTakenTrade(r))
     .slice()
     .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
     .slice(0, FEED_MAX_ROWS);
@@ -1561,7 +1594,7 @@ async function refreshClosedAlertIdsFromApi() {
       const id = String(r?.alertId || "");
       if (!id) continue;
       if (st === "COMPLETED" || st === "STOPPED") next.add(id);
-      if (r?.brokerSubmitted) nextBroker.add(id);
+      if (isTakenTrade(r)) nextBroker.add(id);
     }
     // Only update if we actually got rows; prevents accidental wipe on bad fetch
 if (next.size) closedAlertIds = next;

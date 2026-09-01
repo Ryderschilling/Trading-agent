@@ -1598,10 +1598,26 @@ function getDbRows() {
       qty: r.o_qty == null ? "" : Number(r.o_qty),
       realizedPnlUsd: r.o_realized_pnl_usd == null ? "" : Number(r.o_realized_pnl_usd),
 
-      // True only when the broker actually accepted an order for this alert.
-      // Outcomes defaults to showing only these rows.
+      // True when the broker accepted an order for this alert. Necessary but
+      // NOT sufficient: broker_status is written once as "pending_new" and
+      // never polled again, so a submitted order that never filled still
+      // looks submitted forever.
       brokerSubmitted: Number(r.o_broker_submitted || 0) > 0,
       brokerOrderId: r.o_broker_order_id == null ? "" : String(r.o_broker_order_id),
+
+      // True when the broker gave us evidence the trade actually happened.
+      // Fills are only persisted when a trade closes (setBrokerEntry keeps
+      // them in the live session until then), so an open trade counts on
+      // submission alone and a closed one has to show a fill, a filled qty, or
+      // a realized P&L. This is what every performance view filters on: an
+      // 8/31 HOOD short was submitted, never filled, and still showed up as a
+      // -1.00% loss with no qty, no entry fill and no realized dollars.
+      brokerFilled:
+        Number(r.o_broker_submitted || 0) > 0 &&
+        (status === "LIVE" ||
+          r.o_entry_fill != null ||
+          r.o_qty != null ||
+          r.o_realized_pnl_usd != null),
 
       // metrics
       mfePct: r.o_mfe_pct == null ? "" : Number(r.o_mfe_pct),
@@ -1688,10 +1704,11 @@ function getAnalytics(strategyFilter?: number | null) {
     if (row.status === "LIVE") continue;
 
     // Analytics measures the account, not the signal: only trades the broker
-    // actually accepted an order for are scored. Signals that never became
-    // orders are still in the DB and still visible on Outcomes under
-    // "All signals" — they just do not belong in a performance number.
-    if (!row.brokerSubmitted) continue;
+    // actually filled are scored. Signals that never became orders — and
+    // orders that never became fills — are still in the DB and still visible
+    // on Outcomes under "All signals". They do not belong in a performance
+    // number.
+    if (!row.brokerFilled) continue;
 
     // A closed trade needs a real exit score. getDbRows() maps a missing
     // score to "" — Number("") is 0, which used to sneak unscored trades in

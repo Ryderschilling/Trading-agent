@@ -547,7 +547,11 @@ function applyDbFilters(rows) {
   return (rows || []).filter((r) => {
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
     if (activeStrategy !== "all" && String(r.strategyVersion ?? "") !== activeStrategy) return false;
-    if (activeSource === "broker" && !r.brokerSubmitted) return false;
+    // brokerFilled = the broker actually filled it (or it is still open).
+    // brokerSubmitted is the older, weaker field — fall back to it only if the
+    // server predates brokerFilled.
+    const taken = r.brokerFilled != null ? Boolean(r.brokerFilled) : Boolean(r.brokerSubmitted);
+    if (activeSource === "broker" && !taken) return false;
     return true;
   });
 }
@@ -576,10 +580,10 @@ function renderSourceToggles() {
   };
 
   sourceTogglesEl.appendChild(
-    make("broker", "Broker trades", "Only alerts the broker actually accepted an order for")
+    make("broker", "Broker trades", "Only trades the broker actually filled")
   );
   sourceTogglesEl.appendChild(
-    make("all", "All signals", "Every A+ signal, including ones no order was sent for")
+    make("all", "All signals", "Every A+ signal, including ones that never became a filled trade")
   );
 }
 
