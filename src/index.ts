@@ -1492,7 +1492,16 @@ function getDbRows() {
         o.qty               AS o_qty,
         o.realized_pnl_usd  AS o_realized_pnl_usd,
 
-        o.returns_json      AS o_returns_json
+        o.returns_json      AS o_returns_json,
+
+        -- Broker truth: was an order for this alert actually sent to the broker?
+        -- broker_orders.status = 'SUBMITTED' is written only after the adapter
+        -- accepted the order (any gate/rejection path writes SKIPPED/ERROR).
+        (SELECT COUNT(*) FROM broker_orders bo
+          WHERE bo.alert_id = a.id AND bo.status IN ('SUBMITTED','FILLED')) AS o_broker_submitted,
+        (SELECT bo.broker_order_id FROM broker_orders bo
+          WHERE bo.alert_id = a.id AND bo.status IN ('SUBMITTED','FILLED')
+          ORDER BY bo.ts ASC LIMIT 1) AS o_broker_order_id
        FROM alerts a
        LEFT JOIN outcomes o ON o.alert_id = a.id
        WHERE a.dir IN ('CALL','PUT')
@@ -1586,6 +1595,11 @@ function getDbRows() {
       entryFill: r.o_entry_fill == null ? "" : Number(r.o_entry_fill),
       qty: r.o_qty == null ? "" : Number(r.o_qty),
       realizedPnlUsd: r.o_realized_pnl_usd == null ? "" : Number(r.o_realized_pnl_usd),
+
+      // True only when the broker actually accepted an order for this alert.
+      // Outcomes defaults to showing only these rows.
+      brokerSubmitted: Number(r.o_broker_submitted || 0) > 0,
+      brokerOrderId: r.o_broker_order_id == null ? "" : String(r.o_broker_order_id),
 
       // metrics
       mfePct: r.o_mfe_pct == null ? "" : Number(r.o_mfe_pct),

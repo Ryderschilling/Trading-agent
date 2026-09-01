@@ -72,6 +72,12 @@ let aiChatHistory = [];
 // Alerts that are no longer "open" (COMPLETED or STOPPED)
 let closedAlertIds = new Set();
 
+// Alert ids the broker actually accepted an order for. The Activity feed shows
+// only these, so it reads as "trades taken", not "signals seen". Populated from
+// /api/dbrows (row.brokerSubmitted) on the 5s poll.
+let brokerAlertIds = new Set();
+let brokerIdsLoaded = false;
+
 // Perf caps
 const FEED_MAX_ROWS = 200;
 const ALERTS_KEEP_MAX = 2000;
@@ -630,7 +636,12 @@ function renderFeed(alerts) {
 
   const ordered = (alerts || [])
     .slice()
-    .filter((a) => String(a.message || "").includes("A+ ENTRY") && !closedAlertIds.has(String(a.id || "")))
+    .filter(
+      (a) =>
+        String(a.message || "").includes("A+ ENTRY") &&
+        !closedAlertIds.has(String(a.id || "")) &&
+        brokerAlertIds.has(String(a.id || ""))
+    )
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .slice(0, FEED_MAX_ROWS);
 
@@ -918,14 +929,36 @@ async function refreshClosedAlertIdsFromApi() {
     const rows = Array.isArray(j?.rows) ? j.rows : [];
 
     const next = new Set();
+    const nextBroker = new Set();
     for (const r of rows) {
       const st = String(r?.status || "").toUpperCase();
       const id = String(r?.alertId || "");
       if (!id) continue;
       if (st === "COMPLETED" || st === "STOPPED") next.add(id);
+      if (r?.brokerSubmitted) nextBroker.add(id);
     }
     // Only update if we actually got rows; prevents accidental wipe on bad fetch
 if (next.size) closedAlertIds = next;
+
+    // The broker set is replaced even when empty — an empty result genuinely
+    // means no orders were taken, and a stale set would show phantom trades.
+    if (Array.isArray(j?.rows)) {
+      let firstNew = null;
+      if (brokerIdsLoaded) {
+        for (const id of nextBroker) {
+          if (!brokerAlertIds.has(id)) { firstNew = id; break; }
+        }
+      }
+      const changed =
+        nextBroker.size !== brokerAlertIds.size ||
+        [...nextBroker].some((id) => !brokerAlertIds.has(id));
+      brokerAlertIds = nextBroker;
+      brokerIdsLoaded = true;
+      if (firstNew) ding();
+      // Re-render here too: on first load the feed would otherwise stay empty
+      // until the next 5s tick, because the alerts fetch resolves first.
+      if (changed) renderFeed(allAlerts);
+    }
   } catch {
     // ignore
   }
@@ -1264,18 +1297,16 @@ if (socket) {
 
     refreshBrokerStats();
 
+    // The feed is broker-truth, so a new A+ ENTRY is NOT rendered on arrival —
+    // the order is submitted a moment later and only then does the alert id
+    // appear in /api/dbrows with brokerSubmitted. Poll a little early so the
+    // row lands in ~2s instead of waiting out the 5s interval. The ding fires
+    // from refreshClosedAlertIdsFromApi when a genuinely new order shows up.
     if (String(alert.message || "").includes("A+ ENTRY")) {
-      ding();
-
-      if (feedBody) {
-        const r = row(alert);
-        r.classList.add("new-animate");
-        feedBody.prepend(r);
-
-        while (feedBody.children.length > FEED_MAX_ROWS) {
-          feedBody.removeChild(feedBody.lastChild);
-        }
-      }
+      window.setTimeout(async () => {
+        await refreshClosedAlertIdsFromApi();
+        renderFeed(allAlerts);
+      }, 2000);
     }
   });
 

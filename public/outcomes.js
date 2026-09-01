@@ -21,6 +21,11 @@ const stratTogglesEl = document.getElementById("stratToggles");
 let activeStrategy = "all";
 let stratSignature = "";
 
+// Source filter — "broker" (default) shows only alerts the broker actually
+// accepted an order for; "all" shows every A+ signal including untraded ones.
+const sourceTogglesEl = document.getElementById("sourceToggles");
+let activeSource = "broker";
+
 const modalEl = document.getElementById("modal");
 const modalCloseEl = document.getElementById("modalClose");
 const modalSubEl = document.getElementById("modalSub");
@@ -994,8 +999,40 @@ function applyDbFilters(rows) {
   return (rows || []).filter((r) => {
     if (cutoff && Number(r.ts || 0) < cutoff) return false;
     if (activeStrategy !== "all" && String(r.strategyVersion ?? "") !== activeStrategy) return false;
+    if (activeSource === "broker" && !r.brokerSubmitted) return false;
     return true;
   });
+}
+
+// Broker / all-signals toggle. Static two-button group, rendered once.
+function renderSourceToggles() {
+  if (!sourceTogglesEl || sourceTogglesEl.dataset.built === "1") return;
+  sourceTogglesEl.dataset.built = "1";
+
+  const make = (value, text, title) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "tab range-toggle" + (activeSource === value ? " active" : "");
+    b.textContent = text;
+    b.title = title;
+    b.dataset.source = value;
+    b.addEventListener("click", () => {
+      if (activeSource === value) return;
+      activeSource = value;
+      for (const el of sourceTogglesEl.querySelectorAll("button")) {
+        el.classList.toggle("active", el.dataset.source === value);
+      }
+      renderDbTable();
+    });
+    return b;
+  };
+
+  sourceTogglesEl.appendChild(
+    make("broker", "Broker trades", "Only alerts the broker actually accepted an order for")
+  );
+  sourceTogglesEl.appendChild(
+    make("all", "All signals", "Every A+ signal, including ones no order was sent for")
+  );
 }
 
 // Build the strategy filter buttons from whatever strategies exist in the
@@ -1117,6 +1154,7 @@ function renderStats(rows) {
 function renderDbTable() {
   if (!dbBodyEl || !dbEmptyEl) return;
 
+  renderSourceToggles();
   renderStrategyToggles();
 
   const rows = applyDbFilters(dbRowsRaw);
@@ -1130,6 +1168,10 @@ function renderDbTable() {
   dbBodyEl.innerHTML = "";
 
   if (!rows.length) {
+    dbEmptyEl.textContent =
+      activeSource === "broker"
+        ? "No broker-submitted trades in this range."
+        : "No rows.";
     dbEmptyEl.style.display = "block";
     return;
   }
