@@ -604,46 +604,484 @@ async function openModalForAlert(a) {
   }
 }
 
+
+// =======================================================================
+// Workspace overview — hero tiles, Today scoreboard, equity curve.
+//
+// All of it reads two sources already polled by this page:
+//   /api/broker/status  → account + open positions (the unrealized side)
+//   /api/dbrows         → trades, filtered to brokerSubmitted (the realized side)
+// plus /api/equity for the curve, which is the only new endpoint.
+// =======================================================================
+
+let latestAccount = null;
+let latestPositions = [];
+let dbRows = [];
+let equityRange = "day";
+let equityPoints = [];
+let equityHoverIdx = -1;
+
+const statEquityEl = document.getElementById("statEquity");
+const statEquitySubEl = document.getElementById("statEquitySub");
+const statTodayEl = document.getElementById("statToday");
+const statTodaySubEl = document.getElementById("statTodaySub");
+const statPositionsEl = document.getElementById("statPositions");
+const statPnlEl = document.getElementById("statPnl");
+const statExposureEl = document.getElementById("statExposure");
+const statExposureSubEl = document.getElementById("statExposureSub");
+const todayNetEl = document.getElementById("todayNet");
+const todayGridEl = document.getElementById("todayGrid");
+const equityCanvasEl = document.getElementById("equityChart");
+const equityEmptyEl = document.getElementById("equityEmpty");
+const equityHintEl = document.getElementById("equityHint");
+
+function usd(n) {
+  if (n == null || !Number.isFinite(Number(n))) return "—";
+  return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function signedUsd(n) {
+  if (n == null || !Number.isFinite(Number(n))) return "—";
+  const v = Number(n);
+  return (v >= 0 ? "+" : "-") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function signClass(v) {
+  if (v == null || !Number.isFinite(Number(v))) return "";
+  return Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "";
+}
+
+/** Start of the current NY trading day, in epoch ms. */
+function nyDayStartMs(now = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(now));
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value || 0);
+  const secondsIntoDay = get("hour") * 3600 + get("minute") * 60 + get("second");
+  return now - secondsIntoDay * 1000;
+}
+
+/** Broker-submitted rows from today, newest first. */
+function todayRows() {
+  const start = nyDayStartMs();
+  return (dbRows || []).filter((r) => r?.brokerSubmitted && Number(r.ts || 0) >= start);
+}
+
+/**
+ * The alert row behind an open position: today's most recent broker-submitted
+ * LIVE row for that symbol. Used for the entry marker and the level label.
+ */
+function findOpenAlertRowForSymbol(symbol) {
+  const sym = String(symbol || "").toUpperCase();
+  const candidates = todayRows()
+    .filter((r) => String(r.symbol || "").toUpperCase() === sym)
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0));
+  return candidates.find((r) => String(r.status || "").toUpperCase() === "LIVE") || candidates[0] || null;
+}
+
+function renderHeroTiles() {
+  const equity = latestAccount?.equity == null ? null : Number(latestAccount.equity);
+  const positions = latestPositions || [];
+  const unrealized = positions.reduce((s, p) => s + (Number(p?.unrealizedPl) || 0), 0);
+  const exposure = positions.reduce((s, p) => s + Math.abs(Number(p?.marketValue) || 0), 0);
+
+  const closed = todayRows().filter((r) => String(r.status || "").toUpperCase() !== "LIVE");
+  const realized = closed
+    .map((r) => Number(r.realizedPnlUsd))
+    .filter((v) => Number.isFinite(v))
+    .reduce((a, b) => a + b, 0);
+  const hasRealized = closed.some((r) => Number.isFinite(Number(r.realizedPnlUsd)));
+
+  const dayTotal = (hasRealized ? realized : 0) + (positions.length ? unrealized : 0);
+  const hasDay = hasRealized || positions.length > 0;
+
+  if (statEquityEl) statEquityEl.textContent = usd(equity);
+  if (statEquitySubEl) {
+    // The session's opening equity, taken from the first sample of the day.
+    const open = equityPoints.length ? Number(equityPoints[0].equity) : null;
+    if (equity != null && open != null && Number.isFinite(open) && equityRange === "day") {
+      const delta = equity - open;
+      statEquitySubEl.textContent = `${signedUsd(delta)} since open`;
+      statEquitySubEl.className = "stat-tile-sub " + signClass(delta);
+    } else {
+      statEquitySubEl.innerHTML = "&nbsp;";
+      statEquitySubEl.className = "stat-tile-sub";
+    }
+  }
+
+  if (statTodayEl) {
+    statTodayEl.textContent = hasDay ? signedUsd(dayTotal) : "—";
+    statTodayEl.className = "stat-tile-value " + (hasDay ? signClass(dayTotal) : "");
+  }
+  if (statTodaySubEl) {
+    statTodaySubEl.textContent = hasDay
+      ? `${hasRealized ? signedUsd(realized) : "$0.00"} closed${positions.length ? ` · ${signedUsd(unrealized)} open` : ""}`
+      : "No trades taken yet";
+    statTodaySubEl.className = "stat-tile-sub";
+  }
+
+  if (statPositionsEl) statPositionsEl.textContent = String(positions.length);
+  if (statPnlEl) {
+    statPnlEl.textContent = positions.length ? `${signedUsd(unrealized)} unrealized` : "Flat";
+    statPnlEl.className = "stat-tile-sub " + (positions.length ? signClass(unrealized) : "");
+  }
+
+  if (statExposureEl) statExposureEl.textContent = positions.length ? usd(exposure) : "$0.00";
+  if (statExposureSubEl) {
+    statExposureSubEl.textContent =
+      positions.length && equity ? `${fmt2((exposure / equity) * 100)}% of equity` : "Nothing at risk";
+    statExposureSubEl.className = "stat-tile-sub";
+  }
+}
+
+function renderTodayCard() {
+  if (!todayGridEl) return;
+
+  const rows = todayRows();
+  const closed = rows.filter((r) => String(r.status || "").toUpperCase() !== "LIVE");
+
+  const dollars = closed.map((r) => Number(r.realizedPnlUsd)).filter((v) => Number.isFinite(v));
+  const pcts = closed
+    .map((r) => {
+      if (Number.isFinite(Number(r.exitReturnPct))) return Number(r.exitReturnPct);
+      if (r.stoppedOut && Number.isFinite(Number(r.stopReturnPct))) return Number(r.stopReturnPct);
+      return null;
+    })
+    .filter((v) => v != null && Number.isFinite(v));
+
+  const net = dollars.reduce((a, b) => a + b, 0);
+  const wins = pcts.filter((v) => v > 0).length;
+  const winRate = pcts.length ? (wins / pcts.length) * 100 : null;
+  const best = pcts.length ? Math.max(...pcts) : null;
+  const worst = pcts.length ? Math.min(...pcts) : null;
+
+  if (todayNetEl) {
+    todayNetEl.textContent = dollars.length ? signedUsd(net) : "—";
+    todayNetEl.className = "today-net " + (dollars.length ? signClass(net) : "");
+  }
+
+  const pct = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${fmt2(v)}%`);
+  const item = (label, value, cls) => `
+    <div class="today-item">
+      <div class="today-item-label">${label}</div>
+      <div class="today-item-value ${cls || ""}">${value}</div>
+    </div>`;
+
+  const avg = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+  const stopped = closed.filter((r) => r.stoppedOut).length;
+
+  todayGridEl.innerHTML = [
+    item("Taken", String(rows.length)),
+    item("Closed", String(closed.length)),
+    item("Win rate", winRate == null ? "—" : `${fmt2(winRate)}%`, winRate == null ? "" : winRate >= 50 ? "pos" : "neg"),
+    item("Open", String(rows.length - closed.length)),
+    item("Avg trade", pct(avg), signClass(avg)),
+    item("Stopped out", String(stopped)),
+    item("Best", pct(best), signClass(best)),
+    item("Worst", pct(worst), signClass(worst)),
+  ].join("");
+}
+
+// -----------------------
+// Equity curve
+// -----------------------
+function drawEquityCurve() {
+  if (!equityCanvasEl) return;
+
+  const pts = (equityPoints || []).filter((p) => Number.isFinite(Number(p.equity)));
+  if (equityEmptyEl) equityEmptyEl.classList.toggle("show", pts.length < 2);
+
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  const rect = equityCanvasEl.getBoundingClientRect();
+  const w = Math.max(280, Math.round(rect.width || 600));
+  const h = Math.max(160, Math.round(rect.height || 240));
+  if (equityCanvasEl.width !== w * ratio || equityCanvasEl.height !== h * ratio) {
+    equityCanvasEl.width = w * ratio;
+    equityCanvasEl.height = h * ratio;
+  }
+
+  const ctx = equityCanvasEl.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  if (pts.length < 2) return;
+
+  const padTop = 16;
+  const padBottom = 22;
+  const padLeft = 12;
+  const padRight = 70;
+  const plotW = Math.max(20, w - padLeft - padRight);
+  const plotH = Math.max(20, h - padTop - padBottom);
+
+  const values = pts.map((p) => Number(p.equity));
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  if (hi - lo < 0.01) { hi += 0.5; lo -= 0.5; }
+  const span = hi - lo;
+  lo -= span * 0.08;
+  hi += span * 0.08;
+
+  const xOf = (i) => padLeft + (i / (pts.length - 1)) * plotW;
+  const yOf = (v) => padTop + plotH - ((v - lo) / (hi - lo)) * plotH;
+
+  const first = values[0];
+  const last = values[values.length - 1];
+  const up = last >= first;
+  const line = up ? "#22c55e" : "#ef4444";
+
+  // Horizontal guides
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = padTop + (plotH / 3) * i;
+    ctx.beginPath();
+    ctx.moveTo(padLeft, y);
+    ctx.lineTo(padLeft + plotW, y);
+    ctx.stroke();
+  }
+
+  // Opening reference
+  const openY = yOf(first);
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.beginPath();
+  ctx.moveTo(padLeft, openY);
+  ctx.lineTo(padLeft + plotW, openY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Filled area
+  const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+  grad.addColorStop(0, up ? "rgba(34,197,94,0.26)" : "rgba(239,68,68,0.26)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(values[0]));
+  for (let i = 1; i < values.length; i++) ctx.lineTo(xOf(i), yOf(values[i]));
+  ctx.lineTo(xOf(values.length - 1), padTop + plotH);
+  ctx.lineTo(xOf(0), padTop + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(values[0]));
+  for (let i = 1; i < values.length; i++) ctx.lineTo(xOf(i), yOf(values[i]));
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+
+  // Right-edge price pill
+  const py = yOf(last);
+  const label = usd(last);
+  ctx.font = "11px system-ui";
+  const tw = ctx.measureText(label).width;
+  const pw = tw + 12;
+  const ph = 18;
+  const px = Math.min(w - pw - 2, padLeft + plotW + 6);
+  const pyc = Math.max(padTop, Math.min(py - ph / 2, padTop + plotH - ph));
+  ctx.fillStyle = "rgba(15,22,38,0.95)";
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.rect(px, pyc, pw, ph);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(231,237,246,0.95)";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, px + 6, pyc + ph / 2 + 0.5);
+
+  // Hover readout
+  if (equityHoverIdx >= 0 && equityHoverIdx < pts.length) {
+    const i = equityHoverIdx;
+    const hx = xOf(i);
+    const hy = yOf(values[i]);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(hx, padTop);
+    ctx.lineTo(hx, padTop + plotH);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = line;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    const txt = `${fmtTime(pts[i].ts)}  ${usd(values[i])}`;
+    ctx.font = "11px system-ui";
+    const bw = ctx.measureText(txt).width + 14;
+    const bx = Math.min(Math.max(padLeft, hx - bw / 2), padLeft + plotW - bw);
+    ctx.fillStyle = "rgba(10,16,28,0.95)";
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath();
+    ctx.rect(bx, padTop - 2, bw, 20);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(231,237,246,0.95)";
+    ctx.fillText(txt, bx + 7, padTop + 8.5);
+  }
+
+  if (equityHintEl) {
+    const delta = last - first;
+    const pctDelta = first ? (delta / first) * 100 : 0;
+    const rangeLabel = equityRange === "day" ? "today" : equityRange === "month" ? "last 30 days" : "all time";
+    equityHintEl.textContent = `${signedUsd(delta)} (${delta >= 0 ? "+" : ""}${fmt2(pctDelta)}%) ${rangeLabel} · ${pts.length} samples`;
+  }
+}
+
+async function refreshEquityCurve() {
+  if (!equityCanvasEl) return;
+  try {
+    const res = await fetch(`/api/equity?range=${encodeURIComponent(equityRange)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const j = await res.json();
+    equityPoints = Array.isArray(j?.points) ? j.points : [];
+  } catch {
+    equityPoints = [];
+  }
+  drawEquityCurve();
+  renderHeroTiles();
+}
+
+if (equityCanvasEl) {
+  equityCanvasEl.addEventListener("mousemove", (e) => {
+    const pts = (equityPoints || []).filter((p) => Number.isFinite(Number(p.equity)));
+    if (pts.length < 2) return;
+    const rect = equityCanvasEl.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const padLeft = 12;
+    const plotW = Math.max(20, rect.width - padLeft - 70);
+    const t = Math.max(0, Math.min(1, (x - padLeft) / plotW));
+    equityHoverIdx = Math.round(t * (pts.length - 1));
+    drawEquityCurve();
+  });
+  equityCanvasEl.addEventListener("mouseleave", () => {
+    equityHoverIdx = -1;
+    drawEquityCurve();
+  });
+  window.addEventListener("resize", () => drawEquityCurve());
+
+  for (const btn of document.querySelectorAll("#equityRange .range-toggle")) {
+    btn.addEventListener("click", () => {
+      const r = String(btn.dataset.range || "day");
+      if (r === equityRange) return;
+      equityRange = r;
+      for (const b of document.querySelectorAll("#equityRange .range-toggle")) {
+        b.classList.toggle("active", b === btn);
+      }
+      void refreshEquityCurve();
+    });
+  }
+}
+
 // -----------------------
 // Rendering
 // -----------------------
 function row(a) {
   const tr = document.createElement("tr");
   tr.dataset.alertId = String(a.id || "");
+  tr.className = "clickable";
+  tr.style.cursor = "pointer";
 
-  const td = (t) => {
+  const td = (t, cls) => {
     const el = document.createElement("td");
     el.textContent = t;
+    if (cls) el.className = cls;
     return el;
   };
 
+  // The trade's own row from /api/dbrows carries the result. An entry that is
+  // still open simply has no result yet.
+  const r = (dbRows || []).find((x) => String(x.alertId || "") === String(a.id || ""));
+  const status = String(r?.status || "LIVE").toUpperCase();
+
+  let pnlTxt = "—";
+  let pnlCls = "";
+  if (r) {
+    const usdPnl = Number(r.realizedPnlUsd);
+    const pctPnl = Number.isFinite(Number(r.exitReturnPct))
+      ? Number(r.exitReturnPct)
+      : r.stoppedOut && Number.isFinite(Number(r.stopReturnPct))
+      ? Number(r.stopReturnPct)
+      : null;
+
+    if (Number.isFinite(usdPnl)) {
+      pnlTxt = signedUsd(usdPnl) + (pctPnl == null ? "" : ` (${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%)`);
+      pnlCls = signClass(usdPnl);
+    } else if (pctPnl != null) {
+      pnlTxt = `${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%`;
+      pnlCls = signClass(pctPnl);
+    }
+  }
+
   // Columns must match index.html thead:
-  // Time | Symbol | Market | RS | Dir | Message
+  // Time | Symbol | Dir | Level | Market | RS | Status | Result
   tr.appendChild(td(fmtTime(a.ts)));
   tr.appendChild(td(a.symbol || ""));
+  tr.appendChild(td(a.dir === "PUT" ? "SHORT" : a.dir === "CALL" ? "LONG" : a.dir || "—"));
+  tr.appendChild(td(r?.level || "—"));
   tr.appendChild(td(a.market || "—"));
   tr.appendChild(td(a.rs || "—"));
-  tr.appendChild(td(a.dir || "—"));
-  tr.appendChild(td(cleanMessage(a.message)));
+
+  // Colour the status by the money, not by the word: a COMPLETED trade that
+  // lost is a red row, the same as a stop.
+  const statusTd = td(status === "LIVE" ? "OPEN" : status);
+  statusTd.style.fontWeight = "700";
+  statusTd.style.color =
+    status === "LIVE" ? "var(--muted,#9aa6bb)"
+    : pnlCls === "pos" ? "var(--pos,#22c55e)"
+    : pnlCls === "neg" ? "var(--neg,#ef4444)"
+    : status === "STOPPED" ? "var(--neg,#ef4444)"
+    : "var(--muted,#9aa6bb)";
+  tr.appendChild(statusTd);
+
+  const pnlTd = td(pnlTxt);
+  pnlTd.style.fontWeight = "700";
+  if (pnlCls === "pos") pnlTd.style.color = "var(--pos,#22c55e)";
+  if (pnlCls === "neg") pnlTd.style.color = "var(--neg,#ef4444)";
+  tr.appendChild(pnlTd);
 
   tr.addEventListener("click", () => openModalForAlert(a));
   return tr;
 }
-  
+
 function renderFeed(alerts) {
   if (!feedBody) return;
   feedBody.innerHTML = "";
 
+  // Every entry the broker took, newest first — closed ones included, because
+  // this is the day's trade log, not a list of what is still open. Open trades
+  // have their own card above.
   const ordered = (alerts || [])
     .slice()
     .filter(
       (a) =>
         String(a.message || "").includes("A+ ENTRY") &&
-        !closedAlertIds.has(String(a.id || "")) &&
         brokerAlertIds.has(String(a.id || ""))
     )
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))
     .slice(0, FEED_MAX_ROWS);
+
+  if (!ordered.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.className = "small";
+    td.style.padding = "16px";
+    td.style.opacity = "0.6";
+    td.textContent = brokerIdsLoaded ? "No trades taken yet." : "Loading…";
+    tr.appendChild(td);
+    feedBody.appendChild(tr);
+    return;
+  }
 
   for (const a of ordered) feedBody.appendChild(row(a));
 }
@@ -724,7 +1162,7 @@ async function openTradeModal(pos) {
 
   tradeModalTitleEl.textContent = `${sym} — ${side}`;
   tradeModalBodyEl.innerHTML = `
-    <canvas id="tradeChart" style="width:100%; height:160px; display:block; border-radius:8px; background:rgba(255,255,255,0.03); margin-bottom:16px;"></canvas>
+    <div class="trade-chart-stage"><canvas id="tradeChart"></canvas></div>
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;">
       <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:10px 12px;">
         <div style="font-size:11px; color:var(--muted,#888); margin-bottom:3px;">Qty</div>
@@ -759,15 +1197,69 @@ async function openTradeModal(pos) {
 
   tradeModalOpen();
 
-  // Draw chart
+  // Chart — the same engine the Outcomes modal uses, so an open trade is read
+  // the same way a closed one is: entry marked, structural levels drawn, 9 EMA
+  // and VWAP on top. Falls back to the plain candle painter if chart-core.js
+  // is not on the page (watchlist.html loads app.js without it).
   const canvas = document.getElementById("tradeChart");
   if (canvas) {
+    const alertRow = findOpenAlertRowForSymbol(sym);
     try {
-      const res = await fetch(`/api/candles?symbol=${encodeURIComponent(sym)}&end=${Date.now()}&minutes=90`, { cache: "no-store" });
+      const res = await fetch(`/api/candles?symbol=${encodeURIComponent(sym)}&end=${Date.now()}&minutes=240`, { cache: "no-store" });
       const j = await res.json().catch(() => null);
-      drawCandleChart(canvas, j?.bars || []);
+      const raw = Array.isArray(j?.bars) ? j.bars : [];
+
+      if (!window.ChartCore) {
+        drawCandleChart(canvas, raw);
+      } else {
+        const bars1m = window.ChartCore.normalizeBars(raw);
+        // 2m candles: 240 one-minute bars is too dense to read in a 300px stage.
+        const bars = window.ChartCore.aggregateBars(bars1m, 2);
+
+        const GREEN = "rgba(74, 222, 128, 0.95)";
+        const RED = "rgba(248, 113, 113, 0.95)";
+        const PINK = "rgba(255, 82, 172, 0.95)";
+        const levels = [];
+        const seen = new Set();
+        for (const spec of [
+          { key: "pdh", label: "PDH", color: GREEN },
+          { key: "pdl", label: "PDL", color: RED },
+          { key: "pmh", label: "PMH", color: PINK },
+          { key: "pml", label: "PML", color: PINK },
+        ]) {
+          const v = Number(alertRow?.[spec.key]);
+          if (!Number.isFinite(v)) continue;
+          const k = v.toFixed(4);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          levels.push({ price: v, color: spec.color, label: spec.label, dash: [5, 4], lineWidth: 1.4 });
+        }
+
+        // The average entry price is the one line that matters on an open
+        // trade, so it is drawn even when the alert row has no levels.
+        if (entry != null && Number.isFinite(entry)) {
+          levels.push({
+            price: entry,
+            color: "rgba(255, 214, 102, 0.95)",
+            label: "ENTRY",
+            dash: [2, 3],
+            lineWidth: 1.2,
+          });
+        }
+
+        window.ChartCore.drawChart(canvas, bars, {
+          entryTs: alertRow?.ts ? Number(alertRow.ts) : null,
+          exitTs: null,
+          showEntry: Boolean(alertRow?.ts),
+          showExit: false,
+          showVwap: true,
+          levels,
+          emas: [{ period: 9, color: "rgba(255, 255, 255, 0.92)", lineWidth: 1.4, label: "9" }],
+        });
+      }
     } catch {
-      drawCandleChart(canvas, []);
+      if (window.ChartCore) window.ChartCore.drawChart(canvas, [], {});
+      else drawCandleChart(canvas, []);
     }
   }
 
@@ -833,6 +1325,9 @@ function renderLiveTrades(positions) {
   const items = (Array.isArray(positions) ? positions : [])
     .filter((p) => p.qty != null && Math.abs(Number(p.qty)) > 0.0001);
 
+  latestPositions = items;
+  renderHeroTiles();
+
   if (!items.length) {
     liveTradesEmptyEl.style.display = "block";
     if (liveTradesTableEl) liveTradesTableEl.style.display = "none";
@@ -844,15 +1339,13 @@ function renderLiveTrades(positions) {
   liveTradesEmptyEl.style.display = "none";
   if (liveTradesTableEl) liveTradesTableEl.style.display = "block";
 
-  // Summary + total P&L
   const totalPnl = items.reduce((sum, p) => sum + (Number(p?.unrealizedPl) || 0), 0);
   if (liveTradesSummaryEl) {
     liveTradesSummaryEl.textContent = `${items.length} open position${items.length === 1 ? "" : "s"}`;
   }
   if (liveTradesTotalPnlEl) {
-    const totalStr = (totalPnl >= 0 ? "+" : "") + "$" + Math.abs(totalPnl).toFixed(2);
-    liveTradesTotalPnlEl.textContent = totalStr;
-    liveTradesTotalPnlEl.style.color = totalPnl >= 0 ? "var(--pos,#42ff00)" : "var(--neg,#ff5353)";
+    liveTradesTotalPnlEl.textContent = signedUsd(totalPnl);
+    liveTradesTotalPnlEl.style.color = totalPnl >= 0 ? "var(--pos,#22c55e)" : "var(--neg,#ef4444)";
   }
 
   for (const p of items) {
@@ -864,48 +1357,41 @@ function renderLiveTrades(positions) {
     const entry = p.avgEntryPrice != null ? Number(p.avgEntryPrice) : null;
     const mv = p.marketValue != null ? Number(p.marketValue) : null;
 
-    const pnlStr = pnl != null && Number.isFinite(pnl)
-      ? (pnl >= 0 ? "+" : "") + "$" + Math.abs(pnl).toFixed(2)
-      : "—";
-    const pnlPctStr = pnlPct != null && Number.isFinite(pnlPct)
-      ? (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(2) + "%"
-      : "—";
-    const pnlColor = pnl != null && pnl >= 0 ? "var(--pos,#42ff00)" : "var(--neg,#ff5353)";
-    const qtyDisplay = qty != null ? (qty % 1 === 0 ? String(qty) : qty.toFixed(2)) : "—";
-    const entryDisplay = entry != null ? "$" + entry.toFixed(2) : "—";
-    const mvDisplay = mv != null ? "$" + mv.toFixed(2) : "—";
-    const sideColor = side === "SHORT" ? "var(--neg,#ff5353)" : "var(--pos,#42ff00)";
+    // Last price is not in the position payload, but market value / qty is the
+    // broker's own mark, which is what the P&L was computed from.
+    const last = mv != null && qty ? Math.abs(mv / qty) : null;
 
-    const tr = document.createElement("tr");
-    tr.style.cursor = "pointer";
-    tr.style.borderBottom = "1px solid rgba(128,128,128,0.1)";
-    tr.style.transition = "background 0.1s";
-    tr.addEventListener("mouseenter", () => { tr.style.background = "rgba(255,255,255,0.04)"; });
-    tr.addEventListener("mouseleave", () => { tr.style.background = ""; });
+    // The alert this position came from, so the row can show the level that
+    // triggered it and the modal can mark the entry on the chart.
+    const alertRow = findOpenAlertRowForSymbol(sym);
 
-    tr.innerHTML = `
-      <td style="padding:14px 14px; font-weight:700; font-size:15px; white-space:nowrap;">${escapeHtml(sym)}</td>
-      <td style="padding:14px 14px; white-space:nowrap;">
-        <span style="display:inline-block; padding:3px 8px; border-radius:5px; font-size:11px; font-weight:700; letter-spacing:0.5px;
-          background:${side === "SHORT" ? "rgba(255,83,83,0.15)" : "rgba(66,255,0,0.12)"};
-          color:${sideColor};">
-          ${escapeHtml(side)}
-        </span>
-      </td>
-      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(qtyDisplay)}</td>
-      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; opacity:0.8;">${escapeHtml(entryDisplay)}</td>
-      <td style="padding:14px 14px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; opacity:0.8;">${escapeHtml(mvDisplay)}</td>
-      <td style="padding:14px 14px; text-align:right; font-weight:700; font-size:15px; color:${pnlColor}; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(pnlStr)}</td>
-      <td style="padding:14px 14px; text-align:right; font-weight:600; font-size:13px; color:${pnlColor}; font-variant-numeric:tabular-nums; white-space:nowrap;">${escapeHtml(pnlPctStr)}</td>
-      <td style="padding:14px 14px; text-align:right;">
-        <button style="padding:5px 12px; font-size:12px; font-weight:600; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.06); color:inherit; cursor:pointer; white-space:nowrap;">
-          Manage
-        </button>
-      </td>
+    const cls = pnl == null ? "" : pnl > 0 ? "pos" : pnl < 0 ? "neg" : "";
+    const row = document.createElement("div");
+    row.className = "pos-row";
+
+    const meta = [
+      `Qty <b>${escapeHtml(qty != null ? (qty % 1 === 0 ? String(qty) : qty.toFixed(4)) : "—")}</b>`,
+      `Entry <b>${entry != null ? "$" + fmt2(entry) : "—"}</b>`,
+      `Last <b>${last != null ? "$" + fmt2(last) : "—"}</b>`,
+      `Value <b>${mv != null ? "$" + fmt2(Math.abs(mv)) : "—"}</b>`,
+    ];
+    if (alertRow?.level) meta.push(`Level <b>${escapeHtml(String(alertRow.level))}</b>`);
+    if (alertRow?.ts) meta.push(`In <b>${escapeHtml(fmtTime(alertRow.ts))}</b>`);
+
+    row.innerHTML = `
+      <div>
+        <div class="pos-sym">${escapeHtml(sym)}</div>
+        <div class="pos-side ${side === "SHORT" ? "short" : "long"}">${escapeHtml(side)}</div>
+      </div>
+      <div class="pos-meta">${meta.join("")}</div>
+      <div>
+        <div class="pos-pnl ${cls}">${pnl == null ? "—" : signedUsd(pnl)}</div>
+        <div class="pos-pnl-sub">${pnlPct == null ? "" : (pnlPct >= 0 ? "+" : "") + fmt2(pnlPct) + "%"}</div>
+      </div>
     `;
 
-    tr.addEventListener("click", () => openTradeModal(p));
-    liveTradesListEl.appendChild(tr);
+    row.addEventListener("click", () => openTradeModal(p));
+    liveTradesListEl.appendChild(row);
   }
 }
 
@@ -927,6 +1413,7 @@ async function refreshClosedAlertIdsFromApi() {
     if (!res.ok) return;
     const j = await res.json().catch(() => null);
     const rows = Array.isArray(j?.rows) ? j.rows : [];
+    if (Array.isArray(j?.rows)) dbRows = rows;
 
     const next = new Set();
     const nextBroker = new Set();
@@ -959,48 +1446,36 @@ if (next.size) closedAlertIds = next;
       // until the next 5s tick, because the alerts fetch resolves first.
       if (changed) renderFeed(allAlerts);
     }
+
+    // Today's numbers are derived from these rows, so they refresh here rather
+    // than on their own timer.
+    if (Array.isArray(j?.rows)) {
+      renderTodayCard();
+      renderHeroTiles();
+    }
   } catch {
     // ignore
   }
 }
 
 async function refreshBrokerStats() {
-  const equity = document.getElementById("statEquity");
-  const cash = document.getElementById("statCash");
-  const pnl = document.getElementById("statPnl");
-  const positions = document.getElementById("statPositions");
-
-  if (!equity && !cash && !pnl && !positions) return;
+  const anyTile =
+    document.getElementById("statEquity") ||
+    document.getElementById("statPositions") ||
+    document.getElementById("statToday");
+  if (!anyTile) return;
 
   try {
     const res = await fetch("/api/broker/status", { cache: "no-store" });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const j = await res.json();
 
-    const acc = j?.account;
-    const pos = Array.isArray(j?.positions) ? j.positions : [];
-
-    const fmtCurrency = (n) => {
-      if (n == null || !Number.isFinite(Number(n))) return "—";
-      return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
-
-    if (equity) equity.textContent = fmtCurrency(acc?.equity);
-    if (cash) cash.textContent = fmtCurrency(acc?.cash);
-
-    const totalPnl = pos.reduce((sum, p) => sum + (Number(p?.unrealizedPl) || 0), 0);
-    if (pnl) {
-      pnl.textContent = Number.isFinite(totalPnl) && pos.length ? fmtCurrency(totalPnl) : "—";
-      pnl.classList.remove("pos", "neg");
-      if (Number.isFinite(totalPnl) && pos.length) {
-        pnl.classList.add(totalPnl >= 0 ? "pos" : "neg");
-      }
-    }
-
-    if (positions) positions.textContent = pos.length > 0 ? String(pos.length) : "0";
-    renderLiveTrades(pos);
+    latestAccount = j?.account || null;
+    renderLiveTrades(Array.isArray(j?.positions) ? j.positions : []);
   } catch {
-    // Broker not configured or offline — leave dashes
+    // Broker not configured or offline — leave the tiles on dashes rather than
+    // rendering a zero, which would read as a wiped account.
+    latestAccount = null;
     renderLiveTrades([]);
   }
 }
@@ -1032,9 +1507,9 @@ async function refreshAlertsFromApi() {
     allAlerts = alerts;
     trimAlerts();
 
-    // Remove anything already finished so lists match your "active-only" UX
-    allAlerts = (allAlerts || []).filter((a) => !closedAlertIds.has(String(a?.id || "")));
-
+    // Finished trades are deliberately KEPT here now: the feed is the day's
+    // trade log and shows how each entry ended. Open positions have their own
+    // card, so nothing is duplicated by leaving these in.
     renderFeed(allAlerts);
     refreshBrokerStats();
   } catch (err) {
@@ -1317,11 +1792,15 @@ if (socket) {
       if (!id) return;
 
       closedAlertIds.add(id);
-  
-      // Remove from local alerts so Activity Feed + A+ list can re-render cleanly
-      allAlerts = (allAlerts || []).filter((a) => String(a?.id || "") !== id);
-  
-      // Re-render the pieces that show "active" items
+
+      // The trade stays in the feed; it just changes from OPEN to its result,
+      // which comes from /api/dbrows. Pull that immediately so the row does not
+      // sit on a stale OPEN for up to 5 seconds.
+      void refreshClosedAlertIdsFromApi().then(() => {
+        renderFeed(allAlerts);
+        renderTodayCard();
+        renderHeroTiles();
+      });
       renderFeed(allAlerts);
       refreshBrokerStats();
     } catch {
@@ -1341,6 +1820,17 @@ if (socket) {
 
 refreshDataLiveDot();
 refreshBrokerStats();
+
+// First paint. Without these the page sat on its HTML defaults for a full 5s
+// tick: no feed rows, no Today numbers, because both are derived from
+// /api/dbrows and nothing fetched it before the first interval fired.
+(async () => {
+  await refreshClosedAlertIdsFromApi();
+  await refreshAlertsFromApi();
+  renderTodayCard();
+  renderHeroTiles();
+})();
+
 if (!sharedAiHandled) {
   refreshAiOperatorStatus();
   loadAiChatHistory();
@@ -1355,6 +1845,13 @@ setInterval(() => {
   refreshDataLiveDot();
   if (!sharedAiHandled) refreshAiOperatorStatus();
 }, 5000);
+
+// Equity curve: sampled server-side every 5 minutes, so polling it faster than
+// once a minute would only redraw the same points.
+void refreshEquityCurve();
+setInterval(() => {
+  void refreshEquityCurve();
+}, 60_000);
 
 setInterval(() => {
   refreshBrokerStats();

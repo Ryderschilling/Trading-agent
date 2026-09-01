@@ -152,6 +152,21 @@ function migrate(db: Database.Database) {
       PRIMARY KEY (ticker, ts)
     );
 
+    -- Account equity over time. Nothing else in the system records this, so the
+    -- Workspace equity curve is built entirely from these samples. Written by
+    -- the sampler in src/index.ts, roughly every 5 minutes while the broker is
+    -- reachable, plus one final sample after the close.
+    CREATE TABLE IF NOT EXISTS equity_snapshots (
+      ts              INTEGER PRIMARY KEY,
+      day_key         TEXT NOT NULL,
+      equity          REAL,
+      cash            REAL,
+      open_positions  INTEGER NOT NULL DEFAULT 0,
+      unrealized_pl   REAL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_equity_snapshots_day ON equity_snapshots(day_key);
+
     CREATE TABLE IF NOT EXISTS broker_config (
       id              INTEGER PRIMARY KEY CHECK (id = 1),
       broker_key      TEXT,
@@ -560,6 +575,55 @@ export function saveBrokerConfig(db: Database.Database, next: any) {
   );
 
   return { ok: true };
+}
+
+export type EquitySnapshotRow = {
+  ts: number;
+  dayKey: string;
+  equity: number | null;
+  cash: number | null;
+  openPositions: number;
+  unrealizedPl: number | null;
+};
+
+/**
+ * Records one equity sample. Keyed on ts, so a duplicate timestamp replaces
+ * rather than throwing — the sampler is allowed to be re-entrant.
+ */
+export function insertEquitySnapshot(db: Database.Database, row: EquitySnapshotRow) {
+  db.prepare(
+    `INSERT OR REPLACE INTO equity_snapshots(ts, day_key, equity, cash, open_positions, unrealized_pl)
+     VALUES(?,?,?,?,?,?)`
+  ).run(
+    row.ts,
+    row.dayKey,
+    row.equity,
+    row.cash,
+    row.openPositions,
+    row.unrealizedPl
+  );
+}
+
+/** Equity samples at or after `sinceTs`, oldest first, capped. */
+export function listEquitySnapshots(db: Database.Database, sinceTs: number, limit = 5000): EquitySnapshotRow[] {
+  const rows = db
+    .prepare(
+      `SELECT ts, day_key, equity, cash, open_positions, unrealized_pl
+         FROM equity_snapshots
+        WHERE ts >= ?
+        ORDER BY ts ASC
+        LIMIT ?`
+    )
+    .all(sinceTs, limit) as any[];
+
+  return rows.map((r) => ({
+    ts: Number(r.ts),
+    dayKey: String(r.day_key),
+    equity: r.equity == null ? null : Number(r.equity),
+    cash: r.cash == null ? null : Number(r.cash),
+    openPositions: Number(r.open_positions || 0),
+    unrealizedPl: r.unrealized_pl == null ? null : Number(r.unrealized_pl),
+  }));
 }
 
 export function insertBrokerOrder(db: Database.Database, row: BrokerOrderRecord) {

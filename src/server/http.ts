@@ -54,6 +54,8 @@ export function createHttpApp(args: {
   getOutcomes?: () => any[];
   getOutcomeByAlertId?: (id: string) => any | null;
   getDbRows?: () => any[];
+  /** Account equity samples for the Workspace equity curve. */
+  getEquityCurve?: (sinceTs: number) => any[];
   reseedPremarket?: () => Promise<any>;
   /** A/B comparison: closed trades grouped by ruleset version. */
   getStrategyCompare?: () => any;
@@ -543,6 +545,25 @@ app.get("/api/broker/activity", (req, res) => {
   });
 
   app.get("/api/dbrows", (_req, res) => res.json({ rows: args.getDbRows ? args.getDbRows() : [] }));
+
+  // Equity curve. ?range=day|month|year|all (default day).
+  app.get("/api/equity", (req, res) => {
+    if (!args.getEquityCurve) return res.json({ points: [] });
+
+    const range = String(req.query.range || "day").toLowerCase();
+    const now = Date.now();
+    const since =
+      range === "all" ? 0
+      : range === "year" ? now - 365 * 24 * 60 * 60_000
+      : range === "month" ? now - 30 * 24 * 60 * 60_000
+      : now - 24 * 60 * 60_000;
+
+    try {
+      return res.json({ points: args.getEquityCurve(since) });
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || "equity curve failed", points: [] });
+    }
+  });
 
   // Manual PMH/PML re-seed. Used to verify premarket data actually reaches this
   // box before relying on it at 09:15 ET.

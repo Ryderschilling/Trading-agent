@@ -16,6 +16,185 @@
 
     <link rel="stylesheet" href="/styles-v4.css" />
     <script src="/ui.js" defer></script>
+
+    <style>
+      /* Workspace-only layout. Scoped to this page so the other seven are
+         untouched; everything below reuses the shared tokens from styles-v4. */
+
+      .stat-tile-sub {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--muted);
+        letter-spacing: 0.01em;
+        min-height: 14px;
+      }
+      .stat-tile-sub.pos { color: var(--pos); }
+      .stat-tile-sub.neg { color: var(--neg); }
+
+      .ws-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+        gap: 16px;
+        align-items: stretch;
+      }
+      .ws-split > .card { margin: 0; }
+
+      .equity-stage {
+        position: relative;
+        margin-top: 6px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        background: rgba(10, 18, 32, 0.55);
+      }
+      #equityChart {
+        display: block;
+        width: 100%;
+        height: 240px;
+      }
+      .equity-empty {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .equity-empty.show { display: flex; }
+
+      .today-net {
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+      }
+      .today-net.pos { color: var(--pos); }
+      .today-net.neg { color: var(--neg); }
+
+      .today-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 4px 0 2px;
+      }
+      .today-item {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 11px 13px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .today-item-label {
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .today-item-value {
+        margin-top: 5px;
+        font-size: 16px;
+        font-weight: 800;
+      }
+      .today-item-value.pos { color: var(--pos); }
+      .today-item-value.neg { color: var(--neg); }
+
+      .pos-list {
+        display: grid;
+        gap: 10px;
+        padding: 2px 0 4px;
+      }
+      .pos-row {
+        display: grid;
+        grid-template-columns: 96px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.03);
+        cursor: pointer;
+        transition: border-color .15s, background .15s, transform .15s;
+      }
+      .pos-row:hover {
+        border-color: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.06);
+        transform: translateY(-1px);
+      }
+      .pos-sym {
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: -0.2px;
+      }
+      .pos-side {
+        margin-top: 3px;
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .pos-side.long { color: var(--pos); border-color: rgba(34, 197, 94, 0.35); }
+      .pos-side.short { color: var(--neg); border-color: rgba(239, 68, 68, 0.35); }
+
+      .pos-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 18px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pos-meta b {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .pos-pnl {
+        text-align: right;
+        font-weight: 800;
+        font-size: 17px;
+        letter-spacing: -0.3px;
+        white-space: nowrap;
+      }
+      .pos-pnl.pos { color: var(--pos); }
+      .pos-pnl.neg { color: var(--neg); }
+      .pos-pnl-sub {
+        margin-top: 2px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--muted);
+        text-align: right;
+      }
+
+      .trade-chart-stage {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        background: rgba(7, 11, 18, 0.9);
+        margin-bottom: 16px;
+      }
+      #tradeChart {
+        display: block;
+        width: 100%;
+        height: 300px;
+      }
+
+      @media (max-width: 980px) {
+        .ws-split { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 700px) {
+        .pos-row {
+          grid-template-columns: 1fr auto;
+          row-gap: 8px;
+        }
+        .pos-meta { grid-column: 1 / -1; }
+        #equityChart { height: 200px; }
+        #tradeChart { height: 220px; }
+      }
+    </style>
   </head>
 
   <body>
@@ -27,7 +206,7 @@
           <img src="/logo-mark.png" class="brand-logo" alt="Logo" />
           <div class="brand-text">Trading Agent</div>
         </div>
-    
+
         <nav class="tabs">
           <a class="tab active" href="/">Workspace</a>
           <a class="tab" href="/outcomes">Outcomes</a>
@@ -39,7 +218,7 @@
           <a class="tab" href="/brokers">Brokers</a>
         </nav>
       </div>
-    
+
       <div class="topbar-right">
         <div class="status">
           <span id="socketDot" class="status-dot"></span>
@@ -52,23 +231,27 @@
     <main class="shell">
       <section class="stack">
 
-        <!-- P&L stat row -->
+        <!-- Hero: the four numbers that answer "did we make money today" -->
         <div class="stat-row">
           <div class="stat-tile">
             <div class="stat-tile-label">Account Equity</div>
             <div class="stat-tile-value" id="statEquity">—</div>
+            <div class="stat-tile-sub" id="statEquitySub">&nbsp;</div>
           </div>
           <div class="stat-tile">
-            <div class="stat-tile-label">Cash Available</div>
-            <div class="stat-tile-value" id="statCash">—</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile-label">Unrealized P&amp;L</div>
-            <div class="stat-tile-value" id="statPnl">—</div>
+            <div class="stat-tile-label">Today P&amp;L</div>
+            <div class="stat-tile-value" id="statToday">—</div>
+            <div class="stat-tile-sub" id="statTodaySub">&nbsp;</div>
           </div>
           <div class="stat-tile">
             <div class="stat-tile-label">Open Positions</div>
             <div class="stat-tile-value" id="statPositions">—</div>
+            <div class="stat-tile-sub" id="statPnl">&nbsp;</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Exposure</div>
+            <div class="stat-tile-value" id="statExposure">—</div>
+            <div class="stat-tile-sub" id="statExposureSub">&nbsp;</div>
           </div>
         </div>
 
@@ -78,7 +261,7 @@
             <div id="dataHealthMeta" class="feed-banner-meta">Waiting for live market data.</div>
           </div>
           <div id="dataHealthBody" class="feed-banner-body">
-            Fresh bars are required before the platform can surface new setups or submit trades.
+            Regular market hours are closed.
           </div>
         </section>
 
@@ -88,7 +271,6 @@
             <div id="ghostBannerMeta" class="feed-banner-meta"></div>
           </div>
           <div id="ghostBannerBody" class="feed-banner-body">
-            One or more broker positions are not tracked by the engine. They consume position slots and will not auto-close at EOD.
           </div>
         </section>
 
@@ -100,47 +282,65 @@
           <div id="coverageBannerBody" class="feed-banner-body"></div>
         </section>
 
-        <!-- Live Trades — full-width analytical view -->
+        <!-- Equity curve + today's scoreboard -->
+        <div class="ws-split">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Equity</div>
+                <div class="card-hint" id="equityHint">Account value over time.</div>
+              </div>
+              <div class="card-actions">
+                <div id="equityRange" class="range-toggles" role="group" aria-label="Equity range" style="display:flex;gap:8px;">
+                  <button type="button" class="tab range-toggle active" data-range="day">1D</button>
+                  <button type="button" class="tab range-toggle" data-range="month">1M</button>
+                  <button type="button" class="tab range-toggle" data-range="all">All</button>
+                </div>
+              </div>
+            </div>
+            <div class="equity-stage">
+              <canvas id="equityChart"></canvas>
+              <div id="equityEmpty" class="equity-empty">No equity samples yet.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title">Today</div>
+                <div class="card-hint">Closed trades the broker took, this session.</div>
+              </div>
+              <div id="todayNet" class="today-net">—</div>
+            </div>
+            <div id="todayGrid" class="today-grid"></div>
+          </div>
+        </div>
+
+        <!-- Open positions -->
         <div class="card">
           <div class="card-head">
             <div>
-              <div class="card-title">Live Trades</div>
+              <div class="card-title">Open Trades</div>
               <div class="small" id="liveTradesSummary" style="margin-top:2px; opacity:0.65;"></div>
             </div>
             <div id="liveTradesTotalPnl" style="font-weight:700; font-size:18px;"></div>
           </div>
 
-          <div id="liveTradesEmpty" class="small" style="padding: 16px; opacity:0.6;">No open positions.</div>
+          <div id="liveTradesEmpty" class="small" style="padding:16px; opacity:0.6;">No open positions.</div>
 
-          <!-- Table shown when positions exist -->
-          <div id="liveTradesTable" style="display:none; overflow-x:auto;">
-            <table style="width:100%; border-collapse:collapse;">
-              <thead>
-                <tr style="border-bottom:1px solid rgba(255,255,255,0.08);">
-                  <th style="text-align:left; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">SYMBOL</th>
-                  <th style="text-align:left; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">SIDE</th>
-                  <th style="text-align:right; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">QTY</th>
-                  <th style="text-align:right; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">AVG ENTRY</th>
-                  <th style="text-align:right; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">MKT VALUE</th>
-                  <th style="text-align:right; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">UNREAL P&amp;L</th>
-                  <th style="text-align:right; padding:10px 14px; font-size:11px; font-weight:600; opacity:0.5; letter-spacing:0.5px; white-space:nowrap;">P&amp;L %</th>
-                  <th style="padding:10px 14px;"></th>
-                </tr>
-              </thead>
-              <tbody id="liveTradesList"></tbody>
-            </table>
+          <div id="liveTradesTable" style="display:none;">
+            <div class="pos-list" id="liveTradesList"></div>
           </div>
         </div>
 
         <!-- Activity feed -->
-        <div class="card" style="margin-top:16px;">
+        <div class="card">
           <div class="card-head">
             <div>
-              <div class="card-title">Activity feed</div>
-              <div class="card-hint">Trades the broker accepted. Signals that never became orders are not shown.</div>
+              <div class="card-title">Trades Taken</div>
+              <div class="card-hint">Entries the broker accepted. Signals that never became orders are not shown.</div>
             </div>
-            <div class="card-actions">
-            </div>
+            <div class="card-actions"></div>
           </div>
 
           <div class="table-wrap">
@@ -148,11 +348,13 @@
               <thead>
                 <tr>
                   <th style="width:88px;">Time</th>
-                  <th style="width:90px;">Symbol</th>
+                  <th style="width:88px;">Symbol</th>
+                  <th style="width:76px;">Dir</th>
+                  <th style="width:70px;">Level</th>
                   <th style="width:90px;">Market</th>
                   <th style="width:70px;">RS</th>
-                  <th style="width:70px;">Dir</th>
-                  <th>Message</th>
+                  <th style="width:90px;">Status</th>
+                  <th>Result</th>
                 </tr>
               </thead>
               <tbody id="feedBody"></tbody>
@@ -165,16 +367,17 @@
 
     <!-- Trade management modal -->
     <div id="tradeModal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.65); backdrop-filter:blur(10px); align-items:center; justify-content:center; padding:20px;">
-      <div style="width:min(680px, calc(100vw - 40px)); background:#0e121a; border:1px solid rgba(255,255,255,0.10); border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,0.6); overflow:hidden;">
+      <div style="width:min(820px, calc(100vw - 40px)); background:#0e121a; border:1px solid rgba(255,255,255,0.10); border-radius:18px; box-shadow:0 20px 60px rgba(0,0,0,0.6); overflow:hidden;">
         <div class="card-head" style="padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.07);">
           <div id="tradeModalTitle" class="card-title" style="font-size:15px;"></div>
           <button id="tradeModalClose" style="background:none;border:none;color:var(--muted,#888);cursor:pointer;font-size:22px;line-height:1;padding:0 4px;">×</button>
         </div>
-        <div id="tradeModalBody" style="padding:20px;"></div>
+        <div id="tradeModalBody" style="padding:20px; max-height:calc(100vh - 140px); overflow:auto;"></div>
       </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/chart-core.js?v=BUILD_TS"></script>
     <script src="/app.js?v=BUILD_TS"></script>
   </body>
 </html>

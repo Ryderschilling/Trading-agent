@@ -14,7 +14,9 @@ import {
   saveBrokerConfig,
   getRulesetByVersion,
   deleteRuleset,
-  updateRuleset
+  updateRuleset,
+  insertEquitySnapshot,
+  listEquitySnapshots
 } from "./db/db";
 
 import { resolveSectorEtf } from "./market/sectorResolver";
@@ -3256,6 +3258,7 @@ const app = createHttpApp({
     });
   },
   getDbRows,
+  getEquityCurve: (sinceTs: number) => listEquitySnapshots(db, sinceTs),
   getInvestorStats,
   getStrategyCompare,
   getAnalytics,
@@ -3675,6 +3678,51 @@ server.listen(PORT, () => {
   setInterval(() => {
     void runOrphanReconciler("heartbeat");
   }, 5 * 60_000);
+
+  // Equity sampler — the only writer of the Workspace equity curve.
+  //
+  // Sampling is deliberately dumb: ask the broker for its account snapshot and
+  // write it. It runs outside RTH too, at a slower cadence, so the curve has an
+  // anchor point on both sides of a session instead of a flat gap. A failed
+  // broker call writes nothing rather than a zero, because a zero row would
+  // render as a crash to $0 on the chart.
+  const EQUITY_SAMPLE_MS = 5 * 60_000;
+  let lastEquitySampleTs = 0;
+
+  async function sampleEquity(reason: string) {
+    try {
+      const now = Date.now();
+      const interval = isRegularSessionNY(now) ? EQUITY_SAMPLE_MS : 30 * 60_000;
+      if (reason === "heartbeat" && now - lastEquitySampleTs < interval) return;
+
+      const status = await brokerExecution.getStatus();
+      const equity = status?.account?.equity;
+      if (equity == null || !Number.isFinite(Number(equity))) return;
+
+      const positions = Array.isArray(status?.positions) ? status.positions : [];
+      const unrealized = positions.reduce(
+        (sum: number, p: any) => sum + (Number(p?.unrealizedPl) || 0),
+        0
+      );
+
+      lastEquitySampleTs = now;
+      insertEquitySnapshot(db, {
+        ts: now,
+        dayKey: nyDayKey(now),
+        equity: Number(equity),
+        cash: status?.account?.cash == null ? null : Number(status.account.cash),
+        openPositions: positions.length,
+        unrealizedPl: positions.length ? unrealized : null,
+      });
+    } catch (e: any) {
+      console.log("[equity] sample skipped:", e?.message || e);
+    }
+  }
+
+  void sampleEquity("startup");
+  setInterval(() => {
+    void sampleEquity("heartbeat");
+  }, 60_000);
 
   // Coverage monitor — every minute during RTH, log loud warning when any
   // watchlist symbol has gone stale. UI surfaces via /api/data-coverage.
