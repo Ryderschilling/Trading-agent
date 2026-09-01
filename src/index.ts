@@ -1687,6 +1687,12 @@ function getAnalytics(strategyFilter?: number | null) {
   for (const row of getDbRows()) {
     if (row.status === "LIVE") continue;
 
+    // Analytics measures the account, not the signal: only trades the broker
+    // actually accepted an order for are scored. Signals that never became
+    // orders are still in the DB and still visible on Outcomes under
+    // "All signals" — they just do not belong in a performance number.
+    if (!row.brokerSubmitted) continue;
+
     // A closed trade needs a real exit score. getDbRows() maps a missing
     // score to "" — Number("") is 0, which used to sneak unscored trades in
     // as fake 0% breakevens. Treat missing/blank as "not scored, skip".

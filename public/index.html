@@ -31,6 +31,43 @@
       .stat-tile-sub.pos { color: var(--pos); }
       .stat-tile-sub.neg { color: var(--neg); }
 
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        margin-bottom: 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        background: rgba(239, 68, 68, 0.10);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: var(--text);
+      }
+      .status-bar.live {
+        border-color: rgba(34, 197, 94, 0.35);
+        background: rgba(34, 197, 94, 0.10);
+      }
+      .status-bar-led {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--neg, #ef4444);
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+        flex: none;
+      }
+      .status-bar.live .status-bar-led {
+        background: var(--pos, #22c55e);
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+      }
+      .status-bar-meta {
+        margin-left: auto;
+        font-weight: 600;
+        color: var(--muted);
+        text-align: right;
+      }
+
       .ws-split {
         display: grid;
         grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
@@ -186,6 +223,11 @@
       }
 
       @media (max-width: 700px) {
+        .status-bar { align-items: flex-start; flex-wrap: wrap; }
+        .status-bar-meta { margin-left: 0; width: 100%; }
+      }
+
+      @media (max-width: 700px) {
         .pos-row {
           grid-template-columns: 1fr auto;
           row-gap: 8px;
@@ -255,32 +297,14 @@
           </div>
         </div>
 
-        <section id="dataHealthBanner" class="feed-banner" style="display:none;" aria-live="polite">
-          <div class="feed-banner-head">
-            <div id="dataHealthTitle" class="feed-banner-title">Trading Paused</div>
-            <div id="dataHealthMeta" class="feed-banner-meta">Waiting for live market data.</div>
-          </div>
-          <div id="dataHealthBody" class="feed-banner-body">
-            Regular market hours are closed.
-          </div>
-        </section>
-
-        <section id="ghostPositionsBanner" class="feed-banner" style="display:none; background:#3a1a1a; border:1px solid #b04040;" aria-live="polite">
-          <div class="feed-banner-head">
-            <div class="feed-banner-title" style="color:#ff8080;">Ghost Positions Detected</div>
-            <div id="ghostBannerMeta" class="feed-banner-meta"></div>
-          </div>
-          <div id="ghostBannerBody" class="feed-banner-body">
-          </div>
-        </section>
-
-        <section id="coverageBanner" class="feed-banner" style="display:none; background:#3a3320; border:1px solid #b08a40;" aria-live="polite">
-          <div class="feed-banner-head">
-            <div class="feed-banner-title" style="color:#ffd070;">Data Coverage Warning</div>
-            <div id="coverageBannerMeta" class="feed-banner-meta"></div>
-          </div>
-          <div id="coverageBannerBody" class="feed-banner-body"></div>
-        </section>
+        <!-- One-line system status. Replaces the three stacked banners:
+             green when the feed is live, red when it is not, with the reason
+             on the right. Ghost positions still force it red. -->
+        <div id="statusBar" class="status-bar">
+          <span class="status-bar-led"></span>
+          <span class="status-bar-text" id="statusBarText">Checking feed…</span>
+          <span class="status-bar-meta" id="statusBarMeta"></span>
+        </div>
 
         <!-- Equity curve + today's scoreboard -->
         <div class="ws-split">

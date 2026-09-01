@@ -267,8 +267,18 @@ async function pollGhostAndCoverage() {
       fetch("/api/ghost-positions").then((r) => (r.ok ? r.json() : null)).catch(() => null),
       fetch("/api/data-coverage").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
-    if (g) renderGhostBanner(g);
-    if (c) renderCoverageBanner(c);
+    if (g) {
+      statusGhosts = Array.isArray(g?.ghosts) ? g.ghosts.length : 0;
+      renderGhostBanner(g);
+    }
+    if (c) {
+      statusStale = {
+        staleCount: Number(c?.staleCount || (Array.isArray(c?.staleSymbols) ? c.staleSymbols.length : 0)),
+        watchlistCount: Number(c?.watchlistCount || 0),
+      };
+      renderCoverageBanner(c);
+    }
+    renderStatusBar();
   } catch {
     // best effort — banners stay in last state
   }
@@ -503,6 +513,8 @@ async function refreshDataLiveDot() {
       meta = "Data live";
     }
 
+    statusFeed = { live, isRth, barsFresh, meta };
+    renderStatusBar();
     renderDataHealthBanner({
       live,
       reason,
@@ -520,6 +532,8 @@ async function refreshDataLiveDot() {
       dataLivePillEl.classList.remove("bullish", "bearish", "neutral");
       dataLivePillEl.classList.add("neutral");
     }
+    statusFeed = { live: false, isRth: null, barsFresh: null, meta: "Server or data feed unreachable" };
+    renderStatusBar();
     renderDataHealthBanner({
       live: false,
       reason: "Health check failed.",
@@ -982,54 +996,103 @@ if (equityCanvasEl) {
   }
 }
 
+
+// -----------------------
+// Status strip (replaces the Trading Paused / Data Coverage / Ghost banners)
+// -----------------------
+const statusBarEl = document.getElementById("statusBar");
+const statusBarTextEl = document.getElementById("statusBarText");
+const statusBarMetaEl = document.getElementById("statusBarMeta");
+
+let statusFeed = null;   // { live, isRth, barsFresh, meta }
+let statusStale = null;  // { staleCount, watchlistCount }
+let statusGhosts = 0;
+
+function renderStatusBar() {
+  if (!statusBarEl || !statusBarTextEl) return;
+
+  const live = Boolean(statusFeed?.live);
+  const stale = Number(statusStale?.staleCount || 0);
+  const watched = Number(statusStale?.watchlistCount || 0);
+
+  // Ghost positions mean broker holdings nobody is tracking. That outranks
+  // everything else on this bar, in any session.
+  if (statusGhosts > 0) {
+    statusBarEl.classList.remove("live");
+    statusBarTextEl.textContent = `${statusGhosts} untracked broker position${statusGhosts === 1 ? "" : "s"} — reconcile on Brokers`;
+    if (statusBarMetaEl) statusBarMetaEl.textContent = "Ghost positions";
+    return;
+  }
+
+  statusBarEl.classList.toggle("live", live);
+
+  if (live) {
+    statusBarTextEl.textContent = "Live — trading armed";
+    if (statusBarMetaEl) {
+      statusBarMetaEl.textContent = watched
+        ? `${watched - stale}/${watched} symbols streaming`
+        : "Feed healthy";
+    }
+    return;
+  }
+
+  statusBarTextEl.textContent = statusFeed?.isRth === false
+    ? "Paused — market closed"
+    : statusFeed?.barsFresh === false
+    ? "Paused — market data stale"
+    : "Paused — feed not confirmed";
+
+  if (statusBarMetaEl) {
+    statusBarMetaEl.textContent = stale && watched
+      ? `${stale}/${watched} symbols stale · ${statusFeed?.meta || ""}`.trim()
+      : String(statusFeed?.meta || "");
+  }
+}
+
 // -----------------------
 // Rendering
 // -----------------------
-function row(a) {
+// A trade row for the feed, built from /api/dbrows — the DB is the only
+// reliable source here. /api/alerts serves an in-memory array that is empty
+// after a restart, which is exactly why this table used to read "No trades
+// taken yet" on a day with four fills.
+function row(r) {
   const tr = document.createElement("tr");
-  tr.dataset.alertId = String(a.id || "");
-  tr.className = "clickable";
-  tr.style.cursor = "pointer";
+  tr.dataset.alertId = String(r.alertId || "");
 
-  const td = (t, cls) => {
+  const td = (t) => {
     const el = document.createElement("td");
     el.textContent = t;
-    if (cls) el.className = cls;
     return el;
   };
 
-  // The trade's own row from /api/dbrows carries the result. An entry that is
-  // still open simply has no result yet.
-  const r = (dbRows || []).find((x) => String(x.alertId || "") === String(a.id || ""));
-  const status = String(r?.status || "LIVE").toUpperCase();
+  const status = String(r.status || "LIVE").toUpperCase();
+
+  const usdPnl = Number(r.realizedPnlUsd);
+  const pctPnl = Number.isFinite(Number(r.exitReturnPct))
+    ? Number(r.exitReturnPct)
+    : r.stoppedOut && Number.isFinite(Number(r.stopReturnPct))
+    ? Number(r.stopReturnPct)
+    : null;
 
   let pnlTxt = "—";
   let pnlCls = "";
-  if (r) {
-    const usdPnl = Number(r.realizedPnlUsd);
-    const pctPnl = Number.isFinite(Number(r.exitReturnPct))
-      ? Number(r.exitReturnPct)
-      : r.stoppedOut && Number.isFinite(Number(r.stopReturnPct))
-      ? Number(r.stopReturnPct)
-      : null;
-
-    if (Number.isFinite(usdPnl)) {
-      pnlTxt = signedUsd(usdPnl) + (pctPnl == null ? "" : ` (${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%)`);
-      pnlCls = signClass(usdPnl);
-    } else if (pctPnl != null) {
-      pnlTxt = `${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%`;
-      pnlCls = signClass(pctPnl);
-    }
+  if (Number.isFinite(usdPnl)) {
+    pnlTxt = signedUsd(usdPnl) + (pctPnl == null ? "" : ` (${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%)`);
+    pnlCls = signClass(usdPnl);
+  } else if (pctPnl != null) {
+    pnlTxt = `${pctPnl > 0 ? "+" : ""}${fmt2(pctPnl)}%`;
+    pnlCls = signClass(pctPnl);
   }
 
   // Columns must match index.html thead:
   // Time | Symbol | Dir | Level | Market | RS | Status | Result
-  tr.appendChild(td(fmtTime(a.ts)));
-  tr.appendChild(td(a.symbol || ""));
-  tr.appendChild(td(a.dir === "PUT" ? "SHORT" : a.dir === "CALL" ? "LONG" : a.dir || "—"));
-  tr.appendChild(td(r?.level || "—"));
-  tr.appendChild(td(a.market || "—"));
-  tr.appendChild(td(a.rs || "—"));
+  tr.appendChild(td(fmtTime(r.ts)));
+  tr.appendChild(td(r.symbol || ""));
+  tr.appendChild(td(r.dir || "—"));
+  tr.appendChild(td(r.level || "—"));
+  tr.appendChild(td(r.market || "—"));
+  tr.appendChild(td(r.rs || "—"));
 
   // Colour the status by the money, not by the word: a COMPLETED trade that
   // lost is a red row, the same as a stop.
@@ -1049,25 +1112,22 @@ function row(a) {
   if (pnlCls === "neg") pnlTd.style.color = "var(--neg,#ef4444)";
   tr.appendChild(pnlTd);
 
-  tr.addEventListener("click", () => openModalForAlert(a));
+  tr.className = "clickable";
+  tr.style.cursor = "pointer";
+  tr.addEventListener("click", () => openTakenTradeModal(r));
   return tr;
 }
 
-function renderFeed(alerts) {
+function renderFeed() {
   if (!feedBody) return;
   feedBody.innerHTML = "";
 
   // Every entry the broker took, newest first — closed ones included, because
-  // this is the day's trade log, not a list of what is still open. Open trades
-  // have their own card above.
-  const ordered = (alerts || [])
+  // this is the trade log, not a list of what is still open.
+  const ordered = (dbRows || [])
+    .filter((r) => r?.brokerSubmitted)
     .slice()
-    .filter(
-      (a) =>
-        String(a.message || "").includes("A+ ENTRY") &&
-        brokerAlertIds.has(String(a.id || ""))
-    )
-    .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
     .slice(0, FEED_MAX_ROWS);
 
   if (!ordered.length) {
@@ -1083,7 +1143,7 @@ function renderFeed(alerts) {
     return;
   }
 
-  for (const a of ordered) feedBody.appendChild(row(a));
+  for (const r of ordered) feedBody.appendChild(row(r));
 }
 
 // -----------------------
@@ -1199,69 +1259,13 @@ async function openTradeModal(pos) {
 
   // Chart — the same engine the Outcomes modal uses, so an open trade is read
   // the same way a closed one is: entry marked, structural levels drawn, 9 EMA
-  // and VWAP on top. Falls back to the plain candle painter if chart-core.js
-  // is not on the page (watchlist.html loads app.js without it).
-  const canvas = document.getElementById("tradeChart");
-  if (canvas) {
-    const alertRow = findOpenAlertRowForSymbol(sym);
-    try {
-      const res = await fetch(`/api/candles?symbol=${encodeURIComponent(sym)}&end=${Date.now()}&minutes=240`, { cache: "no-store" });
-      const j = await res.json().catch(() => null);
-      const raw = Array.isArray(j?.bars) ? j.bars : [];
-
-      if (!window.ChartCore) {
-        drawCandleChart(canvas, raw);
-      } else {
-        const bars1m = window.ChartCore.normalizeBars(raw);
-        // 2m candles: 240 one-minute bars is too dense to read in a 300px stage.
-        const bars = window.ChartCore.aggregateBars(bars1m, 2);
-
-        const GREEN = "rgba(74, 222, 128, 0.95)";
-        const RED = "rgba(248, 113, 113, 0.95)";
-        const PINK = "rgba(255, 82, 172, 0.95)";
-        const levels = [];
-        const seen = new Set();
-        for (const spec of [
-          { key: "pdh", label: "PDH", color: GREEN },
-          { key: "pdl", label: "PDL", color: RED },
-          { key: "pmh", label: "PMH", color: PINK },
-          { key: "pml", label: "PML", color: PINK },
-        ]) {
-          const v = Number(alertRow?.[spec.key]);
-          if (!Number.isFinite(v)) continue;
-          const k = v.toFixed(4);
-          if (seen.has(k)) continue;
-          seen.add(k);
-          levels.push({ price: v, color: spec.color, label: spec.label, dash: [5, 4], lineWidth: 1.4 });
-        }
-
-        // The average entry price is the one line that matters on an open
-        // trade, so it is drawn even when the alert row has no levels.
-        if (entry != null && Number.isFinite(entry)) {
-          levels.push({
-            price: entry,
-            color: "rgba(255, 214, 102, 0.95)",
-            label: "ENTRY",
-            dash: [2, 3],
-            lineWidth: 1.2,
-          });
-        }
-
-        window.ChartCore.drawChart(canvas, bars, {
-          entryTs: alertRow?.ts ? Number(alertRow.ts) : null,
-          exitTs: null,
-          showEntry: Boolean(alertRow?.ts),
-          showExit: false,
-          showVwap: true,
-          levels,
-          emas: [{ period: 9, color: "rgba(255, 255, 255, 0.92)", lineWidth: 1.4, label: "9" }],
-        });
-      }
-    } catch {
-      if (window.ChartCore) window.ChartCore.drawChart(canvas, [], {});
-      else drawCandleChart(canvas, []);
-    }
-  }
+  // and VWAP on top.
+  await drawTradeChartInto(
+    document.getElementById("tradeChart"),
+    sym,
+    findOpenAlertRowForSymbol(sym),
+    entry
+  );
 
   // Sell Out
   document.getElementById("tradeModalSellBtn")?.addEventListener("click", async () => {
@@ -1311,6 +1315,141 @@ async function openTradeModal(pos) {
       if (btn) { btn.disabled = false; btn.textContent = "Set Stop"; }
     }
   });
+}
+
+
+/**
+ * Draws the Outcomes-grade chart into a canvas for one trade.
+ * Shared by the open-position modal and the taken-trade modal so both read the
+ * same way. `row` is a /api/dbrows row (may be null for a position with no
+ * matching alert); `entryPrice` overrides the row when the broker fill is known.
+ */
+async function drawTradeChartInto(canvas, symbol, row, entryPrice) {
+  if (!canvas) return;
+
+  const endTs = row?.endTs && Number.isFinite(Number(row.endTs)) ? Number(row.endTs) : Date.now();
+  try {
+    const res = await fetch(
+      `/api/candles?symbol=${encodeURIComponent(symbol)}&end=${endTs}&minutes=240`,
+      { cache: "no-store" }
+    );
+    const j = await res.json().catch(() => null);
+    const raw = Array.isArray(j?.bars) ? j.bars : [];
+
+    if (!window.ChartCore) {
+      drawCandleChart(canvas, raw);
+      return;
+    }
+
+    // 2m candles: 240 one-minute bars is too dense to read in a 300px stage.
+    const bars = window.ChartCore.aggregateBars(window.ChartCore.normalizeBars(raw), 2);
+
+    const GREEN = "rgba(74, 222, 128, 0.95)";
+    const RED = "rgba(248, 113, 113, 0.95)";
+    const PINK = "rgba(255, 82, 172, 0.95)";
+    const levels = [];
+    const seen = new Set();
+    for (const spec of [
+      { key: "pdh", label: "PDH", color: GREEN },
+      { key: "pdl", label: "PDL", color: RED },
+      { key: "pmh", label: "PMH", color: PINK },
+      { key: "pml", label: "PML", color: PINK },
+    ]) {
+      const v = Number(row?.[spec.key]);
+      if (!Number.isFinite(v)) continue;
+      const k = v.toFixed(4);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      levels.push({ price: v, color: spec.color, label: spec.label, dash: [5, 4], lineWidth: 1.4 });
+    }
+
+    const entry = Number.isFinite(Number(entryPrice))
+      ? Number(entryPrice)
+      : Number.isFinite(Number(row?.entryFill))
+      ? Number(row.entryFill)
+      : Number.isFinite(Number(row?.entryRef))
+      ? Number(row.entryRef)
+      : null;
+
+    if (entry != null) {
+      levels.push({
+        price: entry,
+        color: "rgba(255, 214, 102, 0.95)",
+        label: "ENTRY",
+        dash: [2, 3],
+        lineWidth: 1.2,
+      });
+    }
+
+    window.ChartCore.drawChart(canvas, bars, {
+      entryTs: row?.ts ? Number(row.ts) : null,
+      exitTs: row?.endTs ? Number(row.endTs) : null,
+      showEntry: Boolean(row?.ts),
+      showExit: Boolean(row?.endTs),
+      showVwap: true,
+      levels,
+      emas: [{ period: 9, color: "rgba(255, 255, 255, 0.92)", lineWidth: 1.4, label: "9" }],
+    });
+  } catch {
+    if (window.ChartCore) window.ChartCore.drawChart(canvas, [], {});
+    else drawCandleChart(canvas, []);
+  }
+}
+
+/** Read-only detail for a trade in the Trades Taken table. */
+async function openTakenTradeModal(r) {
+  if (!tradeModalEl || !tradeModalBodyEl || !tradeModalTitleEl) return;
+
+  const sym = String(r.symbol || "");
+  const status = String(r.status || "LIVE").toUpperCase();
+  const usdPnl = Number(r.realizedPnlUsd);
+  const pctPnl = Number.isFinite(Number(r.exitReturnPct))
+    ? Number(r.exitReturnPct)
+    : r.stoppedOut && Number.isFinite(Number(r.stopReturnPct))
+    ? Number(r.stopReturnPct)
+    : null;
+
+  const cls = Number.isFinite(usdPnl) ? signClass(usdPnl) : signClass(pctPnl);
+  const color = cls === "pos" ? "var(--pos,#22c55e)" : cls === "neg" ? "var(--neg,#ef4444)" : "var(--muted,#9aa6bb)";
+
+  const cell = (label, value) => `
+    <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:10px 12px;">
+      <div style="font-size:11px; color:var(--muted,#888); margin-bottom:3px;">${label}</div>
+      <div style="font-weight:600;">${value}</div>
+    </div>`;
+
+  const px = (v) => (Number.isFinite(Number(v)) ? "$" + fmt2(Number(v)) : "—");
+
+  tradeModalTitleEl.textContent = `${sym} — ${r.dir || "—"} · ${status === "LIVE" ? "OPEN" : status}`;
+  tradeModalBodyEl.innerHTML = `
+    <div class="trade-chart-stage"><canvas id="tradeChart"></canvas></div>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px;">
+      ${cell("Entry", px(r.entryFill !== "" && r.entryFill != null ? r.entryFill : r.entryRef))}
+      ${cell("Exit", px(r.exitFill))}
+      ${cell("Qty", Number.isFinite(Number(r.qty)) ? escapeHtml(String(Number(r.qty))) : "—")}
+      ${cell("Level", escapeHtml(String(r.level || "—")))}
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px;">
+      ${cell("Entered", escapeHtml(fmtDateTime(r.ts)))}
+      ${cell("Exited", r.endTs ? escapeHtml(fmtDateTime(r.endTs)) : "Still open")}
+      ${cell("Exit reason", escapeHtml(String(r.exitReason || (status === "LIVE" ? "—" : status))))}
+    </div>
+    <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:12px; color:var(--muted,#888);">Result</span>
+      <span style="font-weight:700; font-size:16px; color:${color};">
+        ${Number.isFinite(usdPnl) ? escapeHtml(signedUsd(usdPnl)) : "—"}
+        <span style="font-size:13px;">${pctPnl == null ? "" : escapeHtml((pctPnl > 0 ? "+" : "") + fmt2(pctPnl) + "%")}</span>
+      </span>
+    </div>
+  `;
+
+  tradeModalOpen();
+  await drawTradeChartInto(
+    document.getElementById("tradeChart"),
+    sym,
+    r,
+    r.entryFill !== "" && r.entryFill != null ? r.entryFill : null
+  );
 }
 
 function renderLiveTrades(positions) {
@@ -1436,20 +1575,16 @@ if (next.size) closedAlertIds = next;
           if (!brokerAlertIds.has(id)) { firstNew = id; break; }
         }
       }
-      const changed =
-        nextBroker.size !== brokerAlertIds.size ||
-        [...nextBroker].some((id) => !brokerAlertIds.has(id));
       brokerAlertIds = nextBroker;
       brokerIdsLoaded = true;
       if (firstNew) ding();
-      // Re-render here too: on first load the feed would otherwise stay empty
-      // until the next 5s tick, because the alerts fetch resolves first.
-      if (changed) renderFeed(allAlerts);
     }
 
-    // Today's numbers are derived from these rows, so they refresh here rather
-    // than on their own timer.
+    // The whole page below the tiles is derived from these rows — feed rows,
+    // their statuses and P&L, and Today's numbers — so everything re-renders
+    // here rather than on its own timer.
     if (Array.isArray(j?.rows)) {
+      renderFeed();
       renderTodayCard();
       renderHeroTiles();
     }
@@ -1510,7 +1645,7 @@ async function refreshAlertsFromApi() {
     // Finished trades are deliberately KEPT here now: the feed is the day's
     // trade log and shows how each entry ended. Open positions have their own
     // card, so nothing is duplicated by leaving these in.
-    renderFeed(allAlerts);
+    renderFeed();
     refreshBrokerStats();
   } catch (err) {
     console.warn("[alerts] refresh failed", err);
@@ -1750,7 +1885,7 @@ if (socket) {
     watchSymbols = Array.isArray(payload.symbols) ? payload.symbols : [];
     latestSignals = payload.signals || null;
 
-    renderFeed(allAlerts);
+    renderFeed();
     refreshBrokerStats();
     renderWatchlist(watchSymbols);
     renderSignals(latestSignals);
@@ -1780,7 +1915,7 @@ if (socket) {
     if (String(alert.message || "").includes("A+ ENTRY")) {
       window.setTimeout(async () => {
         await refreshClosedAlertIdsFromApi();
-        renderFeed(allAlerts);
+        renderFeed();
       }, 2000);
     }
   });
@@ -1797,11 +1932,11 @@ if (socket) {
       // which comes from /api/dbrows. Pull that immediately so the row does not
       // sit on a stale OPEN for up to 5 seconds.
       void refreshClosedAlertIdsFromApi().then(() => {
-        renderFeed(allAlerts);
+        renderFeed();
         renderTodayCard();
         renderHeroTiles();
       });
-      renderFeed(allAlerts);
+      renderFeed();
       refreshBrokerStats();
     } catch {
       // ignore

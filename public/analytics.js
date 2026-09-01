@@ -491,8 +491,8 @@
           ? " Filtered to one strategy — click All strategies to combine."
           : " All strategies combined.";
       hint.textContent =
-        "Closed trades " + f + " → " + l +
-        ". Scored on exit return %. Realized $ shown where broker fills exist." + stratNote;
+        "Closed trades the broker took, " + f + " → " + l +
+        ". Signals that never became orders are excluded. Scored on exit return %." + stratNote;
     }
   }
 
