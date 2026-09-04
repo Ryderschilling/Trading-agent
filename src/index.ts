@@ -462,7 +462,7 @@ let watch: string[] = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`)
 // -----------------------------
 // Seed default watchlist if empty
 // -----------------------------
-const DEFAULT_WATCHLIST = ["AAPL", "GOOGL", "HOOD", "IWM", "NVDA", "PLTR", "QQQ", "SPY", "TSLA"];
+const DEFAULT_WATCHLIST = ["AAPL", "IWM", "NVDA", "PLTR", "QQQ", "SPY", "TSLA"];
 if (watch.length === 0) {
   console.log("[startup] watchlist empty — seeding defaults:", DEFAULT_WATCHLIST.join(", "));
   const insertSym = db.prepare(`INSERT OR IGNORE INTO watchlist(symbol, sector_etf, updated_ts) VALUES(?,?,?)`);
@@ -473,6 +473,33 @@ if (watch.length === 0) {
   });
   seedTx();
   watch = db.prepare(`SELECT symbol FROM watchlist ORDER BY symbol`).all().map((r: any) => String(r.symbol));
+}
+
+// -----------------------------
+// Migration: remove drag symbols from watchlist
+// -----------------------------
+{
+  const removed = ["GOOGL", "HOOD"];
+  const delSym = db.prepare(`DELETE FROM watchlist WHERE symbol=?`);
+  const delTx = db.transaction(() => { for (const s of removed) delSym.run(s); });
+  delTx();
+  watch = watch.filter(s => !removed.includes(s));
+  console.log("[startup] migration: removed drag symbols from watchlist:", removed.join(", "));
+}
+
+// -----------------------------
+// Migration: set v11 direction to long-only (block PUTs)
+// -----------------------------
+{
+  const v11row = db.prepare(`SELECT version, config_json FROM rulesets WHERE version=11`).get() as any;
+  if (v11row) {
+    const cfg = JSON.parse(v11row.config_json);
+    if (cfg.direction !== "long") {
+      cfg.direction = "long";
+      db.prepare(`UPDATE rulesets SET config_json=? WHERE version=11`).run(JSON.stringify(cfg));
+      console.log("[startup] migration: set v11 direction=long (PUTs blocked)");
+    }
+  }
 }
 
 // -----------------------------
@@ -2938,6 +2965,25 @@ function getCandles1m(symbol: string, startTs: number, endTs: number, limit: num
 // -----------------------------
 let replayBacktestRunning = false;
 
+/**
+ * Fetch 1m bars for a symbol from the local candles_1m table.
+ * Returns bars in the same shape as fetchBars1mRange so the replay loop
+ * can use DB data without hitting the Alpaca REST API.
+ * Removes the LIMIT so a full-year replay gets every bar.
+ */
+function fetchBars1mRangeFromDb(symbol: string, startMs: number, endMs: number) {
+  const rows = db.prepare(
+    `SELECT ts, open AS o, high AS h, low AS l, close AS c, volume AS v
+     FROM candles_1m WHERE ticker = ? AND ts >= ? AND ts <= ?
+     ORDER BY ts ASC`
+  ).all(symbol, startMs, endMs) as Array<{ ts: number; o: number; h: number; l: number; c: number; v: number }>;
+  // Convert to ISO-string shape matching fetchBars1mRange's return type
+  return rows.map((r) => ({
+    t: new Date(Number(r.ts)).toISOString(),
+    o: Number(r.o), h: Number(r.h), l: Number(r.l), c: Number(r.c), v: Number(r.v || 0),
+  }));
+}
+
 async function runReplayBacktest(cfg: {
   tickers: string[];
   startDate: string;
@@ -2950,7 +2996,6 @@ async function runReplayBacktest(cfg: {
   positionPct?: number;
 }) {
   if (replayBacktestRunning) throw new Error("replay backtest already running");
-  if (!HAS_KEYS) throw new Error("Alpaca keys missing; replay backtest requires REST data access");
 
   replayBacktestRunning = true;
 
@@ -3024,7 +3069,13 @@ async function runReplayBacktest(cfg: {
     }> = [];
 
     for (const s of symbols) {
-      const bars = await fetchBars1mRange(s, warmupStartMs, endMs);
+      // Use saved candles from DB when available (faster, no API keys required).
+      // Falls back to Alpaca REST for any symbol not yet in candles_1m.
+      let bars = fetchBars1mRangeFromDb(s, warmupStartMs, endMs);
+      if (bars.length === 0 && HAS_KEYS) {
+        bars = await fetchBars1mRange(s, warmupStartMs, endMs);
+      }
+      console.log(`[backtest] ${s}: ${bars.length} bars from ${new Date(warmupStartMs).toISOString().slice(0,10)} to ${new Date(endMs).toISOString().slice(0,10)} (${bars.length > 0 ? (bars[0]?.t || "?").slice(0,10) : "none"}..${bars.length > 0 ? (bars[bars.length-1]?.t || "?").slice(0,10) : "none"})`);
       for (const b of bars) {
         const ts = isoToMsSafe(b.t);
         if (ts == null) continue;
