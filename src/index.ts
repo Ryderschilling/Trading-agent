@@ -357,6 +357,9 @@ function buildRunner(rs: { version: number; name: string; config: StrategyDefini
       trendFilter4h: String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "1"
         || String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "true"
         || String(process.env.TREND_4H_FILTER ?? "").toLowerCase() === "on",
+      // SPY PUT gate: block PUT signals unless SPY is down >= 1% from prior RTH close.
+      // Disable with env SPY_PUT_GATE=0. setSpyDayContext() is called on each day rollover.
+      spyPutGatePct: String(process.env.SPY_PUT_GATE ?? "").toLowerCase() === "0" ? undefined : 0.01,
     }),
 
     outcomeTracker: new OutcomeTracker({
@@ -1011,6 +1014,23 @@ let lastFlipCheckTs = 0;             // dedupe: only run once per bar timestamp
 const SPY_MOVE_BLOCK_PCT = 0.015; // 1.5%
 let spySessionRef: { dayKey: string; openPrice: number } | null = null;
 let spyLastClose: number | null = null;
+let spyPriorClose: number | null = null; // last RTH close of the PRIOR day, for the -1% PUT gate
+
+function loadSpyPriorCloseFromDb(): number | null {
+  // Query candles_1m for the most recent RTH close for SPY before today.
+  // Used to seed spyPriorClose at startup and on day rollover when spyLastClose is stale.
+  const todayKey = nyDayKey(Date.now());
+  // Convert todayKey (YYYY-MM-DD ET) to midnight ET in ms so we can filter by ts.
+  // 4 hours = typical ET offset (EST); safe because we want "any bar from a prior day".
+  const [y, mo, d] = todayKey.split("-").map(Number);
+  const todayMidnightEtMs = Date.UTC(y, mo - 1, d, 4, 0, 0); // midnight ET = 04:00 UTC (EST) or 05:00 UTC (EDT)
+  const row = db.prepare(
+    `SELECT close FROM candles_1m WHERE ticker='SPY' AND session='RTH' AND ts < ? ORDER BY ts DESC LIMIT 1`
+  ).get(todayMidnightEtMs) as { close: number } | undefined;
+  const result = row?.close ?? null;
+  console.log(`[spy-put-gate] loadSpyPriorCloseFromDb: prior close=${result} (cutoff=${todayMidnightEtMs})`);
+  return result;
+}
 
 function computeIndexSide(symbol: "SPY" | "QQQ") {
   const price = lastPriceMap.get(symbol) ?? null;
@@ -2441,10 +2461,19 @@ function ingestMinuteBar(
   if (symbol === "SPY" && isRegularSessionNY(ts)) {
     const dk = nyDayKey(ts);
     if (!spySessionRef || spySessionRef.dayKey !== dk) {
+      // Day rollover: yesterday's spyLastClose becomes today's prior close.
+      // If spyLastClose is null (first startup of the day), fall back to DB.
+      spyPriorClose = spyLastClose ?? loadSpyPriorCloseFromDb();
+      console.log(`[spy-put-gate] prior close set: ${spyPriorClose} for ${dk}`);
+      // Propagate to all engines so the PUT gate is active from bar 1.
+      for (const r of runners.values()) r.engine.setSpyDayContext(spyPriorClose);
+
       spySessionRef = { dayKey: dk, openPrice: o };
       console.log(`[spy-gate] session ref set: SPY open=${o} for ${dk}`);
     }
     spyLastClose = c;
+    // Keep engines updated with current SPY price for the 1m tap gate.
+    for (const r of runners.values()) r.engine.updateSpyPrice(c);
 
     // Day Regime snapshot — observer only, fires once per session at 09:35 ET.
     // Wrapped so a failure here can never interrupt bar processing or entries.

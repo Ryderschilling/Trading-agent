@@ -42,6 +42,15 @@ export type EngineConfig = {
    * strategy-timeframe bars. Null = wait until the caller's entry cutoff.
    */
   maxRetestWaitBars?: number | null;
+
+  /**
+   * SPY market gate for PUT signals. When set to a fraction (e.g., 0.01 = 1%),
+   * PUT signals are blocked unless SPY is down at least that much from the
+   * prior RTH close. Requires calling setSpyDayContext() each morning with the
+   * prior day's last RTH close, and updateSpyPrice() on each incoming SPY bar.
+   * Default: undefined (gate disabled).
+   */
+  spyPutGatePct?: number;
 };
 
 export type SymbolContext = {
@@ -110,9 +119,23 @@ export class SignalEngine {
   private ctx: Map<string, SymbolContext> = new Map();
   private emaPeriods: number[] = [];
 
+  // SPY PUT gate state — set by the caller via setSpyDayContext / updateSpyPrice
+  private spyPriorClose: number | null = null;
+  private spyCurrentPrice: number | null = null;
+
   constructor(cfg: EngineConfig) {
     this.cfg = cfg;
     this.emaPeriods = sanitizeEmaPeriods(cfg.emaPeriods);
+  }
+
+  /** Set SPY's prior RTH close for the PUT gate. Call once per trading day before RTH opens. */
+  setSpyDayContext(priorClose: number | null): void {
+    this.spyPriorClose = priorClose;
+  }
+
+  /** Update live SPY price for the PUT gate in onMinuteBar. Call on each incoming SPY bar. */
+  updateSpyPrice(price: number): void {
+    this.spyCurrentPrice = price;
   }
 
   getFormingCandidates(args: { lastPrice: (symbol: string) => number | null }): FormingCandidate[] {
@@ -360,6 +383,15 @@ export class SignalEngine {
       if (!trendAllowsDirection(regime, dir)) return null;
     }
 
+    // SPY PUT gate: block PUT setups unless SPY is down >= spyPutGatePct from prior RTH close.
+    if (dir === "PUT" && this.cfg.spyPutGatePct != null && this.spyPriorClose != null) {
+      const currentSpyPrice = spyBars5.at(-1)?.c ?? null;
+      if (currentSpyPrice != null) {
+        const spyChangePct = (currentSpyPrice - this.spyPriorClose) / this.spyPriorClose;
+        if (spyChangePct > -this.cfg.spyPutGatePct) return null;
+      }
+    }
+
     // EMA8 + VWAP confirmation filters (PB Investing style):
     // CALL: price must be above 8 EMA and above VWAP to confirm bullish bias
     // PUT:  price must be below 8 EMA and below VWAP to confirm bearish bias
@@ -440,6 +472,12 @@ export class SignalEngine {
     if (this.cfg.trendFilter4h) {
       const regime = compute4hRegime(ctx.bars5);
       if (!trendAllowsDirection(regime, s.dir)) return null;
+    }
+
+    // SPY PUT gate at tap entry — same threshold as setup formation gate.
+    if (s.dir === "PUT" && this.cfg.spyPutGatePct != null && this.spyPriorClose != null && this.spyCurrentPrice != null) {
+      const spyChangePct = (this.spyCurrentPrice - this.spyPriorClose) / this.spyPriorClose;
+      if (spyChangePct > -this.cfg.spyPutGatePct) return null;
     }
 
     // ensure tap state
